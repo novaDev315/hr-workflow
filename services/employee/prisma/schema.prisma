@@ -1,0 +1,216 @@
+// Employee Service Prisma Schema
+// This is the source of truth for all employee data
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// Departments
+model Department {
+  id          String        @id @default(uuid())
+  name        String        @unique
+  code        String        @unique
+  description String?
+  isActive    Boolean       @default(true)
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+
+  employees   Employee[]
+  designations Designation[]
+
+  @@map("departments")
+  @@schema("employee")
+}
+
+// Designations/Job Titles
+model Designation {
+  id          String      @id @default(uuid())
+  title       String
+  code        String      @unique
+  departmentId String
+  level       Int
+  description String?
+  isActive    Boolean     @default(true)
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+
+  department  Department  @relation(fields: [departmentId], references: [id])
+  employees   Employee[]
+
+  @@map("designations")
+  @@schema("employee")
+}
+
+// Employees (Source of Truth)
+model Employee {
+  id            String      @id @default(uuid())
+  employeeNumber String     @unique
+
+  // Personal Information
+  firstName     String
+  lastName      String
+  email         String      @unique
+  phone         String?
+  dateOfBirth   DateTime?
+  gender        Gender?
+  maritalStatus MaritalStatus?
+  nationality   String?
+
+  // Employment Information
+  departmentId  String
+  designationId String
+  supervisorId  String?
+  employmentType EmploymentType
+  joinDate      DateTime
+  confirmationDate DateTime?
+  exitDate      DateTime?
+  status        EmployeeStatus @default(ACTIVE)
+
+  // Contact Information
+  permanentAddress String?
+  currentAddress   String?
+  emergencyContactName String?
+  emergencyContactPhone String?
+  emergencyContactRelation String?
+
+  // Banking Information
+  bankName      String?
+  accountNumber String?
+  ifscCode      String?
+
+  // Metadata
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+  createdBy     String?
+  updatedBy     String?
+
+  // Relations
+  department    Department  @relation(fields: [departmentId], references: [id])
+  designation   Designation @relation(fields: [designationId], references: [id])
+  supervisor    Employee?   @relation("EmployeeSupervisor", fields: [supervisorId], references: [id])
+  subordinates  Employee[]  @relation("EmployeeSupervisor")
+
+  documents     EmployeeDocument[]
+  salaryStructures SalaryStructure[]
+
+  @@map("employees")
+  @@schema("employee")
+  @@index([departmentId])
+  @@index([designationId])
+  @@index([supervisorId])
+  @@index([status])
+  @@index([employeeNumber])
+}
+
+// Employee Documents
+model EmployeeDocument {
+  id          String        @id @default(uuid())
+  employeeId  String
+  documentType DocumentType
+  documentName String
+  documentUrl String
+  fileSize    BigInt?
+  mimeType    String?
+  uploadedAt  DateTime      @default(now())
+  uploadedBy  String?
+  expiresAt   DateTime?
+  isVerified  Boolean       @default(false)
+  verifiedAt  DateTime?
+  verifiedBy  String?
+
+  employee    Employee      @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+
+  @@map("employee_documents")
+  @@schema("employee")
+  @@index([employeeId])
+}
+
+// Salary Structures
+model SalaryStructure {
+  id          String    @id @default(uuid())
+  employeeId  String
+
+  // Salary Components
+  basicSalary Decimal   @db.Decimal(15, 2)
+  hra         Decimal   @default(0) @db.Decimal(15, 2)
+  conveyanceAllowance Decimal @default(0) @db.Decimal(15, 2)
+  medicalAllowance    Decimal @default(0) @db.Decimal(15, 2)
+  specialAllowance    Decimal @default(0) @db.Decimal(15, 2)
+  otherAllowances     Decimal @default(0) @db.Decimal(15, 2)
+
+  // Deductions
+  pfContribution  Decimal @default(0) @db.Decimal(15, 2)
+  esiContribution Decimal @default(0) @db.Decimal(15, 2)
+  professionalTax Decimal @default(0) @db.Decimal(15, 2)
+
+  // Calculated fields (computed in application)
+  grossSalary Decimal   @db.Decimal(15, 2)
+  netSalary   Decimal   @db.Decimal(15, 2)
+
+  effectiveFrom DateTime
+  effectiveTo   DateTime?
+  isCurrent     Boolean   @default(true)
+
+  createdAt   DateTime  @default(now())
+  createdBy   String?
+
+  employee    Employee  @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+
+  @@map("salary_structures")
+  @@schema("employee")
+  @@index([employeeId])
+  @@index([isCurrent])
+}
+
+// Enums
+enum Gender {
+  MALE
+  FEMALE
+  OTHER
+  PREFER_NOT_TO_SAY
+}
+
+enum MaritalStatus {
+  SINGLE
+  MARRIED
+  DIVORCED
+  WIDOWED
+}
+
+enum EmploymentType {
+  FULL_TIME
+  PART_TIME
+  CONTRACT
+  INTERNSHIP
+  CONSULTANT
+}
+
+enum EmployeeStatus {
+  ACTIVE
+  ON_LEAVE
+  SUSPENDED
+  TERMINATED
+  RESIGNED
+  RETIRED
+}
+
+enum DocumentType {
+  AADHAAR_CARD
+  PAN_CARD
+  PASSPORT
+  DRIVING_LICENSE
+  VOTER_ID
+  BANK_STATEMENT
+  EDUCATIONAL_CERTIFICATE
+  EXPERIENCE_LETTER
+  OFFER_LETTER
+  EMPLOYMENT_CONTRACT
+  RELIEVING_LETTER
+  MEDICAL_CERTIFICATE
+  OTHER
+}

@@ -1,0 +1,35 @@
+{
+  "name": "hrflow-pro",
+  "version": "2.0.0",
+  "description": "HRFlow Pro - Comprehensive HR Management System",
+  "private": true,
+  "workspaces": [
+    "apps/*",
+    "services/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "turbo run dev --parallel",
+    "build": "turbo run build",
+    "test": "turbo run test",
+    "lint": "turbo run lint",
+    "clean": "turbo run clean && rm -rf node_modules",
+    "docker:up": "docker compose up -d",
+    "docker:down": "docker compose down",
+    "docker:logs": "docker compose logs -f",
+    "docker:build": "docker compose build",
+    "migrate:up": "npm run migrate:up --workspace=apps/api-gateway",
+    "migrate:down": "npm run migrate:down --workspace=apps/api-gateway",
+    "migrate:status": "npm run migrate:status --workspace=apps/api-gateway"
+  },
+  "devDependencies": {
+    "turbo": "^1.11.0",
+    "typescript": "^5.3.3",
+    "prettier": "^3.1.1",
+    "eslint": "^8.56.0"
+  },
+  "engines": {
+    "node": ">=18.0.0",
+    "npm": ">=9.0.0"
+  }
+}

@@ -1,0 +1,64 @@
+version: '3.8'
+
+services:
+  api-gateway:
+    build:
+      context: ./apps/api-gateway
+      dockerfile: Dockerfile.dev
+      target: development
+    volumes:
+      - ./apps/api-gateway:/app
+      - /app/node_modules
+    command: npm run dev
+    environment:
+      - NODE_ENV=development
+
+  employee-service:
+    build:
+      context: ./services/employee
+      dockerfile: Dockerfile.dev
+      target: development
+    volumes:
+      - ./services/employee:/app
+      - /app/node_modules
+    command: npm run dev
+
+  attendance-service:
+    build:
+      context: ./services/attendance
+      dockerfile: Dockerfile.dev
+      target: development
+    volumes:
+      - ./services/attendance:/app
+      - /app/node_modules
+    command: npm run dev
+
+  leave-service:
+    build:
+      context: ./services/leave
+      dockerfile: Dockerfile.dev
+      target: development
+    volumes:
+      - ./services/leave:/app
+      - /app/node_modules
+    command: npm run dev
+
+  location-service:
+    build:
+      context: ./services/location
+      dockerfile: Dockerfile.dev
+      target: development
+    volumes:
+      - ./services/location:/app
+      - /app/node_modules
+    command: npm run dev
+
+  payroll-service:
+    build:
+      context: ./services/payroll
+      dockerfile: Dockerfile.dev
+      target: development
+    volumes:
+      - ./services/payroll:/app
+      - /app/node_modules
+    command: npm run dev
