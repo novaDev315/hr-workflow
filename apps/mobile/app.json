@@ -1,0 +1,59 @@
+{
+  "expo": {
+    "name": "HRFlow Pro",
+    "slug": "hrflow-mobile",
+    "version": "2.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "automatic",
+    "scheme": "hrflow",
+    "splash": {
+      "image": "./assets/splash.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#3b82f6"
+    },
+    "assetBundlePatterns": [
+      "**/*"
+    ],
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.hrflow.mobile",
+      "infoPlist": {
+        "NSLocationWhenInUseUsageDescription": "HRFlow needs your location to verify attendance check-in.",
+        "NSCameraUsageDescription": "HRFlow needs camera access to capture attendance photos."
+      }
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#3b82f6"
+      },
+      "package": "com.hrflow.mobile",
+      "permissions": [
+        "ACCESS_FINE_LOCATION",
+        "ACCESS_COARSE_LOCATION",
+        "CAMERA"
+      ]
+    },
+    "web": {
+      "bundler": "metro",
+      "output": "static",
+      "favicon": "./assets/favicon.png"
+    },
+    "plugins": [
+      "expo-router",
+      [
+        "expo-location",
+        {
+          "locationAlwaysAndWhenInUsePermission": "Allow HRFlow to use your location for attendance tracking."
+        }
+      ],
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Allow HRFlow to access your camera for attendance photos."
+        }
+      ]
+    ]
+  }
+}

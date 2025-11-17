@@ -1,0 +1,39 @@
+{
+  "name": "@hrflow/mobile",
+  "version": "2.0.0",
+  "main": "expo-router/entry",
+  "scripts": {
+    "start": "expo start",
+    "android": "expo start --android",
+    "ios": "expo start --ios",
+    "web": "expo start --web"
+  },
+  "dependencies": {
+    "expo": "^53.0.0",
+    "expo-router": "^4.0.0",
+    "expo-status-bar": "^2.0.0",
+    "expo-location": "^18.0.0",
+    "expo-camera": "^16.0.0",
+    "expo-image-picker": "^16.0.0",
+    "expo-font": "^13.0.0",
+    "expo-splash-screen": "^0.29.0",
+    "react": "^19.0.0",
+    "react-native": "0.77.0",
+    "react-native-safe-area-context": "^5.0.0",
+    "react-native-screens": "^4.3.0",
+    "@apollo/client": "^3.8.8",
+    "graphql": "^16.8.1",
+    "@react-navigation/native": "^7.0.0",
+    "@react-navigation/native-stack": "^7.0.0",
+    "@react-navigation/bottom-tabs": "^7.0.0",
+    "react-native-maps": "^2.0.0",
+    "date-fns": "^2.30.0",
+    "zustand": "^4.4.7"
+  },
+  "devDependencies": {
+    "@babel/core": "^7.23.5",
+    "@types/react": "^18.2.43",
+    "typescript": "^5.3.3"
+  },
+  "private": true
+}
