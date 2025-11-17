@@ -1,0 +1,183 @@
+// Attendance Service Prisma Schema
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// Daily Attendance Records
+model Attendance {
+  id          String    @id @default(uuid())
+  employeeId  String    // Reference to Employee Service
+  locationId  String    // Reference to Location Service
+  date        DateTime  @db.Date
+
+  // Clock In/Out
+  clockInTime     DateTime?
+  clockInLatitude Decimal?  @db.Decimal(10, 8)
+  clockInLongitude Decimal? @db.Decimal(11, 8)
+  clockInDistance  Int?     // Distance from location in meters
+  clockInPhotoUrl  String?
+  clockInNotes     String?
+
+  clockOutTime     DateTime?
+  clockOutLatitude Decimal?  @db.Decimal(10, 8)
+  clockOutLongitude Decimal? @db.Decimal(11, 8)
+  clockOutDistance  Int?
+  clockOutPhotoUrl  String?
+  clockOutNotes     String?
+
+  // Calculated fields
+  totalHours      Decimal?  @db.Decimal(5, 2)
+  regularHours    Decimal?  @db.Decimal(5, 2)
+  overtimeHours   Decimal?  @db.Decimal(5, 2)
+
+  // Status and Approval (3-Tier)
+  status          AttendanceStatus @default(PENDING)
+
+  // Level 1: Supervisor Review
+  l1ReviewedBy    String?
+  l1ReviewedAt    DateTime?
+  l1Status        ApprovalStatus?
+  l1Notes         String?
+
+  // Level 2: Operations Manager
+  l2ApprovedBy    String?
+  l2ApprovedAt    DateTime?
+  l2Status        ApprovalStatus?
+  l2Notes         String?
+
+  // Level 3: Manager Verification
+  l3VerifiedBy    String?
+  l3VerifiedAt    DateTime?
+  l3Status        ApprovalStatus?
+  l3Notes         String?
+
+  // Payroll
+  isLockedForPayroll Boolean @default(false)
+  lockedAt           DateTime?
+  lockedBy           String?
+
+  // Flags
+  isLate          Boolean   @default(false)
+  isEarlyDeparture Boolean  @default(false)
+  isOvertime      Boolean   @default(false)
+  isManualEntry   Boolean   @default(false)
+
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  corrections AttendanceCorrection[]
+  approvalHistory AttendanceApprovalHistory[]
+
+  @@unique([employeeId, date])
+  @@map("attendance")
+  @@schema("attendance")
+  @@index([employeeId])
+  @@index([locationId])
+  @@index([date])
+  @@index([status])
+}
+
+// Attendance Corrections
+model AttendanceCorrection {
+  id          String    @id @default(uuid())
+  attendanceId String
+  correctionType CorrectionType
+
+  // Original Values
+  originalClockIn  DateTime?
+  originalClockOut DateTime?
+
+  // Corrected Values
+  correctedClockIn  DateTime?
+  correctedClockOut DateTime?
+
+  reason      String
+  requestedBy String
+  requestedAt DateTime  @default(now())
+  approvedBy  String?
+  approvedAt  DateTime?
+  status      CorrectionStatus @default(PENDING)
+
+  attendance  Attendance @relation(fields: [attendanceId], references: [id])
+
+  @@map("attendance_corrections")
+  @@schema("attendance")
+}
+
+// Approval History (Audit Trail)
+model AttendanceApprovalHistory {
+  id          String    @id @default(uuid())
+  attendanceId String
+  approvalLevel Int      // 1, 2, or 3
+  approverId  String
+  action      ApprovalAction
+  previousStatus AttendanceStatus?
+  newStatus   AttendanceStatus
+  notes       String?
+  timestamp   DateTime  @default(now())
+
+  attendance  Attendance @relation(fields: [attendanceId], references: [id])
+
+  @@map("attendance_approval_history")
+  @@schema("attendance")
+  @@index([attendanceId])
+}
+
+// Shift Templates
+model ShiftTemplate {
+  id          String    @id @default(uuid())
+  name        String
+  startTime   String    // HH:mm format
+  endTime     String    // HH:mm format
+  gracePeriod Int       @default(15) // minutes
+  minimumHours Decimal  @db.Decimal(5, 2)
+  isActive    Boolean   @default(true)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@map("shift_templates")
+  @@schema("attendance")
+}
+
+// Enums
+enum AttendanceStatus {
+  PENDING
+  PENDING_L1      // Pending Level 1 Review
+  PENDING_L2      // Pending Level 2 Approval
+  PENDING_L3      // Pending Level 3 Verification
+  APPROVED
+  REJECTED
+  LOCKED_FOR_PAYROLL
+}
+
+enum ApprovalStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  REVISION_REQUIRED
+}
+
+enum ApprovalAction {
+  APPROVED
+  REJECTED
+  REVISION_REQUESTED
+  UNLOCKED
+}
+
+enum CorrectionType {
+  CLOCK_IN
+  CLOCK_OUT
+  BOTH
+  MISSING_ENTRY
+}
+
+enum CorrectionStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
