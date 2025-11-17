@@ -32,6 +32,8 @@
    - **Password**: Your secure password
 3. Click **"Sign In"**
 
+> **Screenshot**: Login page showing email and password fields with "Sign In" button
+
 ### First-Time Setup
 
 After logging in for the first time:
@@ -48,6 +50,8 @@ After logging in for the first time:
 3. **Review Dashboard**
    - Familiarize yourself with the dashboard layout
    - Review pending approvals and alerts
+
+> **Screenshot**: Profile settings page with personal information fields
 
 ---
 
@@ -85,6 +89,8 @@ The dashboard provides a real-time overview of your HR operations.
 - **Approve Attendance** - Review and approve pending attendance
 - **Process Payroll** - Initiate payroll processing
 - **Generate Reports** - Create custom reports
+
+> **Screenshot**: Main dashboard showing key metrics cards (Employee Statistics, Attendance Overview, Leave Summary, Payroll Status) with graphs and quick action buttons
 
 ---
 
@@ -127,6 +133,8 @@ The dashboard provides a real-time overview of your HR operations.
 3. Click **"Create Employee"**
 4. The system will auto-generate an Employee Number (e.g., EMP20240001)
 
+> **Screenshot**: Add Employee form showing all fields for Personal Information, Employment Information, Contact Information, and Banking Information sections
+
 ### Managing Employee Records
 
 #### Viewing Employee Details
@@ -135,6 +143,8 @@ The dashboard provides a real-time overview of your HR operations.
 2. Use the search bar to find an employee:
    - Search by name, employee number, email, or department
 3. Click on an employee row to view full details
+
+> **Screenshot**: Employee list page showing searchable table with columns for Employee Number, Name, Department, Designation, Status, and Actions
 
 #### Editing Employee Information
 
@@ -198,6 +208,8 @@ To change an employee's status:
 6. Click **"Save"**
 7. Previous salary structures will be automatically marked as inactive
 
+> **Screenshot**: Salary structure form showing Basic Salary, HRA, Allowances, and Deductions fields with Effective From date
+
 ### Employee Directory
 
 The searchable employee directory allows quick access to employee information.
@@ -240,6 +252,8 @@ At any tier, the approver can:
 - **Reject** - Stop workflow and request correction
 - **Request Revision** - Ask employee to clarify/correct
 
+> **Screenshot**: Flowchart diagram showing 3-tier approval workflow from Employee Clock In/Out through Tier 1, Tier 2, Tier 3 to final APPROVED status
+
 ### Reviewing Attendance Records
 
 1. Go to **Attendance** → **Pending Approvals**
@@ -253,6 +267,8 @@ At any tier, the approver can:
    - Overtime Hours
    - Status Flags (Late, Early Departure)
    - Distance from Location
+
+> **Screenshot**: Pending Approvals list showing attendance records with employee details, clock in/out times, GPS status, and approval actions
 
 ### Individual Approval
 
@@ -278,6 +294,8 @@ For multiple records at once:
 5. Confirm the action
 6. All selected records will move to the next approval tier
 
+> **Screenshot**: Bulk approval interface with checkboxes next to attendance records and "Bulk Approve" button highlighted
+
 ### Handling Attendance Corrections
 
 Employees may request corrections for missed clock-ins or errors:
@@ -289,6 +307,8 @@ Employees may request corrections for missed clock-ins or errors:
    - Employee's reason
 3. Verify the request
 4. **Approve** or **Reject** with comments
+
+> **Screenshot**: Attendance correction request detail showing original vs requested changes with employee's reason and approve/reject buttons
 
 ### Locking Attendance for Payroll
 
@@ -370,6 +390,8 @@ HRFlow Pro supports multiple leave types:
 3. Add comments
 4. Click **"Approve"** or **"Reject"**
 
+> **Screenshot**: Leave request detail page showing employee info, leave type, dates, balance status, team calendar, and approve/reject buttons
+
 **Bulk Operations**:
 1. Select multiple requests using checkboxes
 2. Click **"Bulk Approve"** or **"Bulk Reject"**
@@ -400,6 +422,8 @@ View team leave schedules:
    - Available headcount
    - Upcoming leaves
 4. Export calendar to PDF if needed
+
+> **Screenshot**: Team calendar view showing monthly grid with employees on leave color-coded by leave type and headcount availability indicator
 
 ---
 
@@ -452,6 +476,8 @@ View team leave schedules:
      - Deductions (for unpaid leave, loans, etc.)
      - Tax deductions
      - Net payable amount
+
+> **Screenshot**: Payroll summary page showing list of employees with gross salary, deductions, taxes, and net payable columns, plus total summary at top
 
 5. **Make Adjustments (if needed)**:
    - Click on an employee to view details
@@ -562,6 +588,8 @@ View team leave schedules:
 4. Click **"Create Requisition"**
 5. System generates unique REQ number (e.g., REQ20240001)
 
+> **Screenshot**: Create Job Requisition form showing fields for Job Title, Department, Positions, Job Description, Requirements, and Priority dropdown
+
 **Managing Requisitions**:
 - **Open Requisitions**: Active job openings
 - **Filled**: Positions that have been filled
@@ -603,6 +631,8 @@ Or at any stage: → REJECTED
    - **Reject**: With reason
 4. Add notes/comments
 5. Schedule interview if shortlisted
+
+> **Screenshot**: Application tracking board showing applications in different stages (RECEIVED, SCREENING, SHORTLISTED, INTERVIEWED, etc.) with candidate cards in each column
 
 ### Interview Management
 
@@ -708,6 +738,8 @@ Or at any stage: → REJECTED
   - Salary distribution
   - Tax collections
 
+> **Screenshot**: Executive Dashboard showing charts and graphs for Employee Metrics, Attendance Metrics, Leave Metrics, and Payroll Metrics with trend lines
+
 ### Generating Reports
 
 **Available Reports**:
@@ -756,6 +788,8 @@ Or at any stage: → REJECTED
    - **Export to PDF**: Download .pdf file
 6. Click **"Generate"**
 7. Report will be generated and displayed/downloaded
+
+> **Screenshot**: Report generation interface showing report type selection, filter options (date range, department, etc.), and output format buttons (Excel, PDF, View Online)
 
 ### Custom Reports
 
@@ -813,6 +847,8 @@ Or at any stage: → REJECTED
      - Shift Start (e.g., 09:00)
      - Shift End (e.g., 18:00)
 4. Save location
+
+> **Screenshot**: Add Location form showing fields for Location Name, Code, GPS Coordinates (Latitude/Longitude), Geofence Radius slider (50-500m), Address, and Shift Times
 
 **Assigning Employees to Locations**:
 
@@ -874,6 +910,8 @@ Or at any stage: → REJECTED
    - **Approved**: Approved but not published
    - **Published**: Visible to employees
 6. Click **"Save"**
+
+> **Screenshot**: Policy document upload form showing Title, Category, Version, Access Control (Public/Specific Departments/Designations), Status dropdown, and file upload area
 
 **Versioning**:
 - When updating a policy, previous versions are preserved

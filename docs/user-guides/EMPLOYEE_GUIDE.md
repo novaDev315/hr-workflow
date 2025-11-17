@@ -46,6 +46,8 @@
    - **Password**: Provided by HR (you'll be prompted to change on first login)
 4. Tap **"Sign In"**
 
+> **Screenshot**: Mobile app login screen showing HRFlow Pro logo, email and password input fields, "Sign In" button, and "Forgot Password" link
+
 ### Changing Your Password (First Time)
 
 1. After first login, you'll be prompted to change password
@@ -74,6 +76,8 @@ For the app to work properly, you need to enable:
 **Camera** (Optional):
 - Upload profile picture
 - Scan documents if needed
+
+> **Screenshot**: Permission prompts for Location (with map), Notifications (with bell icon), and Camera access
 
 ---
 
@@ -108,6 +112,8 @@ After logging in, you'll see your dashboard with:
 - Important notices
 - Policy updates
 - Swipe to view more
+
+> **Screenshot**: Home dashboard showing date/time, attendance status card, quick stats (leave balance, attendance, pending approvals), quick action buttons, and announcements carousel
 
 ---
 
@@ -149,6 +155,8 @@ HRFlow Pro uses GPS to verify your location:
    - Distance from location
    - Your device information
 
+> **Screenshot**: Clock In screen showing GPS location pin on map, "Distance: 45m" indicator, "Within geofence" green message, current coordinates, and enabled "Clock In" button
+
 ### Clocking Out
 
 1. **At End of Work Day**:
@@ -174,6 +182,8 @@ HRFlow Pro uses GPS to verify your location:
      - Total duration
      - Overtime (if applicable)
      - Any late arrival/early departure flags
+
+> **Screenshot**: Attendance summary after clock out showing Clock In time (09:05 AM), Clock Out time (06:15 PM), Total Duration (9h 10m), Regular Hours (8h), Overtime (1h 10m)
 
 ### What If...?
 
@@ -269,6 +279,8 @@ Department Head (Level 3)
 APPROVED ✓
 ```
 
+> **Screenshot**: Leave request form showing Leave Type dropdown, From Date calendar picker, To Date calendar picker, calculated "3 days", Reason text field, Emergency Contact field, and "Submit Request" button
+
 ### Cancelling a Leave Request
 
 If you need to cancel:
@@ -290,6 +302,8 @@ If you need to cancel:
    - Approver comments (if any)
 3. Tap any request to see full details
 
+> **Screenshot**: Leave history list showing leave balance cards at top (Annual: 12 days, Sick: 5 days) and leave requests below with status badges (Pending L1, Approved, Rejected)
+
 ---
 
 ## Viewing Payslips
@@ -302,6 +316,8 @@ If you need to cancel:
    - Gross Salary
    - Net Salary
    - Status (Paid/Processing)
+
+> **Screenshot**: Payslips list showing monthly payslip cards with Month/Year, Gross Salary amount, Net Salary amount, and Status (Paid/Processing)
 
 ### Viewing Payslip Details
 
@@ -334,6 +350,8 @@ If you need to cancel:
    - Days Absent
    - Paid Leave Taken
    - Unpaid Leave (if any)
+
+> **Screenshot**: Detailed payslip view showing Earnings section with all allowances, Deductions section with PF/Tax/Loans, Net Payable amount highlighted, and Attendance Summary at bottom
 
 ### Downloading Payslip
 
@@ -379,6 +397,8 @@ If you notice any discrepancy:
    - Phone
    - Join Date
    - Reporting Manager
+
+> **Screenshot**: Profile screen showing profile picture/avatar, employee details (Name, Employee Number, Department, Designation), contact information, and "Edit Profile" button
 
 ### Updating Profile Picture
 
@@ -460,6 +480,8 @@ Note: Sensitive information. Keep confidential.
    - Holiday (grey)
    - Weekend (lighter grey)
 
+> **Screenshot**: Attendance calendar view showing monthly grid with color-coded days (green for present, red for absent, blue for leave, grey for holidays/weekends)
+
 ### Detailed Day View
 
 1. Tap on any day to see details:
@@ -479,6 +501,8 @@ At top of Attendance screen:
 - **Leave Days**: Days on approved leave
 - **Total Working Days**: Expected working days in month
 - **Attendance %**: (Present + Leave) / Total Working Days
+
+> **Screenshot**: Monthly attendance summary showing stats cards (Present: 20 days, Absent: 1 day, Leave: 2 days, Total: 23 days, Attendance: 95.6%)
 
 ### Requesting Corrections
 
