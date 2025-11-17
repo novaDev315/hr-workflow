@@ -167,6 +167,61 @@ model SalaryStructure {
   @@index([isCurrent])
 }
 
+// Policy Documents
+model PolicyDocument {
+  id              String   @id @default(uuid())
+  title           String
+  description     String?
+  category        PolicyCategory
+  documentUrl     String
+  version         String   @default("1.0")
+
+  // Access Control
+  isPublic        Boolean  @default(true)
+  departments     String[] // Empty means all departments
+  designations    String[] // Empty means all designations
+
+  // Status
+  status          PolicyStatus @default(DRAFT)
+  effectiveFrom   DateTime?
+  effectiveTo     DateTime?
+
+  // Metadata
+  createdAt       DateTime @default(now())
+  createdBy       String
+  updatedAt       DateTime @updatedAt
+  updatedBy       String?
+
+  // Versioning
+  previousVersionId String?
+
+  @@map("policy_documents")
+  @@schema("employee")
+  @@index([category])
+  @@index([status])
+}
+
+enum PolicyCategory {
+  HR_POLICY
+  CODE_OF_CONDUCT
+  LEAVE_POLICY
+  ATTENDANCE_POLICY
+  EXPENSE_POLICY
+  IT_POLICY
+  SAFETY_POLICY
+  COMPLIANCE
+  HANDBOOK
+  OTHER
+}
+
+enum PolicyStatus {
+  DRAFT
+  REVIEW
+  APPROVED
+  PUBLISHED
+  ARCHIVED
+}
+
 // Enums
 enum Gender {
   MALE

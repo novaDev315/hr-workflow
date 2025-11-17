@@ -6,6 +6,10 @@ import {
   LayoutDashboard,
   LogOut,
   Briefcase,
+  UserSearch,
+  FileText,
+  BarChart3,
+  BookOpen,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 
@@ -21,9 +25,13 @@ export function DashboardLayout() {
   const navigation = [
     { name: 'Dashboard', href: '/', icon: LayoutDashboard },
     { name: 'Employees', href: '/employees', icon: Users },
+    { name: 'Directory', href: '/directory', icon: UserSearch },
     { name: 'Attendance', href: '/attendance', icon: Briefcase },
     { name: 'Leave', href: '/leave', icon: Calendar },
     { name: 'Payroll', href: '/payroll', icon: DollarSign },
+    { name: 'Recruitment', href: '/recruitment', icon: FileText },
+    { name: 'Reports', href: '/reports', icon: BarChart3 },
+    { name: 'Policies', href: '/policies', icon: BookOpen },
   ]
 
   return (

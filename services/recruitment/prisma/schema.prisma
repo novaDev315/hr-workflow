@@ -1,0 +1,330 @@
+// Recruitment Service Schema
+generator client {
+  provider = "prisma-client-js"
+  output   = "../node_modules/.prisma/client"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model JobRequisition {
+  id                String   @id @default(uuid())
+  requisitionNumber String   @unique
+  jobTitle          String
+  departmentId      String
+
+  numberOfPositions Int      @default(1)
+  employmentType    EmploymentType
+  experienceLevel   ExperienceLevel
+
+  // Job Details
+  description       String
+  responsibilities  String
+  requirements      String
+  qualifications    String
+
+  // Compensation
+  salaryRangeMin    Decimal? @db.Decimal(15, 2)
+  salaryRangeMax    Decimal? @db.Decimal(15, 2)
+  benefits          String?
+
+  // Location
+  location          String
+  isRemote          Boolean  @default(false)
+
+  // Status
+  status            RequisitionStatus @default(DRAFT)
+  priority          Priority @default(MEDIUM)
+
+  // Approval
+  requestedBy       String
+  approvedBy        String?
+  approvedAt        DateTime?
+
+  // Dates
+  targetStartDate   DateTime?
+  applicationDeadline DateTime?
+
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  applications      Application[]
+  interviews        Interview[]
+
+  @@map("job_requisitions")
+  @@schema("recruitment")
+}
+
+model Application {
+  id                String   @id @default(uuid())
+  applicationNumber String   @unique
+  requisitionId     String
+
+  // Candidate Info
+  firstName         String
+  lastName          String
+  email             String
+  phone             String
+
+  // Professional Info
+  currentCompany    String?
+  currentDesignation String?
+  totalExperience   Int      // in months
+  currentCTC        Decimal? @db.Decimal(15, 2)
+  expectedCTC       Decimal? @db.Decimal(15, 2)
+  noticePeriod      Int?     // in days
+
+  // Documents
+  resumeUrl         String?
+  coverLetterUrl    String?
+  portfolioUrl      String?
+
+  // Address
+  currentLocation   String
+  preferredLocation String?
+
+  // Status
+  status            ApplicationStatus @default(RECEIVED)
+  currentStage      String?
+
+  // Screening
+  screenedBy        String?
+  screenedAt        DateTime?
+  screeningNotes    String?
+  screeningScore    Int?     // 1-10
+
+  // Source
+  source            ApplicationSource
+  referredBy        String?
+
+  // Metadata
+  appliedAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  requisition       JobRequisition @relation(fields: [requisitionId], references: [id])
+  interviews        Interview[]
+  evaluations       CandidateEvaluation[]
+  offers            JobOffer[]
+
+  @@map("applications")
+  @@schema("recruitment")
+}
+
+model Interview {
+  id              String   @id @default(uuid())
+  applicationId   String
+  requisitionId   String
+
+  // Schedule
+  round           Int      // 1, 2, 3, etc.
+  interviewType   InterviewType
+  scheduledDate   DateTime
+  duration        Int      // in minutes
+
+  // Location
+  mode            InterviewMode
+  location        String?
+  meetingLink     String?
+
+  // Panel
+  interviewerIds  String[] // Array of employee IDs
+
+  // Status
+  status          InterviewStatus @default(SCHEDULED)
+
+  // Feedback
+  conductedAt     DateTime?
+  feedback        String?
+  recommendation  InterviewRecommendation?
+
+  // Ratings
+  technicalScore  Int?     // 1-10
+  communicationScore Int?  // 1-10
+  cultureFitScore Int?     // 1-10
+  overallScore    Int?     // 1-10
+
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  application     Application @relation(fields: [applicationId], references: [id])
+  requisition     JobRequisition @relation(fields: [requisitionId], references: [id])
+
+  @@map("interviews")
+  @@schema("recruitment")
+}
+
+model CandidateEvaluation {
+  id              String   @id @default(uuid())
+  applicationId   String
+  evaluatorId     String
+
+  // Evaluation
+  criteria        String   // JSON object with criteria and scores
+  technicalSkills Int      // 1-10
+  softSkills      Int      // 1-10
+  experience      Int      // 1-10
+  education       Int      // 1-10
+
+  overallRating   Int      // 1-10
+  recommendation  EvaluationRecommendation
+  comments        String?
+
+  evaluatedAt     DateTime @default(now())
+
+  application     Application @relation(fields: [applicationId], references: [id])
+
+  @@map("candidate_evaluations")
+  @@schema("recruitment")
+}
+
+model JobOffer {
+  id              String   @id @default(uuid())
+  offerNumber     String   @unique
+  applicationId   String
+
+  // Position Details
+  designation     String
+  departmentId    String
+  reportingTo     String?
+
+  // Compensation
+  ctc             Decimal  @db.Decimal(15, 2)
+  basicSalary     Decimal  @db.Decimal(15, 2)
+  variablePay     Decimal  @db.Decimal(15, 2)
+  benefits        String   // JSON
+
+  // Dates
+  joiningDate     DateTime
+  offerValidTill  DateTime
+
+  // Status
+  status          OfferStatus @default(DRAFT)
+
+  // Response
+  acceptedAt      DateTime?
+  rejectedAt      DateTime?
+  rejectionReason String?
+
+  // Documents
+  offerLetterUrl  String?
+
+  createdAt       DateTime @default(now())
+  createdBy       String
+  updatedAt       DateTime @updatedAt
+
+  application     Application @relation(fields: [applicationId], references: [id])
+
+  @@map("job_offers")
+  @@schema("recruitment")
+}
+
+// Enums
+enum EmploymentType {
+  FULL_TIME
+  PART_TIME
+  CONTRACT
+  INTERNSHIP
+}
+
+enum ExperienceLevel {
+  ENTRY_LEVEL
+  JUNIOR
+  MID_LEVEL
+  SENIOR
+  LEAD
+  PRINCIPAL
+}
+
+enum RequisitionStatus {
+  DRAFT
+  PENDING_APPROVAL
+  APPROVED
+  ACTIVE
+  ON_HOLD
+  FILLED
+  CANCELLED
+}
+
+enum Priority {
+  LOW
+  MEDIUM
+  HIGH
+  URGENT
+}
+
+enum ApplicationStatus {
+  RECEIVED
+  SCREENING
+  SHORTLISTED
+  INTERVIEW_SCHEDULED
+  INTERVIEWING
+  INTERVIEWED
+  SELECTED
+  REJECTED
+  OFFERED
+  OFFER_ACCEPTED
+  OFFER_DECLINED
+  JOINED
+  WITHDRAWN
+}
+
+enum ApplicationSource {
+  CAREER_SITE
+  JOB_PORTAL
+  EMPLOYEE_REFERRAL
+  RECRUITMENT_AGENCY
+  SOCIAL_MEDIA
+  CAMPUS_PLACEMENT
+  WALK_IN
+  OTHER
+}
+
+enum InterviewType {
+  SCREENING
+  TECHNICAL
+  HR
+  MANAGERIAL
+  CULTURAL_FIT
+  FINAL
+}
+
+enum InterviewMode {
+  IN_PERSON
+  VIDEO_CALL
+  PHONE_CALL
+}
+
+enum InterviewStatus {
+  SCHEDULED
+  RESCHEDULED
+  COMPLETED
+  CANCELLED
+  NO_SHOW
+}
+
+enum InterviewRecommendation {
+  STRONG_YES
+  YES
+  MAYBE
+  NO
+  STRONG_NO
+}
+
+enum EvaluationRecommendation {
+  HIGHLY_RECOMMEND
+  RECOMMEND
+  NEUTRAL
+  NOT_RECOMMEND
+}
+
+enum OfferStatus {
+  DRAFT
+  PENDING_APPROVAL
+  APPROVED
+  SENT
+  ACCEPTED
+  DECLINED
+  WITHDRAWN
+}
