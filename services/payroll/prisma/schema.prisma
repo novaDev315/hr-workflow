@@ -1,0 +1,333 @@
+// Payroll Service Schema
+generator client {
+  provider = "prisma-client-js"
+  output   = "../node_modules/.prisma/client"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model SalaryStructure {
+  id                String   @id @default(uuid())
+  employeeId        String
+
+  // Basic salary components
+  basicSalary       Decimal  @db.Decimal(15, 2)
+  hra               Decimal  @db.Decimal(15, 2)
+  conveyanceAllowance Decimal @db.Decimal(15, 2) @default(0)
+  medicalAllowance  Decimal  @db.Decimal(15, 2) @default(0)
+  specialAllowance  Decimal  @db.Decimal(15, 2) @default(0)
+  otherAllowances   Decimal  @db.Decimal(15, 2) @default(0)
+
+  // Calculated fields
+  grossSalary       Decimal  @db.Decimal(15, 2)
+
+  // Deductions
+  pfEmployeeContribution    Decimal  @db.Decimal(15, 2) @default(0)
+  pfEmployerContribution    Decimal  @db.Decimal(15, 2) @default(0)
+  esiEmployeeContribution   Decimal  @db.Decimal(15, 2) @default(0)
+  esiEmployerContribution   Decimal  @db.Decimal(15, 2) @default(0)
+  professionalTax           Decimal  @db.Decimal(15, 2) @default(0)
+  tds                       Decimal  @db.Decimal(15, 2) @default(0)
+
+  netSalary         Decimal  @db.Decimal(15, 2)
+
+  // Validity period
+  effectiveFrom     DateTime
+  effectiveTo       DateTime?
+  isCurrent         Boolean  @default(true)
+
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+  createdBy         String?
+
+  payrollRecords    PayrollRecord[]
+
+  @@map("salary_structures")
+  @@schema("payroll")
+}
+
+model PayrollPeriod {
+  id                String   @id @default(uuid())
+  year              Int
+  month             Int
+  periodCode        String   @unique // e.g., "2024-11"
+
+  startDate         DateTime @db.Date
+  endDate           DateTime @db.Date
+
+  status            PayrollPeriodStatus @default(OPEN)
+
+  // Processing timestamps
+  processedAt       DateTime?
+  processedBy       String?
+  approvedAt        DateTime?
+  approvedBy        String?
+  lockedAt          DateTime?
+  lockedBy          String?
+
+  // Summary
+  totalEmployees    Int      @default(0)
+  totalGrossSalary  Decimal  @db.Decimal(15, 2) @default(0)
+  totalDeductions   Decimal  @db.Decimal(15, 2) @default(0)
+  totalNetSalary    Decimal  @db.Decimal(15, 2) @default(0)
+
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  payrollRecords    PayrollRecord[]
+
+  @@unique([year, month])
+  @@map("payroll_periods")
+  @@schema("payroll")
+}
+
+model PayrollRecord {
+  id                String   @id @default(uuid())
+  payrollPeriodId   String
+  employeeId        String
+  salaryStructureId String
+
+  // Attendance summary
+  totalWorkingDays  Int
+  presentDays       Decimal  @db.Decimal(5, 2)
+  absentDays        Decimal  @db.Decimal(5, 2)
+  leaveDays         Decimal  @db.Decimal(5, 2)
+  paidLeaveDays     Decimal  @db.Decimal(5, 2)
+  unpaidLeaveDays   Decimal  @db.Decimal(5, 2)
+  weekoffs          Int
+  holidays          Int
+
+  // Overtime
+  totalOvertimeHours Decimal @db.Decimal(5, 2) @default(0)
+  overtimeAmount    Decimal  @db.Decimal(15, 2) @default(0)
+
+  // Earnings
+  basicSalaryPaid   Decimal  @db.Decimal(15, 2)
+  hraPaid           Decimal  @db.Decimal(15, 2)
+  conveyancePaid    Decimal  @db.Decimal(15, 2)
+  medicalPaid       Decimal  @db.Decimal(15, 2)
+  specialPaid       Decimal  @db.Decimal(15, 2)
+  otherAllowancesPaid Decimal @db.Decimal(15, 2)
+
+  totalEarnings     Decimal  @db.Decimal(15, 2)
+
+  // Deductions
+  pfEmployee        Decimal  @db.Decimal(15, 2) @default(0)
+  pfEmployer        Decimal  @db.Decimal(15, 2) @default(0)
+  esiEmployee       Decimal  @db.Decimal(15, 2) @default(0)
+  esiEmployer       Decimal  @db.Decimal(15, 2) @default(0)
+  professionalTax   Decimal  @db.Decimal(15, 2) @default(0)
+  tds               Decimal  @db.Decimal(15, 2) @default(0)
+  loanDeduction     Decimal  @db.Decimal(15, 2) @default(0)
+  otherDeductions   Decimal  @db.Decimal(15, 2) @default(0)
+
+  totalDeductions   Decimal  @db.Decimal(15, 2)
+
+  // Final amounts
+  grossSalary       Decimal  @db.Decimal(15, 2)
+  netSalary         Decimal  @db.Decimal(15, 2)
+
+  // HR Override
+  hasOverride       Boolean  @default(false)
+  overrideReason    String?
+  overriddenBy      String?
+  overriddenAt      DateTime?
+
+  // Payslip
+  payslipUrl        String?
+  payslipGeneratedAt DateTime?
+
+  status            PayrollRecordStatus @default(DRAFT)
+
+  // Payment tracking
+  paymentStatus     PaymentStatus @default(PENDING)
+  paymentDate       DateTime?
+  paymentMethod     String?
+  paymentReference  String?
+
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  payrollPeriod     PayrollPeriod @relation(fields: [payrollPeriodId], references: [id])
+  salaryStructure   SalaryStructure @relation(fields: [salaryStructureId], references: [id])
+  adjustments       PayrollAdjustment[]
+  overrideHistory   PayrollOverrideHistory[]
+
+  @@unique([payrollPeriodId, employeeId])
+  @@map("payroll_records")
+  @@schema("payroll")
+}
+
+model PayrollAdjustment {
+  id                String   @id @default(uuid())
+  payrollRecordId   String
+
+  type              AdjustmentType
+  category          AdjustmentCategory
+  description       String
+  amount            Decimal  @db.Decimal(15, 2)
+
+  isRecurring       Boolean  @default(false)
+
+  createdAt         DateTime @default(now())
+  createdBy         String
+
+  payrollRecord     PayrollRecord @relation(fields: [payrollRecordId], references: [id])
+
+  @@map("payroll_adjustments")
+  @@schema("payroll")
+}
+
+model PayrollOverrideHistory {
+  id                String   @id @default(uuid())
+  payrollRecordId   String
+
+  field             String   // Field that was overridden
+  originalValue     String
+  newValue          String
+  reason            String
+
+  overriddenBy      String
+  overriddenAt      DateTime @default(now())
+
+  payrollRecord     PayrollRecord @relation(fields: [payrollRecordId], references: [id])
+
+  @@map("payroll_override_history")
+  @@schema("payroll")
+}
+
+model Loan {
+  id                String   @id @default(uuid())
+  employeeId        String
+
+  loanType          LoanType
+  loanAmount        Decimal  @db.Decimal(15, 2)
+  interestRate      Decimal  @db.Decimal(5, 2) @default(0)
+  emiAmount         Decimal  @db.Decimal(15, 2)
+  tenure            Int      // Number of months
+
+  amountPaid        Decimal  @db.Decimal(15, 2) @default(0)
+  outstandingAmount Decimal  @db.Decimal(15, 2)
+
+  status            LoanStatus @default(ACTIVE)
+
+  startDate         DateTime @db.Date
+  endDate           DateTime @db.Date
+
+  approvedBy        String?
+  approvedAt        DateTime?
+
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  @@map("loans")
+  @@schema("payroll")
+}
+
+model TaxSlab {
+  id                String   @id @default(uuid())
+  financialYear     String   // e.g., "2024-25"
+
+  minIncome         Decimal  @db.Decimal(15, 2)
+  maxIncome         Decimal? @db.Decimal(15, 2)
+  taxRate           Decimal  @db.Decimal(5, 2)
+
+  isActive          Boolean  @default(true)
+
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  @@map("tax_slabs")
+  @@schema("payroll")
+}
+
+model BankTransferBatch {
+  id                String   @id @default(uuid())
+  payrollPeriodId   String
+  batchNumber       String   @unique
+
+  totalRecords      Int
+  totalAmount       Decimal  @db.Decimal(15, 2)
+
+  fileUrl           String?
+  fileGeneratedAt   DateTime?
+
+  status            BatchStatus @default(PENDING)
+
+  uploadedAt        DateTime?
+  uploadedBy        String?
+  processedAt       DateTime?
+
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  @@map("bank_transfer_batches")
+  @@schema("payroll")
+}
+
+// Enums
+enum PayrollPeriodStatus {
+  OPEN
+  PROCESSING
+  PROCESSED
+  APPROVED
+  LOCKED
+  PAID
+}
+
+enum PayrollRecordStatus {
+  DRAFT
+  CALCULATED
+  REVIEWED
+  APPROVED
+  REJECTED
+}
+
+enum PaymentStatus {
+  PENDING
+  PROCESSING
+  PAID
+  FAILED
+  REVERSED
+}
+
+enum AdjustmentType {
+  EARNING
+  DEDUCTION
+}
+
+enum AdjustmentCategory {
+  BONUS
+  INCENTIVE
+  ARREARS
+  ADVANCE
+  FINE
+  LOAN_EMI
+  OTHER
+}
+
+enum LoanType {
+  PERSONAL
+  ADVANCE
+  EMERGENCY
+}
+
+enum LoanStatus {
+  PENDING
+  APPROVED
+  ACTIVE
+  COMPLETED
+  REJECTED
+  CANCELLED
+}
+
+enum BatchStatus {
+  PENDING
+  GENERATED
+  UPLOADED
+  PROCESSED
+  FAILED
+}
