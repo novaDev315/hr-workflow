@@ -1,0 +1,251 @@
+type ShiftDefinition @key(fields: "id") {
+  id: ID!
+  name: String!
+  code: String!
+  startTime: String!
+  endTime: String!
+  breakDuration: Int!
+  workingHours: Float!
+  isNightShift: Boolean!
+  nightDifferential: Float!
+  color: String!
+  isActive: Boolean!
+  createdAt: DateTime!
+  updatedAt: DateTime!
+}
+
+type ShiftSchedule @key(fields: "id") {
+  id: ID!
+  employeeId: ID!
+  shiftId: ID!
+  locationId: ID
+  date: DateTime!
+  status: ScheduleStatus!
+  notes: String
+  createdBy: ID!
+  createdAt: DateTime!
+  updatedAt: DateTime!
+  shift: ShiftDefinition!
+}
+
+enum ScheduleStatus {
+  SCHEDULED
+  COMPLETED
+  ABSENT
+  ON_LEAVE
+  SWAPPED
+  CANCELLED
+}
+
+type ShiftSwapRequest @key(fields: "id") {
+  id: ID!
+  requestNumber: String!
+  requesterId: ID!
+  requesterScheduleId: ID!
+  targetEmployeeId: ID!
+  targetScheduleId: ID!
+  reason: String!
+  status: SwapStatus!
+  targetResponse: String
+  targetRespondedAt: DateTime
+  approverResponse: String
+  approvedBy: ID
+  approvedAt: DateTime
+  createdAt: DateTime!
+  updatedAt: DateTime!
+}
+
+enum SwapStatus {
+  PENDING_TARGET
+  TARGET_ACCEPTED
+  TARGET_REJECTED
+  PENDING_APPROVAL
+  APPROVED
+  REJECTED
+  CANCELLED
+}
+
+type RotationPattern @key(fields: "id") {
+  id: ID!
+  name: String!
+  code: String!
+  description: String
+  cycleDays: Int!
+  isActive: Boolean!
+  shifts: [RotationPatternShift!]!
+  createdAt: DateTime!
+  updatedAt: DateTime!
+}
+
+type RotationPatternShift {
+  id: ID!
+  dayOfCycle: Int!
+  isOffDay: Boolean!
+  shift: ShiftDefinition!
+}
+
+type RotationAssignment @key(fields: "id") {
+  id: ID!
+  employeeId: ID!
+  patternId: ID!
+  startDate: DateTime!
+  endDate: DateTime
+  cycleStartDay: Int!
+  isActive: Boolean!
+  pattern: RotationPattern!
+  createdAt: DateTime!
+  updatedAt: DateTime!
+}
+
+type ShiftOverride @key(fields: "id") {
+  id: ID!
+  employeeId: ID!
+  date: DateTime!
+  originalShiftId: ID
+  newShiftId: ID
+  reason: String!
+  status: OverrideStatus!
+  approvedBy: ID
+  approvedAt: DateTime
+  createdAt: DateTime!
+  updatedAt: DateTime!
+}
+
+enum OverrideStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+type BulkScheduleResult {
+  created: [ShiftSchedule!]!
+  errors: [BulkScheduleError!]!
+}
+
+type BulkScheduleError {
+  employeeId: ID!
+  date: DateTime!
+  error: String!
+}
+
+type ShiftStatistics {
+  totalScheduled: Int!
+  byShift: JSON!
+  byStatus: JSON!
+  nightShifts: Int!
+  dayShifts: Int!
+}
+
+type NightDifferentialResult {
+  nightShiftsWorked: Int!
+  totalNightHours: Float!
+  averageDifferentialPercentage: Float!
+}
+
+# Inputs
+input CreateShiftDefinitionInput {
+  name: String!
+  code: String!
+  startTime: String!
+  endTime: String!
+  breakDuration: Int
+  workingHours: Float
+  isNightShift: Boolean
+  nightDifferential: Float
+  color: String
+}
+
+input UpdateShiftDefinitionInput {
+  name: String
+  startTime: String
+  endTime: String
+  breakDuration: Int
+  workingHours: Float
+  isNightShift: Boolean
+  nightDifferential: Float
+  color: String
+  isActive: Boolean
+}
+
+input ScheduleShiftInput {
+  employeeId: ID!
+  shiftId: ID!
+  date: String!
+  locationId: ID
+  notes: String
+}
+
+input BulkScheduleInput {
+  employeeId: ID!
+  shiftId: ID!
+  date: String!
+  locationId: ID
+}
+
+input CreateSwapRequestInput {
+  requesterId: ID!
+  requesterScheduleId: ID!
+  targetEmployeeId: ID!
+  targetScheduleId: ID!
+  reason: String!
+}
+
+input CreateRotationPatternInput {
+  name: String!
+  code: String!
+  description: String
+  cycleDays: Int!
+  shifts: [RotationShiftInput!]!
+}
+
+input RotationShiftInput {
+  dayOfCycle: Int!
+  shiftId: ID!
+  isOffDay: Boolean
+}
+
+input AssignRotationInput {
+  employeeId: ID!
+  patternId: ID!
+  startDate: String!
+  endDate: String
+  cycleStartDay: Int
+}
+
+input CreateShiftOverrideInput {
+  employeeId: ID!
+  date: String!
+  originalShiftId: ID
+  newShiftId: ID
+  reason: String!
+}
+
+scalar DateTime
+scalar JSON
+
+type Query {
+  shiftDefinitions(includeInactive: Boolean): [ShiftDefinition!]!
+  shiftDefinition(id: ID!): ShiftDefinition
+  employeeSchedule(employeeId: ID!, startDate: String!, endDate: String!): [ShiftSchedule!]!
+  locationSchedule(locationId: ID!, date: String!): [ShiftSchedule!]!
+  swapRequests(employeeId: ID, status: SwapStatus, asTarget: Boolean): [ShiftSwapRequest!]!
+  rotationPatterns: [RotationPattern!]!
+  shiftStatistics(startDate: String!, endDate: String!, locationId: ID): ShiftStatistics!
+  nightDifferential(employeeId: ID!, month: Int!, year: Int!): NightDifferentialResult!
+}
+
+type Mutation {
+  createShiftDefinition(input: CreateShiftDefinitionInput!): ShiftDefinition!
+  updateShiftDefinition(id: ID!, input: UpdateShiftDefinitionInput!): ShiftDefinition!
+  scheduleShift(input: ScheduleShiftInput!, createdBy: ID!): ShiftSchedule!
+  bulkScheduleShifts(schedules: [BulkScheduleInput!]!, createdBy: ID!): BulkScheduleResult!
+  updateScheduleStatus(scheduleId: ID!, status: ScheduleStatus!): ShiftSchedule!
+  createSwapRequest(input: CreateSwapRequestInput!): ShiftSwapRequest!
+  respondToSwapRequest(requestId: ID!, targetEmployeeId: ID!, accept: Boolean!, response: String): ShiftSwapRequest!
+  approveSwapRequest(requestId: ID!, approverId: ID!, approve: Boolean!, response: String): ShiftSwapRequest!
+  createRotationPattern(input: CreateRotationPatternInput!): RotationPattern!
+  assignRotationToEmployee(input: AssignRotationInput!): RotationAssignment!
+  generateSchedulesFromRotation(employeeId: ID!, startDate: String!, endDate: String!, createdBy: ID!): [ShiftSchedule!]!
+  createShiftOverride(input: CreateShiftOverrideInput!): ShiftOverride!
+  approveShiftOverride(overrideId: ID!, approverId: ID!, approve: Boolean!): ShiftOverride!
+}

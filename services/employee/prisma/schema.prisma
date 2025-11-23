@@ -269,3 +269,323 @@ enum DocumentType {
   MEDICAL_CERTIFICATE
   OTHER
 }
+
+// ==================== ONBOARDING/OFFBOARDING ====================
+
+// Onboarding Template - Defines standard onboarding process
+model OnboardingTemplate {
+  id          String   @id @default(uuid())
+  name        String   // "Standard Onboarding", "Executive Onboarding"
+  description String?
+  departmentId String? // null means all departments
+  designationLevel Int? // null means all levels
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  tasks       OnboardingTaskTemplate[]
+  processes   OnboardingProcess[]
+
+  @@map("onboarding_templates")
+  @@schema("employee")
+}
+
+// Onboarding Task Template - Tasks within a template
+model OnboardingTaskTemplate {
+  id              String   @id @default(uuid())
+  templateId      String
+  title           String   // "Complete personal details form"
+  description     String?
+  category        TaskCategory
+  assigneeType    AssigneeType // WHO should complete this
+  dueInDays       Int      // Days from start date
+  isRequired      Boolean  @default(true)
+  orderIndex      Int      @default(0)
+  requiresDocument Boolean @default(false)
+  documentType    DocumentType?
+
+  template        OnboardingTemplate @relation(fields: [templateId], references: [id], onDelete: Cascade)
+
+  @@map("onboarding_task_templates")
+  @@schema("employee")
+}
+
+enum TaskCategory {
+  DOCUMENTATION    // Document submission
+  IT_SETUP         // Laptop, email, access
+  TRAINING         // Orientation, training
+  HR_FORMALITIES   // Forms, policies
+  TEAM_INTRO       // Meet team, buddy assignment
+  COMPLIANCE       // Background check, agreements
+  ASSET_ASSIGNMENT // Equipment, ID card
+  OTHER
+}
+
+enum AssigneeType {
+  EMPLOYEE       // New joiner completes
+  HR             // HR team completes
+  IT             // IT team completes
+  MANAGER        // Reporting manager completes
+  ADMIN          // Admin team completes
+  FINANCE        // Finance team completes
+}
+
+// Onboarding Process - Instance of onboarding for an employee
+model OnboardingProcess {
+  id              String   @id @default(uuid())
+  employeeId      String   @unique
+  templateId      String
+  startDate       DateTime @default(now())
+  targetEndDate   DateTime
+  actualEndDate   DateTime?
+  status          OnboardingStatus @default(NOT_STARTED)
+  progress        Int      @default(0) // Percentage
+  hrCoordinatorId String?  // HR person managing this onboarding
+  buddyId         String?  // Assigned buddy/mentor
+  notes           String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  template        OnboardingTemplate @relation(fields: [templateId], references: [id])
+  tasks           OnboardingTask[]
+
+  @@map("onboarding_processes")
+  @@schema("employee")
+}
+
+enum OnboardingStatus {
+  NOT_STARTED
+  IN_PROGRESS
+  COMPLETED
+  CANCELLED
+  ON_HOLD
+}
+
+// Onboarding Task - Individual task instance
+model OnboardingTask {
+  id              String   @id @default(uuid())
+  processId       String
+  title           String
+  description     String?
+  category        TaskCategory
+  assigneeType    AssigneeType
+  assigneeId      String?  // Specific person assigned
+  dueDate         DateTime
+  isRequired      Boolean  @default(true)
+  status          TaskStatus @default(PENDING)
+  completedAt     DateTime?
+  completedBy     String?
+  notes           String?
+  documentUrl     String?  // If task requires document upload
+  orderIndex      Int      @default(0)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  process         OnboardingProcess @relation(fields: [processId], references: [id], onDelete: Cascade)
+
+  @@map("onboarding_tasks")
+  @@schema("employee")
+  @@index([processId])
+  @@index([assigneeId])
+  @@index([status])
+}
+
+enum TaskStatus {
+  PENDING
+  IN_PROGRESS
+  COMPLETED
+  SKIPPED
+  BLOCKED
+}
+
+// ==================== OFFBOARDING ====================
+
+// Offboarding Template
+model OffboardingTemplate {
+  id          String   @id @default(uuid())
+  name        String
+  description String?
+  exitType    ExitType? // null means all exit types
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  tasks       OffboardingTaskTemplate[]
+  processes   OffboardingProcess[]
+
+  @@map("offboarding_templates")
+  @@schema("employee")
+}
+
+enum ExitType {
+  RESIGNATION
+  TERMINATION
+  RETIREMENT
+  CONTRACT_END
+  LAYOFF
+}
+
+// Offboarding Task Template
+model OffboardingTaskTemplate {
+  id              String   @id @default(uuid())
+  templateId      String
+  title           String
+  description     String?
+  category        OffboardingCategory
+  assigneeType    AssigneeType
+  dueInDays       Int      // Days before/after last working day (negative = before)
+  isRequired      Boolean  @default(true)
+  orderIndex      Int      @default(0)
+
+  template        OffboardingTemplate @relation(fields: [templateId], references: [id], onDelete: Cascade)
+
+  @@map("offboarding_task_templates")
+  @@schema("employee")
+}
+
+enum OffboardingCategory {
+  RESIGNATION_ACCEPTANCE
+  KNOWLEDGE_TRANSFER
+  EXIT_INTERVIEW
+  ASSET_RETURN
+  ACCESS_REVOCATION
+  FINAL_SETTLEMENT
+  DOCUMENTATION
+  CLEARANCE
+  OTHER
+}
+
+// Offboarding Process - Instance for an employee
+model OffboardingProcess {
+  id                  String   @id @default(uuid())
+  employeeId          String   @unique
+  templateId          String
+  exitType            ExitType
+  resignationDate     DateTime? // Date resignation was submitted
+  lastWorkingDate     DateTime
+  exitInterviewDate   DateTime?
+  exitInterviewNotes  String?
+  exitReason          String?
+  status              OffboardingStatus @default(INITIATED)
+  progress            Int      @default(0)
+  hrCoordinatorId     String?
+  clearanceStatus     ClearanceStatus @default(PENDING)
+  fullAndFinalStatus  SettlementStatus @default(NOT_STARTED)
+  fullAndFinalAmount  Decimal? @db.Decimal(15, 2)
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  template            OffboardingTemplate @relation(fields: [templateId], references: [id])
+  tasks               OffboardingTask[]
+  assetReturns        AssetReturn[]
+
+  @@map("offboarding_processes")
+  @@schema("employee")
+}
+
+enum OffboardingStatus {
+  INITIATED
+  IN_PROGRESS
+  CLEARANCE_PENDING
+  SETTLEMENT_PENDING
+  COMPLETED
+  CANCELLED
+}
+
+enum ClearanceStatus {
+  PENDING
+  HR_CLEARED
+  IT_CLEARED
+  FINANCE_CLEARED
+  ADMIN_CLEARED
+  ALL_CLEARED
+}
+
+enum SettlementStatus {
+  NOT_STARTED
+  CALCULATING
+  PENDING_APPROVAL
+  APPROVED
+  PROCESSED
+  PAID
+}
+
+// Offboarding Task
+model OffboardingTask {
+  id              String   @id @default(uuid())
+  processId       String
+  title           String
+  description     String?
+  category        OffboardingCategory
+  assigneeType    AssigneeType
+  assigneeId      String?
+  dueDate         DateTime
+  isRequired      Boolean  @default(true)
+  status          TaskStatus @default(PENDING)
+  completedAt     DateTime?
+  completedBy     String?
+  notes           String?
+  orderIndex      Int      @default(0)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  process         OffboardingProcess @relation(fields: [processId], references: [id], onDelete: Cascade)
+
+  @@map("offboarding_tasks")
+  @@schema("employee")
+  @@index([processId])
+  @@index([assigneeId])
+}
+
+// Asset Return Tracking
+model AssetReturn {
+  id              String   @id @default(uuid())
+  processId       String
+  assetType       AssetType
+  assetName       String   // "MacBook Pro 14", "ID Card"
+  assetId         String?  // Asset tag/serial number
+  assignedDate    DateTime?
+  returnedDate    DateTime?
+  returnedTo      String?  // Person who received the asset
+  condition       AssetCondition?
+  notes           String?
+  status          ReturnStatus @default(PENDING)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  process         OffboardingProcess @relation(fields: [processId], references: [id], onDelete: Cascade)
+
+  @@map("asset_returns")
+  @@schema("employee")
+  @@index([processId])
+}
+
+enum AssetType {
+  LAPTOP
+  MOBILE
+  ID_CARD
+  ACCESS_CARD
+  PARKING_PASS
+  COMPANY_CAR
+  CREDIT_CARD
+  UNIFORM
+  KEYS
+  OTHER
+}
+
+enum AssetCondition {
+  EXCELLENT
+  GOOD
+  FAIR
+  DAMAGED
+  LOST
+}
+
+enum ReturnStatus {
+  PENDING
+  RETURNED
+  DAMAGED
+  LOST
+  WAIVED
+}
+

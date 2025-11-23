@@ -1,0 +1,169 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// Shift Definition - Templates for shifts
+model ShiftDefinition {
+  id                String   @id @default(uuid())
+  name              String   // "Morning Shift", "Night Shift", etc.
+  code              String   @unique // "MORNING", "NIGHT", "GENERAL"
+  startTime         String   // "09:00"
+  endTime           String   // "18:00"
+  breakDuration     Int      @default(60) // minutes
+  workingHours      Float    @default(8)
+  isNightShift      Boolean  @default(false)
+  nightDifferential Float    @default(0) // percentage bonus for night shift
+  color             String   @default("#3B82F6") // for calendar display
+  isActive          Boolean  @default(true)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  schedules         ShiftSchedule[]
+  rotationPatterns  RotationPatternShift[]
+
+  @@map("shift_definitions")
+}
+
+// Shift Schedule - Assigns shifts to employees
+model ShiftSchedule {
+  id              String          @id @default(uuid())
+  employeeId      String
+  shiftId         String
+  locationId      String?
+  date            DateTime        @db.Date
+  status          ScheduleStatus  @default(SCHEDULED)
+  notes           String?
+  createdBy       String
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+
+  shift           ShiftDefinition @relation(fields: [shiftId], references: [id])
+
+  @@unique([employeeId, date])
+  @@index([employeeId])
+  @@index([date])
+  @@index([locationId])
+  @@map("shift_schedules")
+}
+
+enum ScheduleStatus {
+  SCHEDULED
+  COMPLETED
+  ABSENT
+  ON_LEAVE
+  SWAPPED
+  CANCELLED
+}
+
+// Shift Swap Request - Employees can request to swap shifts
+model ShiftSwapRequest {
+  id                String          @id @default(uuid())
+  requestNumber     String          @unique // SWAP202400001
+  requesterId       String          // Employee requesting the swap
+  requesterScheduleId String        // The schedule they want to swap from
+  targetEmployeeId  String          // Employee they want to swap with
+  targetScheduleId  String          // The schedule they want to swap to
+  reason            String
+  status            SwapStatus      @default(PENDING_TARGET)
+  targetResponse    String?         // Target employee's response
+  targetRespondedAt DateTime?
+  approverResponse  String?         // Supervisor's response
+  approvedBy        String?
+  approvedAt        DateTime?
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+
+  @@index([requesterId])
+  @@index([targetEmployeeId])
+  @@index([status])
+  @@map("shift_swap_requests")
+}
+
+enum SwapStatus {
+  PENDING_TARGET    // Waiting for target employee to accept
+  TARGET_ACCEPTED   // Target accepted, waiting for supervisor
+  TARGET_REJECTED   // Target rejected
+  PENDING_APPROVAL  // Waiting for supervisor approval
+  APPROVED          // Fully approved, swap executed
+  REJECTED          // Supervisor rejected
+  CANCELLED         // Requester cancelled
+}
+
+// Rotation Pattern - Define recurring shift patterns
+model RotationPattern {
+  id              String   @id @default(uuid())
+  name            String   // "Weekly Rotation A", "Bi-weekly Night"
+  code            String   @unique
+  description     String?
+  cycleDays       Int      // Number of days in the cycle (7, 14, 28, etc.)
+  isActive        Boolean  @default(true)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  shifts          RotationPatternShift[]
+  assignments     RotationAssignment[]
+
+  @@map("rotation_patterns")
+}
+
+// Rotation Pattern Shifts - Which shift on which day of the cycle
+model RotationPatternShift {
+  id              String   @id @default(uuid())
+  patternId       String
+  shiftId         String
+  dayOfCycle      Int      // Day 1, 2, 3... of the rotation cycle
+  isOffDay        Boolean  @default(false)
+
+  pattern         RotationPattern @relation(fields: [patternId], references: [id], onDelete: Cascade)
+  shift           ShiftDefinition @relation(fields: [shiftId], references: [id])
+
+  @@unique([patternId, dayOfCycle])
+  @@map("rotation_pattern_shifts")
+}
+
+// Rotation Assignment - Assign rotation patterns to employees
+model RotationAssignment {
+  id              String   @id @default(uuid())
+  employeeId      String
+  patternId       String
+  startDate       DateTime @db.Date
+  endDate         DateTime? @db.Date
+  cycleStartDay   Int      @default(1) // Which day of cycle to start on
+  isActive        Boolean  @default(true)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  pattern         RotationPattern @relation(fields: [patternId], references: [id])
+
+  @@index([employeeId])
+  @@map("rotation_assignments")
+}
+
+// Shift Override - For exceptions/overrides to scheduled shifts
+model ShiftOverride {
+  id              String   @id @default(uuid())
+  employeeId      String
+  date            DateTime @db.Date
+  originalShiftId String?
+  newShiftId      String?  // null means day off
+  reason          String
+  approvedBy      String?
+  approvedAt      DateTime?
+  status          OverrideStatus @default(PENDING)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@unique([employeeId, date])
+  @@map("shift_overrides")
+}
+
+enum OverrideStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
