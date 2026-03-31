@@ -54,12 +54,6 @@ export default function LoginScreen() {
         throw new Error('Login response was empty.')
       }
 
-      if (!payload.user.employeeId) {
-        throw new Error(
-          'This account is not linked to an employee profile yet. Use the same email on the employee record to enable mobile attendance.'
-        )
-      }
-
       await saveSession({
         token: payload.accessToken,
         user: payload.user,
@@ -78,7 +72,7 @@ export default function LoginScreen() {
     <View style={styles.container}>
       <View style={styles.card}>
         <Text style={styles.title}>HRFlow Pro</Text>
-        <Text style={styles.subtitle}>Employee Portal</Text>
+        <Text style={styles.subtitle}>Mobile Portal</Text>
 
         <View style={styles.form}>
           <TextInput

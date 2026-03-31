@@ -10,9 +10,21 @@ import { PayrollPage } from './pages/PayrollPage'
 import { RecruitmentPage } from './pages/RecruitmentPage'
 import { ReportsPage } from './pages/ReportsPage'
 import { PolicyDocumentsPage } from './pages/PolicyDocumentsPage'
+import {
+  clearAdminSession,
+  hasAdminPanelAccess,
+  readStoredAdminUser,
+} from './lib/auth-session'
 
 function App() {
-  const isAuthenticated = !!localStorage.getItem('auth_token')
+  const token = localStorage.getItem('auth_token')
+  const storedUser = readStoredAdminUser()
+  const isAuthenticated = Boolean(token && storedUser)
+  const hasAccess = storedUser ? hasAdminPanelAccess(storedUser.roles) : false
+
+  if (isAuthenticated && !hasAccess) {
+    clearAdminSession()
+  }
 
   return (
     <Routes>
@@ -20,7 +32,7 @@ function App() {
       <Route
         path="/"
         element={
-          isAuthenticated ? (
+          isAuthenticated && hasAccess ? (
             <DashboardLayout />
           ) : (
             <Navigate to="/login" replace />

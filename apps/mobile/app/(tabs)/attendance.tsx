@@ -49,7 +49,13 @@ export default function AttendanceScreen() {
       </View>
 
       <View style={styles.content}>
-        {loading ? (
+        {!employeeId ? (
+          <View style={styles.recordCard}>
+            <Text style={styles.timeValue}>
+              This account can sign in on mobile, but attendance history is only available for linked employee profiles.
+            </Text>
+          </View>
+        ) : loading ? (
           <View style={styles.recordCard}>
             <Text style={styles.timeValue}>Loading attendance history...</Text>
           </View>

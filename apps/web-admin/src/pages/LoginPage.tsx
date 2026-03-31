@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { clearAdminSession, hasAdminPanelAccess } from '@/lib/auth-session'
 
 const AUTH_BOOTSTRAP_STATUS = gql`
   query AuthBootstrapStatus {
@@ -118,6 +119,13 @@ export function LoginPage() {
 
       if (!payload?.accessToken) {
         throw new Error('Authentication response did not include an access token')
+      }
+
+      if (!bootstrapRequired && !hasAdminPanelAccess(payload.user.roles)) {
+        clearAdminSession()
+        throw new Error(
+          'This account can use the mobile app, but only ADMIN, HR_ADMIN, MANAGER, and SUPERVISOR accounts can access the admin panel.'
+        )
       }
 
       persistSession(payload)

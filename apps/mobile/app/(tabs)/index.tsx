@@ -224,6 +224,11 @@ export default function HomeScreen() {
               Location: {selectedAssignment.location.name}
             </Text>
           )}
+          {!employeeId && (
+            <Text style={styles.timeText}>
+              Attendance actions are only available for accounts linked to an employee profile.
+            </Text>
+          )}
         </View>
 
         {employeeLocations.length > 1 && (
