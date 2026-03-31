@@ -10,6 +10,7 @@ import { OrgReferenceModule } from './org-reference/org-reference.module';
 import { EmployeeModule } from './employee/employee.module';
 import { LocationModule } from './location/location.module';
 import { AttendanceModule } from './attendance/attendance.module';
+import { LeaveModule } from './leave/leave.module';
 
 @Module({
   imports: [
@@ -35,6 +36,7 @@ import { AttendanceModule } from './attendance/attendance.module';
     EmployeeModule,
     LocationModule,
     AttendanceModule,
+    LeaveModule,
   ],
 })
 export class AppModule {}

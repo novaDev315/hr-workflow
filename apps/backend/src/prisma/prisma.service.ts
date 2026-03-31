@@ -214,6 +214,36 @@ export class PrismaService implements OnModuleInit, OnModuleDestroy {
         )
       `,
       `
+        CREATE TABLE IF NOT EXISTS leave_types (
+          id TEXT PRIMARY KEY,
+          code TEXT NOT NULL UNIQUE,
+          name TEXT NOT NULL UNIQUE,
+          default_days DOUBLE PRECISION NOT NULL,
+          description TEXT,
+          is_active BOOLEAN NOT NULL DEFAULT TRUE,
+          created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )
+      `,
+      `
+        CREATE TABLE IF NOT EXISTS leave_requests (
+          id TEXT PRIMARY KEY,
+          employee_id TEXT NOT NULL REFERENCES employees(id) ON DELETE CASCADE,
+          leave_type_id TEXT NOT NULL REFERENCES leave_types(id) ON DELETE RESTRICT,
+          start_date DATE NOT NULL,
+          end_date DATE NOT NULL,
+          total_days DOUBLE PRECISION NOT NULL,
+          reason TEXT NOT NULL,
+          status TEXT NOT NULL DEFAULT 'PENDING',
+          requested_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          decided_at TIMESTAMPTZ,
+          decided_by_user_id TEXT REFERENCES users(id) ON DELETE SET NULL,
+          decision_notes TEXT,
+          created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )
+      `,
+      `
         CREATE INDEX IF NOT EXISTS idx_user_role_assignments_user_id
         ON user_role_assignments(user_id)
       `,
@@ -271,6 +301,26 @@ export class PrismaService implements OnModuleInit, OnModuleDestroy {
       `
         CREATE INDEX IF NOT EXISTS idx_attendance_records_attendance_date
         ON attendance_records(attendance_date)
+      `,
+      `
+        CREATE INDEX IF NOT EXISTS idx_leave_requests_employee_id
+        ON leave_requests(employee_id)
+      `,
+      `
+        CREATE INDEX IF NOT EXISTS idx_leave_requests_leave_type_id
+        ON leave_requests(leave_type_id)
+      `,
+      `
+        CREATE INDEX IF NOT EXISTS idx_leave_requests_status
+        ON leave_requests(status)
+      `,
+      `
+        INSERT INTO leave_types (id, code, name, default_days, description, is_active)
+        VALUES
+          ('seed-leave-casual', 'CASUAL', 'Casual Leave', 12, 'General personal leave allowance', TRUE),
+          ('seed-leave-sick', 'SICK', 'Sick Leave', 12, 'Leave allowance for illness and recovery', TRUE),
+          ('seed-leave-earned', 'EARNED', 'Earned Leave', 18, 'Accrued annual leave allowance', TRUE)
+        ON CONFLICT (code) DO NOTHING
       `,
     ];
 
