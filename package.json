@@ -3,6 +3,7 @@
   "version": "2.0.0",
   "description": "HRFlow Pro - Comprehensive HR Management System",
   "private": true,
+  "packageManager": "bun@1.3.9",
   "workspaces": [
     "apps/*",
     "services/*",
@@ -23,9 +24,14 @@
     "docker:logs": "docker compose logs -f",
     "docker:build": "docker compose build",
     "docker:restart": "docker compose restart",
-    "migrate:up": "npm run migrate:up --workspace=apps/api-gateway",
-    "migrate:down": "npm run migrate:down --workspace=apps/api-gateway",
-    "migrate:status": "npm run migrate:status --workspace=apps/api-gateway",
+    "dev:backend": "bun run --cwd apps/backend dev",
+    "build:backend": "bun run --cwd apps/backend build",
+    "test:backend": "bun run --cwd apps/backend test",
+    "prisma:generate:backend": "bun run --cwd apps/backend prisma:generate",
+    "prisma:migrate:backend": "bun run --cwd apps/backend prisma:migrate",
+    "migrate:up": "bun run prisma:migrate:backend",
+    "migrate:down": "echo 'Prisma down migrations are not supported. Use bunx prisma migrate reset --schema apps/backend/prisma/schema.prisma for local-only resets.'",
+    "migrate:status": "bunx prisma migrate status --schema apps/backend/prisma/schema.prisma",
     "prisma:generate": "turbo run prisma:generate",
     "prisma:migrate": "turbo run prisma:migrate"
   },
@@ -42,7 +48,7 @@
     "@playwright/test": "^1.40.1"
   },
   "engines": {
-    "node": ">=18.0.0",
-    "npm": ">=9.0.0"
+    "bun": ">=1.3.9",
+    "node": ">=18.0.0"
   }
 }

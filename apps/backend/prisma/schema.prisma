@@ -1,0 +1,105 @@
+generator client {
+  provider   = "prisma-client-js"
+  engineType = "client"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum SystemRoleKey {
+  ADMIN
+  HR_ADMIN
+  MANAGER
+  SUPERVISOR
+  EMPLOYEE
+}
+
+model User {
+  id              String               @id @default(uuid())
+  email           String               @unique
+  passwordHash    String
+  firstName       String
+  lastName        String
+  isActive        Boolean              @default(true)
+  createdAt       DateTime             @default(now())
+  updatedAt       DateTime             @updatedAt
+  roleAssignments UserRoleAssignment[]
+
+  @@map("users")
+}
+
+model Role {
+  id              String               @id @default(uuid())
+  key             SystemRoleKey        @unique
+  name            String               @unique
+  description     String?
+  isSystem        Boolean              @default(true)
+  createdAt       DateTime             @default(now())
+  updatedAt       DateTime             @updatedAt
+  userAssignments UserRoleAssignment[]
+
+  @@map("roles")
+}
+
+model UserRoleAssignment {
+  id         String   @id @default(uuid())
+  userId     String
+  roleId     String
+  assignedAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role Role @relation(fields: [roleId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, roleId])
+  @@index([roleId])
+  @@map("user_role_assignments")
+}
+
+model CompanySettings {
+  id           String   @id @default(uuid())
+  singletonKey String   @unique @default("default")
+  companyName  String
+  legalName    String?
+  timezone     String   @default("Asia/Dubai")
+  currencyCode String   @default("AED")
+  countryCode  String   @default("AE")
+  supportEmail String?
+  supportPhone String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@map("company_settings")
+}
+
+model Department {
+  id           String        @id @default(uuid())
+  name         String        @unique
+  code         String        @unique
+  description  String?
+  isActive     Boolean       @default(true)
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+  designations Designation[]
+
+  @@map("departments")
+}
+
+model Designation {
+  id          String     @id @default(uuid())
+  title       String
+  code        String     @unique
+  departmentId String
+  level       Int        @default(1)
+  description String?
+  isActive    Boolean    @default(true)
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+
+  department Department @relation(fields: [departmentId], references: [id], onDelete: Restrict)
+
+  @@unique([departmentId, title])
+  @@index([departmentId])
+  @@map("designations")
+}

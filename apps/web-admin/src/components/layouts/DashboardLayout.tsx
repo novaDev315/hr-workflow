@@ -6,7 +6,7 @@ import {
   LayoutDashboard,
   LogOut,
   Briefcase,
-  UserSearch,
+  Search,
   FileText,
   BarChart3,
   BookOpen,
@@ -25,7 +25,7 @@ export function DashboardLayout() {
   const navigation = [
     { name: 'Dashboard', href: '/', icon: LayoutDashboard },
     { name: 'Employees', href: '/employees', icon: Users },
-    { name: 'Directory', href: '/directory', icon: UserSearch },
+    { name: 'Directory', href: '/directory', icon: Search },
     { name: 'Attendance', href: '/attendance', icon: Briefcase },
     { name: 'Leave', href: '/leave', icon: Calendar },
     { name: 'Payroll', href: '/payroll', icon: DollarSign },

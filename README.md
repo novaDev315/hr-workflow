@@ -169,6 +169,7 @@ npm run migrate:status
 - [Product Requirements](./PRD.md)
 - [Development Plan](./docs/DEVELOPMENT_PLAN.md)
 - [Implementation Decisions](./docs/IMPLEMENTATION_DECISIONS.md)
+- [Modular Monolith Rebuild Plan](./docs/MODULAR_MONOLITH_REBUILD_PLAN.md)
 - [Deployment Guide](./docs/DEPLOYMENT.md)
 
 ## Key Features
