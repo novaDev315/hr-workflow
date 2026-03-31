@@ -29,6 +29,13 @@ interface RoleRow {
 }
 
 type UserWithRoles = UserRow & {
+  employeeProfile?: {
+    employeeId: string | null;
+    employeeNumber: string | null;
+    departmentName: string | null;
+    designationTitle: string | null;
+    employeeStatus: string | null;
+  };
   roleAssignments: Array<{
     role: RoleRow;
   }>;
@@ -218,6 +225,11 @@ export class AuthService {
       fullName: `${user.firstName} ${user.lastName}`.trim(),
       isActive: user.isActive,
       roles: user.roleAssignments.map((assignment) => assignment.role.key),
+      employeeId: user.employeeProfile?.employeeId ?? null,
+      employeeNumber: user.employeeProfile?.employeeNumber ?? null,
+      departmentName: user.employeeProfile?.departmentName ?? null,
+      designationTitle: user.employeeProfile?.designationTitle ?? null,
+      employeeStatus: user.employeeProfile?.employeeStatus ?? null,
     };
   }
 
@@ -282,8 +294,33 @@ export class AuthService {
       client,
     );
 
+    const employeeProfile = await this.prisma.one<{
+      employeeId: string | null;
+      employeeNumber: string | null;
+      departmentName: string | null;
+      designationTitle: string | null;
+      employeeStatus: string | null;
+    }>(
+      `
+        SELECT
+          e.id AS "employeeId",
+          e.employee_number AS "employeeNumber",
+          d.name AS "departmentName",
+          des.title AS "designationTitle",
+          e.status AS "employeeStatus"
+        FROM employees e
+        INNER JOIN departments d ON d.id = e.department_id
+        INNER JOIN designations des ON des.id = e.designation_id
+        WHERE LOWER(e.email) = LOWER($1)
+        LIMIT 1
+      `,
+      [user.email],
+      client,
+    );
+
     return {
       ...user,
+      employeeProfile: employeeProfile ?? undefined,
       roleAssignments: roles.map((role) => ({
         role,
       })),

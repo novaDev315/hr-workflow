@@ -1,14 +1,45 @@
-import { View, Text, StyleSheet, ScrollView } from 'react-native';
-import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { gql, useQuery } from '@apollo/client'
+import { View, Text, StyleSheet, ScrollView } from 'react-native'
+import { MaterialCommunityIcons } from '@expo/vector-icons'
+import { useAuthSession } from '../../src/lib/auth-session'
+
+const ME_QUERY = gql`
+  query MobileAttendanceMe {
+    me {
+      employeeId
+    }
+  }
+`
+
+const ATTENDANCE_HISTORY_QUERY = gql`
+  query MobileAttendanceHistory($filter: AttendanceFilterInput) {
+    attendanceRecords(filter: $filter) {
+      id
+      attendanceDate
+      clockInAt
+      clockOutAt
+      totalHours
+      status
+    }
+  }
+`
 
 export default function AttendanceScreen() {
-  const attendanceHistory = [
-    { date: '2024-11-16', clockIn: '09:00 AM', clockOut: '06:00 PM', status: 'Present', hours: '9h' },
-    { date: '2024-11-15', clockIn: '09:15 AM', clockOut: '06:10 PM', status: 'Present', hours: '8.9h' },
-    { date: '2024-11-14', clockIn: '09:00 AM', clockOut: '06:00 PM', status: 'Present', hours: '9h' },
-    { date: '2024-11-13', clockIn: '09:05 AM', clockOut: '06:05 PM', status: 'Present', hours: '9h' },
-    { date: '2024-11-12', clockIn: '-', clockOut: '-', status: 'Leave', hours: '-' },
-  ];
+  const storedUser = useAuthSession((state) => state.user)
+  const { data: meData } = useQuery(ME_QUERY)
+  const employeeId = meData?.me?.employeeId ?? storedUser?.employeeId ?? null
+  const { data, loading } = useQuery(ATTENDANCE_HISTORY_QUERY, {
+    variables: {
+      filter: employeeId
+        ? {
+            employeeId,
+          }
+        : null,
+    },
+    skip: !employeeId,
+  })
+
+  const attendanceHistory = data?.attendanceRecords ?? []
 
   return (
     <ScrollView style={styles.container}>
@@ -18,17 +49,37 @@ export default function AttendanceScreen() {
       </View>
 
       <View style={styles.content}>
-        {attendanceHistory.map((record, index) => (
-          <View key={index} style={styles.recordCard}>
+        {loading ? (
+          <View style={styles.recordCard}>
+            <Text style={styles.timeValue}>Loading attendance history...</Text>
+          </View>
+        ) : attendanceHistory.length === 0 ? (
+          <View style={styles.recordCard}>
+            <Text style={styles.timeValue}>No attendance history found yet.</Text>
+          </View>
+        ) : (
+          attendanceHistory.map((record: {
+            id: string
+            attendanceDate: string
+            clockInAt?: string | null
+            clockOutAt?: string | null
+            status: string
+            totalHours?: number | null
+          }) => (
+          <View key={record.id} style={styles.recordCard}>
             <View style={styles.recordHeader}>
-              <Text style={styles.recordDate}>{record.date}</Text>
+              <Text style={styles.recordDate}>{record.attendanceDate}</Text>
               <View style={[
                 styles.statusBadge,
-                record.status === 'Present' ? styles.statusPresent : styles.statusLeave,
+                record.status === 'COMPLETED' || record.status === 'CLOCKED_IN'
+                  ? styles.statusPresent
+                  : styles.statusLeave,
               ]}>
                 <Text style={[
                   styles.statusText,
-                  record.status === 'Present' ? styles.statusPresentText : styles.statusLeaveText,
+                  record.status === 'COMPLETED' || record.status === 'CLOCKED_IN'
+                    ? styles.statusPresentText
+                    : styles.statusLeaveText,
                 ]}>
                   {record.status}
                 </Text>
@@ -39,24 +90,30 @@ export default function AttendanceScreen() {
               <View style={styles.timeRow}>
                 <MaterialCommunityIcons name="clock-in" size={16} color="#6b7280" />
                 <Text style={styles.timeLabel}>Clock In:</Text>
-                <Text style={styles.timeValue}>{record.clockIn}</Text>
+                <Text style={styles.timeValue}>
+                  {record.clockInAt ? new Date(record.clockInAt).toLocaleTimeString() : '-'}
+                </Text>
               </View>
               <View style={styles.timeRow}>
                 <MaterialCommunityIcons name="clock-out" size={16} color="#6b7280" />
                 <Text style={styles.timeLabel}>Clock Out:</Text>
-                <Text style={styles.timeValue}>{record.clockOut}</Text>
+                <Text style={styles.timeValue}>
+                  {record.clockOutAt ? new Date(record.clockOutAt).toLocaleTimeString() : '-'}
+                </Text>
               </View>
               <View style={styles.timeRow}>
                 <MaterialCommunityIcons name="clock" size={16} color="#6b7280" />
                 <Text style={styles.timeLabel}>Total Hours:</Text>
-                <Text style={styles.timeValue}>{record.hours}</Text>
+                <Text style={styles.timeValue}>
+                  {record.totalHours != null ? `${record.totalHours}h` : '-'}
+                </Text>
               </View>
             </View>
           </View>
-        ))}
+        )))}
       </View>
     </ScrollView>
-  );
+  )
 }
 
 const styles = StyleSheet.create({

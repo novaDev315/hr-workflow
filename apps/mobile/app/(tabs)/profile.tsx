@@ -1,10 +1,53 @@
-import { View, Text, TouchableOpacity, StyleSheet, ScrollView, Alert } from 'react-native';
-import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { useRouter } from 'expo-router';
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import { gql, useQuery } from '@apollo/client'
+import { View, Text, TouchableOpacity, StyleSheet, ScrollView, Alert } from 'react-native'
+import { MaterialCommunityIcons } from '@expo/vector-icons'
+import { useRouter } from 'expo-router'
+import { useAuthSession } from '../../src/lib/auth-session'
+
+const ME_QUERY = gql`
+  query MobileProfileMe {
+    me {
+      id
+      email
+      firstName
+      lastName
+      fullName
+      roles
+      employeeNumber
+      departmentName
+      designationTitle
+      employeeStatus
+    }
+  }
+`
+
+const personalInfoIcons: Array<{
+  icon: keyof typeof MaterialCommunityIcons.glyphMap
+  label: string
+  value: string
+}> = [
+  { icon: 'email', label: 'Email', value: '' },
+  { icon: 'briefcase', label: 'Designation', value: '' },
+  { icon: 'badge-account', label: 'Roles', value: '' },
+  { icon: 'clock-outline', label: 'Employee Status', value: '' },
+]
+
+const settingsIcons: Array<{
+  icon: keyof typeof MaterialCommunityIcons.glyphMap
+  label: string
+  value?: string
+}> = [
+  { icon: 'bell', label: 'Notifications', value: 'Enabled' },
+  { icon: 'map-marker-radius', label: 'Department' },
+  { icon: 'information', label: 'Employee Portal' },
+]
 
 export default function ProfileScreen() {
-  const router = useRouter();
+  const router = useRouter()
+  const clearSession = useAuthSession((state) => state.clearSession)
+  const storedUser = useAuthSession((state) => state.user)
+  const { data } = useQuery(ME_QUERY)
+  const user = data?.me ?? storedUser
 
   const handleLogout = async () => {
     Alert.alert(
@@ -16,35 +59,52 @@ export default function ProfileScreen() {
           text: 'Logout',
           style: 'destructive',
           onPress: async () => {
-            await AsyncStorage.removeItem('auth_token');
-            await AsyncStorage.removeItem('user');
-            router.replace('/(auth)/login');
+            await clearSession()
+            router.replace('/(auth)/login')
           },
         },
       ]
-    );
-  };
+    )
+  }
 
   return (
     <ScrollView style={styles.container}>
       <View style={styles.header}>
         <View style={styles.avatar}>
-          <Text style={styles.avatarText}>JD</Text>
+          <Text style={styles.avatarText}>
+            {(user?.fullName ?? 'Employee')
+              .split(' ')
+              .slice(0, 2)
+              .map((part: string) => part[0] ?? '')
+              .join('')
+              .toUpperCase()}
+          </Text>
         </View>
-        <Text style={styles.name}>John Doe</Text>
-        <Text style={styles.employeeId}>EMP20240001</Text>
-        <Text style={styles.department}>Engineering Department</Text>
+        <Text style={styles.name}>{user?.fullName ?? 'Employee'}</Text>
+        <Text style={styles.employeeId}>
+          {user?.employeeNumber ?? 'No employee number'}
+        </Text>
+        <Text style={styles.department}>
+          {user?.departmentName ?? 'No department assigned'}
+        </Text>
       </View>
 
       <View style={styles.content}>
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Personal Information</Text>
-          {[
-            { icon: 'email', label: 'Email', value: 'john.doe@company.com' },
-            { icon: 'phone', label: 'Phone', value: '+91 9876543210' },
-            { icon: 'calendar', label: 'Join Date', value: 'January 15, 2024' },
-            { icon: 'briefcase', label: 'Designation', value: 'Senior Developer' },
-          ].map((item, i) => (
+          {personalInfoIcons
+            .map((item) => ({
+              ...item,
+              value:
+                item.label === 'Email'
+                  ? user?.email ?? 'Not available'
+                  : item.label === 'Designation'
+                    ? user?.designationTitle ?? 'Not assigned'
+                    : item.label === 'Roles'
+                      ? (user?.roles ?? []).join(', ') || 'None'
+                      : user?.employeeStatus ?? 'Unknown',
+            }))
+            .map((item, i) => (
             <View key={i} style={styles.infoRow}>
               <MaterialCommunityIcons name={item.icon} size={20} color="#6b7280" />
               <View style={styles.infoText}>
@@ -57,11 +117,15 @@ export default function ProfileScreen() {
 
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Settings</Text>
-          {[
-            { icon: 'bell', label: 'Notifications', value: 'Enabled' },
-            { icon: 'lock', label: 'Change Password' },
-            { icon: 'information', label: 'About' },
-          ].map((item, i) => (
+          {settingsIcons
+            .map((item) => ({
+              ...item,
+              value:
+                item.label === 'Department'
+                  ? user?.departmentName ?? 'Unknown'
+                  : item.value,
+            }))
+            .map((item, i) => (
             <TouchableOpacity key={i} style={styles.settingRow}>
               <MaterialCommunityIcons name={item.icon} size={20} color="#6b7280" />
               <Text style={styles.settingLabel}>{item.label}</Text>
@@ -79,7 +143,7 @@ export default function ProfileScreen() {
         </TouchableOpacity>
       </View>
     </ScrollView>
-  );
+  )
 }
 
 const styles = StyleSheet.create({

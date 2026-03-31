@@ -1,40 +1,78 @@
-import { useState } from 'react';
-import { View, Text, TextInput, TouchableOpacity, StyleSheet, Alert } from 'react-native';
-import { useRouter } from 'expo-router';
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import { useState } from 'react'
+import { gql, useMutation } from '@apollo/client'
+import { View, Text, TextInput, TouchableOpacity, StyleSheet, Alert } from 'react-native'
+import { useRouter } from 'expo-router'
+import { useAuthSession } from '../../src/lib/auth-session'
+
+const LOGIN_MUTATION = gql`
+  mutation MobileLogin($input: LoginInput!) {
+    login(input: $input) {
+      accessToken
+      user {
+        id
+        email
+        firstName
+        lastName
+        fullName
+        isActive
+        roles
+        employeeId
+        employeeNumber
+        departmentName
+        designationTitle
+        employeeStatus
+      }
+    }
+  }
+`
 
 export default function LoginScreen() {
-  const router = useRouter();
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const [loading, setLoading] = useState(false);
+  const router = useRouter()
+  const saveSession = useAuthSession((state) => state.setSession)
+  const [email, setEmail] = useState('')
+  const [password, setPassword] = useState('')
+  const [login, { loading }] = useMutation(LOGIN_MUTATION)
 
   const handleLogin = async () => {
     if (!email || !password) {
-      Alert.alert('Error', 'Please enter email and password');
-      return;
+      Alert.alert('Error', 'Please enter email and password')
+      return
     }
-
-    setLoading(true);
 
     try {
-      // TODO: Implement actual GraphQL authentication
-      await new Promise((resolve) => setTimeout(resolve, 1000));
+      const result = await login({
+        variables: {
+          input: {
+            email: email.trim().toLowerCase(),
+            password,
+          },
+        },
+      })
 
-      await AsyncStorage.setItem('auth_token', 'mock-token-12345');
-      await AsyncStorage.setItem('user', JSON.stringify({
-        id: '1',
-        email,
-        name: 'John Doe',
-      }));
+      const payload = result.data?.login
+      if (!payload) {
+        throw new Error('Login response was empty.')
+      }
 
-      router.replace('/(tabs)');
+      if (!payload.user.employeeId) {
+        throw new Error(
+          'This account is not linked to an employee profile yet. Use the same email on the employee record to enable mobile attendance.'
+        )
+      }
+
+      await saveSession({
+        token: payload.accessToken,
+        user: payload.user,
+      })
+
+      router.replace('/(tabs)')
     } catch (error) {
-      Alert.alert('Error', 'Login failed. Please try again.');
-    } finally {
-      setLoading(false);
+      Alert.alert(
+        'Error',
+        error instanceof Error ? error.message : 'Login failed. Please try again.'
+      )
     }
-  };
+  }
 
   return (
     <View style={styles.container}>
@@ -72,7 +110,7 @@ export default function LoginScreen() {
         </View>
       </View>
     </View>
-  );
+  )
 }
 
 const styles = StyleSheet.create({

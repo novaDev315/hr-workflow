@@ -36,6 +36,21 @@ export class AuthUserType {
 
   @Field(() => [String])
   roles: string[];
+
+  @Field({ nullable: true })
+  employeeId?: string | null;
+
+  @Field({ nullable: true })
+  employeeNumber?: string | null;
+
+  @Field({ nullable: true })
+  departmentName?: string | null;
+
+  @Field({ nullable: true })
+  designationTitle?: string | null;
+
+  @Field({ nullable: true })
+  employeeStatus?: string | null;
 }
 
 @ObjectType()
