@@ -5,7 +5,10 @@ export const ADMIN_PANEL_ROLES = [
   'SUPERVISOR',
 ] as const
 
+export const ACCOUNT_MANAGER_ROLES = ['ADMIN', 'HR_ADMIN'] as const
+
 export type AdminPanelRole = (typeof ADMIN_PANEL_ROLES)[number]
+export type AccountManagerRole = (typeof ACCOUNT_MANAGER_ROLES)[number]
 
 export type StoredAdminAccount = {
   id: string
@@ -23,6 +26,12 @@ const LEGACY_ADMIN_USER_STORAGE_KEY = 'user'
 export function hasAdminPanelAccess(roles: string[] = []) {
   return roles.some((role) =>
     ADMIN_PANEL_ROLES.includes(role as AdminPanelRole)
+  )
+}
+
+export function canManageAccounts(roles: string[] = []) {
+  return roles.some((role) =>
+    ACCOUNT_MANAGER_ROLES.includes(role as AccountManagerRole)
   )
 }
 

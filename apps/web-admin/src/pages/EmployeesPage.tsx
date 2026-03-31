@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Plus, Search } from 'lucide-react'
+import { canManageAccounts, readStoredAdminAccount } from '@/lib/auth-session'
 
 const EMPLOYEE_PAGE_QUERY = gql`
   query EmployeePageData($filter: EmployeeFilterInput) {
@@ -37,6 +38,7 @@ const EMPLOYEE_PAGE_QUERY = gql`
       status
       hasLinkedAccount
       linkedAccountEmail
+      linkedAccountRoles
       departmentId
       designationId
       department {
@@ -85,6 +87,15 @@ const CREATE_EMPLOYEE_ACCOUNT_MUTATION = gql`
   }
 `
 
+const PROVISION_STAFF_ACCESS_MUTATION = gql`
+  mutation ProvisionStaffAccess($input: ProvisionStaffAccessInput!) {
+    provisionStaffAccess(input: $input) {
+      id
+      roles
+    }
+  }
+`
+
 type DepartmentFormState = {
   name: string
   code: string
@@ -112,6 +123,12 @@ type EmployeeFormState = {
 
 type EmployeeAccountFormState = {
   employeeId: string
+  password: string
+}
+
+type StaffAccessFormState = {
+  employeeId: string
+  roleKey: string
   password: string
 }
 
@@ -145,7 +162,15 @@ const employeeAccountFormDefaults: EmployeeAccountFormState = {
   password: '',
 }
 
+const staffAccessFormDefaults: StaffAccessFormState = {
+  employeeId: '',
+  roleKey: 'MANAGER',
+  password: '',
+}
+
 export function EmployeesPage() {
+  const currentAdminAccount = readStoredAdminAccount()
+  const accountManagerAccess = canManageAccounts(currentAdminAccount?.roles ?? [])
   const [searchQuery, setSearchQuery] = useState('')
   const deferredSearch = useDeferredValue(searchQuery)
   const [showForms, setShowForms] = useState(false)
@@ -155,6 +180,7 @@ export function EmployeesPage() {
   const [designationForm, setDesignationForm] = useState(designationFormDefaults)
   const [employeeForm, setEmployeeForm] = useState(employeeFormDefaults)
   const [employeeAccountForm, setEmployeeAccountForm] = useState(employeeAccountFormDefaults)
+  const [staffAccessForm, setStaffAccessForm] = useState(staffAccessFormDefaults)
 
   const { data, loading, error, refetch } = useQuery(EMPLOYEE_PAGE_QUERY, {
     variables: {
@@ -178,6 +204,9 @@ export function EmployeesPage() {
   const [createEmployeeAccount, { loading: creatingEmployeeAccount }] = useMutation(
     CREATE_EMPLOYEE_ACCOUNT_MUTATION
   )
+  const [provisionStaffAccess, { loading: provisioningStaffAccess }] = useMutation(
+    PROVISION_STAFF_ACCESS_MUTATION
+  )
 
   const departments = data?.departments ?? []
   const designations = data?.designations ?? []
@@ -189,6 +218,16 @@ export function EmployeesPage() {
           designation.departmentId === employeeForm.departmentId
       )
     : designations
+
+  const selectedEmployeeForAccount = employees.find(
+    (employee: { id: string }) => employee.id === employeeAccountForm.employeeId
+  )
+  const selectedEmployeeForStaffAccess = employees.find(
+    (employee: { id: string }) => employee.id === staffAccessForm.employeeId
+  )
+  const selectedStaffEmployeeHasLinkedAccount = Boolean(
+    selectedEmployeeForStaffAccess?.hasLinkedAccount
+  )
 
   const handleCreateDepartment = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
@@ -303,6 +342,35 @@ export function EmployeesPage() {
         mutationError instanceof Error
           ? mutationError.message
           : 'Unable to create employee account.'
+      )
+    }
+  }
+
+  const handleProvisionStaffAccess = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    setErrorMessage(null)
+    setStatusMessage(null)
+
+    try {
+      await provisionStaffAccess({
+        variables: {
+          input: {
+            employeeId: staffAccessForm.employeeId,
+            roleKey: staffAccessForm.roleKey,
+            password: selectedStaffEmployeeHasLinkedAccount
+              ? null
+              : staffAccessForm.password,
+          },
+        },
+      })
+      setStaffAccessForm(staffAccessFormDefaults)
+      setStatusMessage('Staff access provisioned.')
+      await refetch()
+    } catch (mutationError) {
+      setErrorMessage(
+        mutationError instanceof Error
+          ? mutationError.message
+          : 'Unable to provision staff access.'
       )
     }
   }
@@ -665,73 +733,179 @@ export function EmployeesPage() {
             </CardContent>
           </Card>
 
-          <Card>
-            <CardHeader>
-              <CardTitle>Employee Account</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <form className="space-y-4" onSubmit={handleCreateEmployeeAccount}>
-                <div className="space-y-2">
-                  <Label htmlFor="employee-account-employee">Employee</Label>
-                  <select
-                    id="employee-account-employee"
-                    value={employeeAccountForm.employeeId}
-                    onChange={(event) =>
-                      setEmployeeAccountForm((current) => ({
-                        ...current,
-                        employeeId: event.target.value,
-                      }))
-                    }
-                    className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
-                    required
-                  >
-                    <option value="">Select employee</option>
-                    {employees
-                      .filter((employee: { hasLinkedAccount: boolean }) => !employee.hasLinkedAccount)
-                      .map(
-                        (employee: {
-                          id: string
-                          fullName: string
-                          employeeNumber: string
-                          email: string
-                        }) => (
-                          <option key={employee.id} value={employee.id}>
-                            {employee.fullName} ({employee.employeeNumber}) • {employee.email}
-                          </option>
-                        )
-                      )}
-                  </select>
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="employee-account-password">Temporary Password</Label>
-                  <Input
-                    id="employee-account-password"
-                    type="password"
-                    value={employeeAccountForm.password}
-                    onChange={(event) =>
-                      setEmployeeAccountForm((current) => ({
-                        ...current,
-                        password: event.target.value,
-                      }))
-                    }
-                    placeholder="Minimum 8 characters"
-                    required
-                  />
-                </div>
-                <Button
-                  className="w-full"
-                  type="submit"
-                  disabled={creatingEmployeeAccount || employees.length === 0}
-                >
-                  {creatingEmployeeAccount ? 'Saving...' : 'Create Employee Account'}
-                </Button>
-                <p className="text-xs text-muted-foreground">
-                  The account is linked directly to the employee record so mobile sign-in resolves
-                  the employee explicitly.
-                </p>
-              </form>
-            </CardContent>
-          </Card>
+          {accountManagerAccess && (
+            <>
+              <Card>
+                <CardHeader>
+                  <CardTitle>Employee Account</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <form className="space-y-4" onSubmit={handleCreateEmployeeAccount}>
+                    <div className="space-y-2">
+                      <Label htmlFor="employee-account-employee">Employee</Label>
+                      <select
+                        id="employee-account-employee"
+                        value={employeeAccountForm.employeeId}
+                        onChange={(event) =>
+                          setEmployeeAccountForm((current) => ({
+                            ...current,
+                            employeeId: event.target.value,
+                          }))
+                        }
+                        className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                        required
+                      >
+                        <option value="">Select employee</option>
+                        {employees
+                          .filter((employee: { hasLinkedAccount: boolean }) => !employee.hasLinkedAccount)
+                          .map(
+                            (employee: {
+                              id: string
+                              fullName: string
+                              employeeNumber: string
+                              email: string
+                            }) => (
+                              <option key={employee.id} value={employee.id}>
+                                {employee.fullName} ({employee.employeeNumber}) • {employee.email}
+                              </option>
+                            )
+                          )}
+                      </select>
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="employee-account-password">Temporary Password</Label>
+                      <Input
+                        id="employee-account-password"
+                        type="password"
+                        value={employeeAccountForm.password}
+                        onChange={(event) =>
+                          setEmployeeAccountForm((current) => ({
+                            ...current,
+                            password: event.target.value,
+                          }))
+                        }
+                        placeholder="Minimum 8 characters"
+                        required
+                      />
+                    </div>
+                    <Button
+                      className="w-full"
+                      type="submit"
+                      disabled={creatingEmployeeAccount || employees.length === 0}
+                    >
+                      {creatingEmployeeAccount ? 'Saving...' : 'Create Employee Account'}
+                    </Button>
+                    <p className="text-xs text-muted-foreground">
+                      The account is linked directly to the employee record so mobile sign-in resolves
+                      the employee explicitly.
+                    </p>
+                    {selectedEmployeeForAccount?.hasLinkedAccount && (
+                      <p className="text-xs text-muted-foreground">
+                        This employee already has a linked account.
+                      </p>
+                    )}
+                  </form>
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader>
+                  <CardTitle>Staff & Admin Access</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <form className="space-y-4" onSubmit={handleProvisionStaffAccess}>
+                    <div className="space-y-2">
+                      <Label htmlFor="staff-access-employee">Employee</Label>
+                      <select
+                        id="staff-access-employee"
+                        value={staffAccessForm.employeeId}
+                        onChange={(event) =>
+                          setStaffAccessForm((current) => ({
+                            ...current,
+                            employeeId: event.target.value,
+                          }))
+                        }
+                        className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                        required
+                      >
+                        <option value="">Select employee</option>
+                        {employees.map(
+                          (employee: {
+                            id: string
+                            fullName: string
+                            employeeNumber: string
+                            email: string
+                            linkedAccountRoles: string[]
+                          }) => (
+                            <option key={employee.id} value={employee.id}>
+                              {employee.fullName} ({employee.employeeNumber}) • {employee.email}
+                              {employee.linkedAccountRoles.length > 0
+                                ? ` • ${employee.linkedAccountRoles.join(', ')}`
+                                : ''}
+                            </option>
+                          )
+                        )}
+                      </select>
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="staff-access-role">Admin Panel Role</Label>
+                      <select
+                        id="staff-access-role"
+                        value={staffAccessForm.roleKey}
+                        onChange={(event) =>
+                          setStaffAccessForm((current) => ({
+                            ...current,
+                            roleKey: event.target.value,
+                          }))
+                        }
+                        className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                        required
+                      >
+                        <option value="MANAGER">Manager</option>
+                        <option value="SUPERVISOR">Supervisor</option>
+                        <option value="HR_ADMIN">HR Admin</option>
+                        <option value="ADMIN">Admin</option>
+                      </select>
+                    </div>
+                    {!selectedStaffEmployeeHasLinkedAccount && (
+                      <div className="space-y-2">
+                        <Label htmlFor="staff-access-password">Temporary Password</Label>
+                        <Input
+                          id="staff-access-password"
+                          type="password"
+                          value={staffAccessForm.password}
+                          onChange={(event) =>
+                            setStaffAccessForm((current) => ({
+                              ...current,
+                              password: event.target.value,
+                            }))
+                          }
+                          placeholder="Required when creating a new linked account"
+                          required={!selectedStaffEmployeeHasLinkedAccount}
+                        />
+                      </div>
+                    )}
+                    <Button
+                      className="w-full"
+                      type="submit"
+                      disabled={provisioningStaffAccess || employees.length === 0}
+                    >
+                      {provisioningStaffAccess ? 'Saving...' : 'Provision Staff Access'}
+                    </Button>
+                    <p className="text-xs text-muted-foreground">
+                      This grants admin panel access to the employee&apos;s linked account. If the
+                      employee has no account yet, a linked account is created first.
+                    </p>
+                    {selectedEmployeeForStaffAccess?.linkedAccountRoles?.length > 0 && (
+                      <p className="text-xs text-muted-foreground">
+                        Current roles: {selectedEmployeeForStaffAccess.linkedAccountRoles.join(', ')}
+                      </p>
+                    )}
+                  </form>
+                </CardContent>
+              </Card>
+            </>
+          )}
         </div>
       )}
 
@@ -776,6 +950,7 @@ export function EmployeesPage() {
                       email: string
                       hasLinkedAccount: boolean
                       linkedAccountEmail?: string | null
+                      linkedAccountRoles: string[]
                       joinDate: string
                       status: string
                       department: { name: string }
@@ -789,9 +964,23 @@ export function EmployeesPage() {
                         <td className="px-4 py-3">{employee.designation.title}</td>
                         <td className="px-4 py-3">
                           {employee.hasLinkedAccount ? (
-                            <span className="inline-flex rounded-full bg-blue-100 px-2.5 py-0.5 text-xs font-medium text-blue-800">
-                              {employee.linkedAccountEmail || 'Linked'}
-                            </span>
+                            <div className="space-y-2">
+                              <span className="inline-flex rounded-full bg-blue-100 px-2.5 py-0.5 text-xs font-medium text-blue-800">
+                                {employee.linkedAccountEmail || 'Linked'}
+                              </span>
+                              {employee.linkedAccountRoles.length > 0 && (
+                                <div className="flex flex-wrap gap-1">
+                                  {employee.linkedAccountRoles.map((role) => (
+                                    <span
+                                      key={role}
+                                      className="inline-flex rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-medium text-slate-700"
+                                    >
+                                      {role}
+                                    </span>
+                                  ))}
+                                </div>
+                              )}
+                            </div>
                           ) : (
                             <span className="inline-flex rounded-full bg-amber-100 px-2.5 py-0.5 text-xs font-medium text-amber-800">
                               No login

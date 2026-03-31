@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   ConflictException,
   ForbiddenException,
   Injectable,
@@ -7,15 +8,21 @@ import {
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { PrismaService } from '../prisma/prisma.service';
+import { AuthenticatedUser } from '../common/current-user.decorator';
 import {
   BootstrapAdminInput,
   CreateEmployeeAccountInput,
   LoginInput,
+  ProvisionStaffAccessInput,
 } from './auth.types';
 import * as bcrypt from 'bcrypt';
 import { randomUUID } from 'crypto';
 import {
+  AdminAccessRoleKey,
+  ADMIN_ACCESS_ROLE_KEYS,
+  ACCOUNT_MANAGER_ROLE_KEYS,
   DEFAULT_ADMIN_ROLE,
+  SYSTEM_ROLE_DETAILS,
   SystemRoleKey,
 } from '../common/system-roles';
 
@@ -83,28 +90,7 @@ export class AuthService {
         );
       }
 
-      let adminRole = await this.prisma.one<{ id: string }>(
-        `SELECT id FROM roles WHERE key = $1`,
-        [DEFAULT_ADMIN_ROLE],
-        tx,
-      );
-
-      if (!adminRole) {
-        adminRole = await this.prisma.one<{ id: string }>(
-          `
-            INSERT INTO roles (id, key, name, description)
-            VALUES ($1, $2, $3, $4)
-            RETURNING id
-          `,
-          [
-            randomUUID(),
-            DEFAULT_ADMIN_ROLE,
-            'Administrator',
-            'Platform administrator with full access',
-          ],
-          tx,
-        );
-      }
+      const adminRole = await this.ensureRole(DEFAULT_ADMIN_ROLE, tx);
 
       const user = await this.prisma.one<{ id: string }>(
         `
@@ -208,7 +194,11 @@ export class AuthService {
     );
   }
 
-  async createEmployeeAccount(input: CreateEmployeeAccountInput) {
+  async createEmployeeAccount(
+    currentUser: AuthenticatedUser,
+    input: CreateEmployeeAccountInput,
+  ) {
+    this.assertCanManageAccounts(currentUser.roles);
     const employeeId = input.employeeId.trim();
     const passwordHash = await bcrypt.hash(input.password, 10);
 
@@ -258,28 +248,7 @@ export class AuthService {
         );
       }
 
-      let employeeRole = await this.prisma.one<{ id: string }>(
-        `SELECT id FROM roles WHERE key = $1`,
-        ['EMPLOYEE'],
-        tx,
-      );
-
-      if (!employeeRole) {
-        employeeRole = await this.prisma.one<{ id: string }>(
-          `
-            INSERT INTO roles (id, key, name, description)
-            VALUES ($1, $2, $3, $4)
-            RETURNING id
-          `,
-          [
-            randomUUID(),
-            'EMPLOYEE',
-            'Employee',
-            'Employee self-service account',
-          ],
-          tx,
-        );
-      }
+      const employeeRole = await this.ensureRole('EMPLOYEE', tx);
 
       const user = await this.prisma.one<{ id: string }>(
         `
@@ -320,6 +289,111 @@ export class AuthService {
     return this.buildAuthPayload(createdUser);
   }
 
+  async provisionStaffAccess(
+    currentUser: AuthenticatedUser,
+    input: ProvisionStaffAccessInput,
+  ) {
+    this.assertCanManageAccounts(currentUser.roles);
+
+    const employeeId = input.employeeId.trim();
+    const roleKey = input.roleKey.trim().toUpperCase() as AdminAccessRoleKey;
+
+    if (!ADMIN_ACCESS_ROLE_KEYS.includes(roleKey)) {
+      throw new BadRequestException(
+        'Staff access role must be ADMIN, HR_ADMIN, MANAGER, or SUPERVISOR',
+      );
+    }
+
+    return this.prisma.transaction(async (tx) => {
+      const employee = await this.prisma.one<{
+        id: string;
+        email: string;
+        firstName: string;
+        lastName: string;
+      }>(
+        `
+          SELECT
+            id,
+            email,
+            first_name AS "firstName",
+            last_name AS "lastName"
+          FROM employees
+          WHERE id = $1 AND is_active = TRUE
+        `,
+        [employeeId],
+        tx,
+      );
+
+      if (!employee) {
+        throw new NotFoundException('Employee not found or inactive');
+      }
+
+      const employeeRole = await this.ensureRole('EMPLOYEE', tx);
+      const staffRole = await this.ensureRole(roleKey, tx);
+
+      let account = await this.prisma.one<{ id: string }>(
+        `SELECT id FROM users WHERE employee_id = $1`,
+        [employeeId],
+        tx,
+      );
+
+      if (!account) {
+        if (!input.password?.trim()) {
+          throw new BadRequestException(
+            'A temporary password is required when creating a new staff account',
+          );
+        }
+
+        const existingEmailAccount = await this.prisma.one<{ id: string }>(
+          `SELECT id FROM users WHERE LOWER(email) = LOWER($1)`,
+          [employee.email],
+          tx,
+        );
+
+        if (existingEmailAccount) {
+          throw new ConflictException(
+            'An account already exists for this employee email',
+          );
+        }
+
+        account = await this.prisma.one<{ id: string }>(
+          `
+            INSERT INTO users (
+              id,
+              email,
+              employee_id,
+              password_hash,
+              first_name,
+              last_name
+            )
+            VALUES ($1, $2, $3, $4, $5, $6)
+            RETURNING id
+          `,
+          [
+            randomUUID(),
+            employee.email.trim().toLowerCase(),
+            employee.id,
+            await bcrypt.hash(input.password.trim(), 10),
+            employee.firstName,
+            employee.lastName,
+          ],
+          tx,
+        );
+      }
+
+      await this.assignRoleIfMissing(account.id, employeeRole.id, tx);
+      await this.assignRoleIfMissing(account.id, staffRole.id, tx);
+
+      const accountWithRoles = await this.getUserWithRolesById(account.id, tx);
+
+      if (!accountWithRoles) {
+        throw new NotFoundException('Provisioned account could not be loaded');
+      }
+
+      return this.mapUser(accountWithRoles);
+    });
+  }
+
   private buildAuthPayload(user: UserWithRoles) {
     const mappedUser = this.mapUser(user);
     const expiresIn = process.env.JWT_EXPIRY ?? '3600s';
@@ -350,6 +424,72 @@ export class AuthService {
       designationTitle: user.employeeProfile?.designationTitle ?? null,
       employeeStatus: user.employeeProfile?.employeeStatus ?? null,
     };
+  }
+
+  private assertCanManageAccounts(roles: string[]) {
+    const hasAccess = roles.some((role) =>
+      ACCOUNT_MANAGER_ROLE_KEYS.includes(role as 'ADMIN' | 'HR_ADMIN'),
+    );
+
+    if (!hasAccess) {
+      throw new ForbiddenException(
+        'Only ADMIN and HR_ADMIN accounts can manage employee and staff access',
+      );
+    }
+  }
+
+  private async ensureRole(key: SystemRoleKey, client?: any) {
+    const existingRole = await this.prisma.one<{ id: string }>(
+      `SELECT id FROM roles WHERE key = $1`,
+      [key],
+      client,
+    );
+
+    if (existingRole) {
+      return existingRole;
+    }
+
+    const details = SYSTEM_ROLE_DETAILS[key];
+
+    return this.prisma.one<{ id: string }>(
+      `
+        INSERT INTO roles (id, key, name, description)
+        VALUES ($1, $2, $3, $4)
+        RETURNING id
+      `,
+      [randomUUID(), key, details.name, details.description],
+      client,
+    );
+  }
+
+  private async assignRoleIfMissing(
+    accountId: string,
+    roleId: string,
+    client?: any,
+  ) {
+    const existingAssignment = await this.prisma.one<{ id: string }>(
+      `
+        SELECT id
+        FROM user_role_assignments
+        WHERE user_id = $1 AND role_id = $2
+      `,
+      [accountId, roleId],
+      client,
+    );
+
+    if (existingAssignment) {
+      return existingAssignment;
+    }
+
+    return this.prisma.one<{ id: string }>(
+      `
+        INSERT INTO user_role_assignments (id, user_id, role_id)
+        VALUES ($1, $2, $3)
+        RETURNING id
+      `,
+      [randomUUID(), accountId, roleId],
+      client,
+    );
   }
 
   private async getUserWithRolesByEmail(email: string, client?: any) {

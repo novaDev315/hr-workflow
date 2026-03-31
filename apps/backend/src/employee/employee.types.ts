@@ -74,6 +74,9 @@ export class EmployeeType {
 
   @Field({ nullable: true })
   linkedAccountEmail?: string | null;
+
+  @Field(() => [String])
+  linkedAccountRoles: string[];
 }
 
 @InputType()

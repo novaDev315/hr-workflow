@@ -35,6 +35,7 @@ interface EmployeeRow {
   supervisorFirstName: string | null;
   supervisorLastName: string | null;
   linkedAccountEmail: string | null;
+  linkedAccountRoles: string[] | null;
 }
 
 @Injectable()
@@ -97,12 +98,19 @@ export class EmployeeService {
           des.is_active AS "designationIsActive",
           s.first_name AS "supervisorFirstName",
           s.last_name AS "supervisorLastName",
-          u.email AS "linkedAccountEmail"
+          u.email AS "linkedAccountEmail",
+          linked_roles.role_keys AS "linkedAccountRoles"
         FROM employees e
         INNER JOIN departments d ON d.id = e.department_id
         INNER JOIN designations des ON des.id = e.designation_id
         LEFT JOIN employees s ON s.id = e.supervisor_id
         LEFT JOIN users u ON u.employee_id = e.id
+        LEFT JOIN LATERAL (
+          SELECT ARRAY_AGG(r.key ORDER BY r.name ASC) AS role_keys
+          FROM user_role_assignments ura
+          INNER JOIN roles r ON r.id = ura.role_id
+          WHERE ura.user_id = u.id
+        ) linked_roles ON TRUE
         ${where.length > 0 ? `WHERE ${where.join(' AND ')}` : ''}
         ORDER BY e.created_at DESC, e.last_name ASC, e.first_name ASC
       `,
@@ -141,12 +149,19 @@ export class EmployeeService {
           des.is_active AS "designationIsActive",
           s.first_name AS "supervisorFirstName",
           s.last_name AS "supervisorLastName",
-          u.email AS "linkedAccountEmail"
+          u.email AS "linkedAccountEmail",
+          linked_roles.role_keys AS "linkedAccountRoles"
         FROM employees e
         INNER JOIN departments d ON d.id = e.department_id
         INNER JOIN designations des ON des.id = e.designation_id
         LEFT JOIN employees s ON s.id = e.supervisor_id
         LEFT JOIN users u ON u.employee_id = e.id
+        LEFT JOIN LATERAL (
+          SELECT ARRAY_AGG(r.key ORDER BY r.name ASC) AS role_keys
+          FROM user_role_assignments ura
+          INNER JOIN roles r ON r.id = ura.role_id
+          WHERE ura.user_id = u.id
+        ) linked_roles ON TRUE
         WHERE e.id = $1
       `,
       [id],
@@ -294,6 +309,7 @@ export class EmployeeService {
       isActive: row.isActive,
       hasLinkedAccount: Boolean(row.linkedAccountEmail),
       linkedAccountEmail: row.linkedAccountEmail,
+      linkedAccountRoles: row.linkedAccountRoles ?? [],
       department: {
         id: row.departmentId,
         name: row.departmentName,

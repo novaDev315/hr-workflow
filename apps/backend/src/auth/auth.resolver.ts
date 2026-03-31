@@ -8,6 +8,7 @@ import {
   BootstrapAdminInput,
   CreateEmployeeAccountInput,
   LoginInput,
+  ProvisionStaffAccessInput,
 } from './auth.types';
 import { AuthService } from './auth.service';
 import { Args } from '@nestjs/graphql';
@@ -40,8 +41,20 @@ export class AuthResolver {
 
   @UseGuards(GqlAuthGuard)
   @Mutation(() => AccountSessionType, { name: 'createEmployeeAccount' })
-  async createEmployeeAccount(@Args('input') input: CreateEmployeeAccountInput) {
-    return this.authService.createEmployeeAccount(input);
+  async createEmployeeAccount(
+    @CurrentUser() currentUser: AuthenticatedUser,
+    @Args('input') input: CreateEmployeeAccountInput,
+  ) {
+    return this.authService.createEmployeeAccount(currentUser, input);
+  }
+
+  @UseGuards(GqlAuthGuard)
+  @Mutation(() => AccountProfileType, { name: 'provisionStaffAccess' })
+  async provisionStaffAccess(
+    @CurrentUser() currentUser: AuthenticatedUser,
+    @Args('input') input: ProvisionStaffAccessInput,
+  ) {
+    return this.authService.provisionStaffAccess(currentUser, input);
   }
 
   @UseGuards(GqlAuthGuard)

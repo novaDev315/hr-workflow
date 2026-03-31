@@ -97,6 +97,23 @@ export class CreateEmployeeAccountInput {
 }
 
 @InputType()
+export class ProvisionStaffAccessInput {
+  @Field()
+  @IsString()
+  employeeId: string;
+
+  @Field()
+  @IsString()
+  @MaxLength(20)
+  roleKey: string;
+
+  @Field({ nullable: true })
+  @IsOptional()
+  @MinLength(8)
+  password?: string;
+}
+
+@InputType()
 export class BootstrapAdminInput {
   @Field()
   @IsEmail()
