@@ -1,0 +1,223 @@
+import {
+  ForbiddenException,
+  Injectable,
+} from '@nestjs/common';
+import { PrismaService } from '../prisma/prisma.service';
+import { AuthenticatedUser } from '../common/current-user.decorator';
+import { ADMIN_ACCESS_ROLE_KEYS } from '../common/system-roles';
+
+@Injectable()
+export class ReportsService {
+  constructor(private readonly prisma: PrismaService) {}
+
+  async dashboard(currentUser: AuthenticatedUser, periodMonth?: string) {
+    this.assertCanViewReports(currentUser.roles);
+
+    const normalizedMonth = this.normalizePeriodMonth(periodMonth);
+    const { startDate, endDate } = this.getPeriodRange(normalizedMonth);
+
+    const [
+      activeEmployees,
+      pendingLeaveRequests,
+      processedPayrollPeriods,
+      publishedPolicies,
+      monthlyPayrollNetPay,
+      departmentHeadcount,
+      recentHires,
+      attendanceSummary,
+      payrollDepartmentCosts,
+      pendingLeaveApprovals,
+      publishedPolicyRows,
+    ] = await Promise.all([
+      this.prisma.one<{ count: string }>(
+        `SELECT COUNT(*)::text AS count FROM employees WHERE is_active = TRUE`,
+      ),
+      this.prisma.one<{ count: string }>(
+        `SELECT COUNT(*)::text AS count FROM leave_requests WHERE status = 'PENDING'`,
+      ),
+      this.prisma.one<{ count: string }>(
+        `SELECT COUNT(*)::text AS count FROM payroll_periods WHERE status IN ('PROCESSED', 'PAID')`,
+      ),
+      this.prisma.one<{ count: string }>(
+        `SELECT COUNT(*)::text AS count FROM policy_documents WHERE status = 'PUBLISHED'`,
+      ),
+      this.prisma.one<{ total: string }>(
+        `
+          SELECT COALESCE(SUM(ps.net_pay), 0)::text AS total
+          FROM payslips ps
+          INNER JOIN payroll_periods pp ON pp.id = ps.payroll_period_id
+          WHERE pp.period_month = $1
+        `,
+        [normalizedMonth],
+      ),
+      this.prisma.many<{ departmentName: string; employeeCount: number }>(
+        `
+          SELECT
+            d.name AS "departmentName",
+            COUNT(e.id)::int AS "employeeCount"
+          FROM departments d
+          LEFT JOIN employees e
+            ON e.department_id = d.id
+            AND e.is_active = TRUE
+          GROUP BY d.id
+          ORDER BY COUNT(e.id) DESC, d.name ASC
+        `,
+      ),
+      this.prisma.many<{
+        employeeNumber: string;
+        fullName: string;
+        joinDate: string;
+        departmentName: string;
+        designationTitle: string;
+      }>(
+        `
+          SELECT
+            e.employee_number AS "employeeNumber",
+            CONCAT(e.first_name, ' ', e.last_name) AS "fullName",
+            e.join_date::text AS "joinDate",
+            d.name AS "departmentName",
+            des.title AS "designationTitle"
+          FROM employees e
+          INNER JOIN departments d ON d.id = e.department_id
+          INNER JOIN designations des ON des.id = e.designation_id
+          ORDER BY e.join_date DESC
+          LIMIT 8
+        `,
+      ),
+      this.prisma.many<{
+        employeeNumber: string;
+        fullName: string;
+        attendanceDays: number;
+        overtimeHours: number;
+      }>(
+        `
+          SELECT
+            e.employee_number AS "employeeNumber",
+            CONCAT(e.first_name, ' ', e.last_name) AS "fullName",
+            COUNT(a.id)::float AS "attendanceDays",
+            COALESCE(SUM(a.overtime_hours), 0) AS "overtimeHours"
+          FROM employees e
+          LEFT JOIN attendance_records a
+            ON a.employee_id = e.id
+            AND a.attendance_date >= $1
+            AND a.attendance_date <= $2
+            AND a.status IN ('COMPLETED', 'CLOCKED_IN')
+          WHERE e.is_active = TRUE
+          GROUP BY e.id
+          ORDER BY COUNT(a.id) DESC, SUM(a.overtime_hours) DESC NULLS LAST, e.last_name ASC
+          LIMIT 10
+        `,
+        [startDate, endDate],
+      ),
+      this.prisma.many<{
+        departmentName: string;
+        payslipCount: number;
+        totalNetPay: number;
+      }>(
+        `
+          SELECT
+            d.name AS "departmentName",
+            COUNT(ps.id)::int AS "payslipCount",
+            COALESCE(SUM(ps.net_pay), 0) AS "totalNetPay"
+          FROM departments d
+          LEFT JOIN employees e ON e.department_id = d.id
+          LEFT JOIN payslips ps ON ps.employee_id = e.id
+          LEFT JOIN payroll_periods pp
+            ON pp.id = ps.payroll_period_id
+            AND pp.period_month = $1
+          GROUP BY d.id
+          ORDER BY "totalNetPay" DESC, d.name ASC
+        `,
+        [normalizedMonth],
+      ),
+      this.prisma.many<{
+        employeeNumber: string;
+        fullName: string;
+        leaveTypeName: string;
+        startDate: string;
+        endDate: string;
+        totalDays: number;
+      }>(
+        `
+          SELECT
+            e.employee_number AS "employeeNumber",
+            CONCAT(e.first_name, ' ', e.last_name) AS "fullName",
+            lt.name AS "leaveTypeName",
+            lr.start_date::text AS "startDate",
+            lr.end_date::text AS "endDate",
+            lr.total_days AS "totalDays"
+          FROM leave_requests lr
+          INNER JOIN employees e ON e.id = lr.employee_id
+          INNER JOIN leave_types lt ON lt.id = lr.leave_type_id
+          WHERE lr.status = 'PENDING'
+          ORDER BY lr.requested_at ASC
+          LIMIT 10
+        `,
+      ),
+      this.prisma.many<{
+        title: string;
+        category: string;
+        version: string;
+        effectiveDate: string;
+      }>(
+        `
+          SELECT
+            title,
+            category,
+            version,
+            effective_date::text AS "effectiveDate"
+          FROM policy_documents
+          WHERE status = 'PUBLISHED'
+          ORDER BY effective_date DESC, published_at DESC NULLS LAST
+          LIMIT 6
+        `,
+      ),
+    ]);
+
+    return {
+      overview: {
+        activeEmployees: Number(activeEmployees?.count ?? '0'),
+        pendingLeaveRequests: Number(pendingLeaveRequests?.count ?? '0'),
+        processedPayrollPeriods: Number(processedPayrollPeriods?.count ?? '0'),
+        publishedPolicies: Number(publishedPolicies?.count ?? '0'),
+        monthlyPayrollNetPay: Number(monthlyPayrollNetPay?.total ?? '0'),
+      },
+      departmentHeadcount,
+      recentHires,
+      attendanceSummary,
+      payrollDepartmentCosts,
+      pendingLeaveApprovals,
+      publishedPolicies: publishedPolicyRows,
+    };
+  }
+
+  private assertCanViewReports(roles: string[]) {
+    const hasAccess = roles.some((role) =>
+      ADMIN_ACCESS_ROLE_KEYS.includes(
+        role as (typeof ADMIN_ACCESS_ROLE_KEYS)[number],
+      ),
+    );
+
+    if (!hasAccess) {
+      throw new ForbiddenException('Only staff and admin accounts can access reports');
+    }
+  }
+
+  private normalizePeriodMonth(periodMonth?: string) {
+    if (periodMonth?.trim()) {
+      return periodMonth.trim();
+    }
+
+    return new Date().toISOString().slice(0, 7);
+  }
+
+  private getPeriodRange(periodMonth: string) {
+    const [yearText, monthText] = periodMonth.split('-');
+    const year = Number(yearText);
+    const month = Number(monthText);
+    const startDate = `${yearText}-${monthText}-01`;
+    const endDate = new Date(Date.UTC(year, month, 0)).toISOString().slice(0, 10);
+
+    return { startDate, endDate };
+  }
+}
