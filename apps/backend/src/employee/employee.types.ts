@@ -70,10 +70,10 @@ export class EmployeeType {
   isActive: boolean;
 
   @Field()
-  hasUserAccount: boolean;
+  hasLinkedAccount: boolean;
 
   @Field({ nullable: true })
-  userAccountEmail?: string | null;
+  linkedAccountEmail?: string | null;
 }
 
 @InputType()

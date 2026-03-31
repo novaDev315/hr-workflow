@@ -13,14 +13,14 @@ import { PolicyDocumentsPage } from './pages/PolicyDocumentsPage'
 import {
   clearAdminSession,
   hasAdminPanelAccess,
-  readStoredAdminUser,
+  readStoredAdminAccount,
 } from './lib/auth-session'
 
 function App() {
   const token = localStorage.getItem('auth_token')
-  const storedUser = readStoredAdminUser()
-  const isAuthenticated = Boolean(token && storedUser)
-  const hasAccess = storedUser ? hasAdminPanelAccess(storedUser.roles) : false
+  const storedAccount = readStoredAdminAccount()
+  const isAuthenticated = Boolean(token && storedAccount)
+  const hasAccess = storedAccount ? hasAdminPanelAccess(storedAccount.roles) : false
 
   if (isAuthenticated && !hasAccess) {
     clearAdminSession()

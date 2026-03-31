@@ -73,11 +73,11 @@ const CLOCK_OUT_MUTATION = gql`
 `
 
 export default function HomeScreen() {
-  const storedUser = useAuthSession((state) => state.user)
+  const storedAccount = useAuthSession((state) => state.account)
   const [selectedLocationId, setSelectedLocationId] = useState<string | null>(null)
   const { data: meData } = useQuery(ME_QUERY)
-  const user = meData?.me ?? storedUser
-  const employeeId = user?.employeeId ?? null
+  const account = meData?.me ?? storedAccount
+  const employeeId = account?.employeeId ?? null
 
   const {
     data: locationsData,
@@ -199,8 +199,8 @@ export default function HomeScreen() {
     <ScrollView style={styles.container}>
       <View style={styles.header}>
         <Text style={styles.greeting}>Good Morning</Text>
-        <Text style={styles.name}>{user?.fullName ?? 'Employee'}</Text>
-        <Text style={styles.employeeId}>{user?.employeeNumber ?? 'No employee number'}</Text>
+        <Text style={styles.name}>{account?.fullName ?? 'Employee'}</Text>
+        <Text style={styles.employeeId}>{account?.employeeNumber ?? 'No employee number'}</Text>
       </View>
 
       {/* Clock In/Out Card */}

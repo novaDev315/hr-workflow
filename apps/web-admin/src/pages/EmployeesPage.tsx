@@ -35,8 +35,8 @@ const EMPLOYEE_PAGE_QUERY = gql`
       employmentType
       joinDate
       status
-      hasUserAccount
-      userAccountEmail
+      hasLinkedAccount
+      linkedAccountEmail
       departmentId
       designationId
       department {
@@ -75,10 +75,10 @@ const CREATE_EMPLOYEE_MUTATION = gql`
   }
 `
 
-const CREATE_EMPLOYEE_USER_MUTATION = gql`
-  mutation CreateEmployeeUser($input: CreateEmployeeUserInput!) {
-    createEmployeeUser(input: $input) {
-      user {
+const CREATE_EMPLOYEE_ACCOUNT_MUTATION = gql`
+  mutation CreateEmployeeAccount($input: CreateEmployeeAccountInput!) {
+    createEmployeeAccount(input: $input) {
+      account {
         id
       }
     }
@@ -110,7 +110,7 @@ type EmployeeFormState = {
   joinDate: string
 }
 
-type EmployeeUserFormState = {
+type EmployeeAccountFormState = {
   employeeId: string
   password: string
 }
@@ -140,7 +140,7 @@ const employeeFormDefaults: EmployeeFormState = {
   joinDate: new Date().toISOString().slice(0, 10),
 }
 
-const employeeUserFormDefaults: EmployeeUserFormState = {
+const employeeAccountFormDefaults: EmployeeAccountFormState = {
   employeeId: '',
   password: '',
 }
@@ -154,7 +154,7 @@ export function EmployeesPage() {
   const [departmentForm, setDepartmentForm] = useState(departmentFormDefaults)
   const [designationForm, setDesignationForm] = useState(designationFormDefaults)
   const [employeeForm, setEmployeeForm] = useState(employeeFormDefaults)
-  const [employeeUserForm, setEmployeeUserForm] = useState(employeeUserFormDefaults)
+  const [employeeAccountForm, setEmployeeAccountForm] = useState(employeeAccountFormDefaults)
 
   const { data, loading, error, refetch } = useQuery(EMPLOYEE_PAGE_QUERY, {
     variables: {
@@ -175,8 +175,8 @@ export function EmployeesPage() {
   const [createEmployee, { loading: creatingEmployee }] = useMutation(
     CREATE_EMPLOYEE_MUTATION
   )
-  const [createEmployeeUser, { loading: creatingEmployeeUser }] = useMutation(
-    CREATE_EMPLOYEE_USER_MUTATION
+  const [createEmployeeAccount, { loading: creatingEmployeeAccount }] = useMutation(
+    CREATE_EMPLOYEE_ACCOUNT_MUTATION
   )
 
   const departments = data?.departments ?? []
@@ -281,28 +281,28 @@ export function EmployeesPage() {
     }
   }
 
-  const handleCreateEmployeeUser = async (event: FormEvent<HTMLFormElement>) => {
+  const handleCreateEmployeeAccount = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
     setErrorMessage(null)
     setStatusMessage(null)
 
     try {
-      await createEmployeeUser({
+      await createEmployeeAccount({
         variables: {
           input: {
-            employeeId: employeeUserForm.employeeId,
-            password: employeeUserForm.password,
+            employeeId: employeeAccountForm.employeeId,
+            password: employeeAccountForm.password,
           },
         },
       })
-      setEmployeeUserForm(employeeUserFormDefaults)
-      setStatusMessage('Employee login created.')
+      setEmployeeAccountForm(employeeAccountFormDefaults)
+      setStatusMessage('Employee account created.')
       await refetch()
     } catch (mutationError) {
       setErrorMessage(
         mutationError instanceof Error
           ? mutationError.message
-          : 'Unable to create employee login.'
+          : 'Unable to create employee account.'
       )
     }
   }
@@ -667,17 +667,17 @@ export function EmployeesPage() {
 
           <Card>
             <CardHeader>
-              <CardTitle>Employee Login</CardTitle>
+              <CardTitle>Employee Account</CardTitle>
             </CardHeader>
             <CardContent>
-              <form className="space-y-4" onSubmit={handleCreateEmployeeUser}>
+              <form className="space-y-4" onSubmit={handleCreateEmployeeAccount}>
                 <div className="space-y-2">
-                  <Label htmlFor="employee-user-employee">Employee</Label>
+                  <Label htmlFor="employee-account-employee">Employee</Label>
                   <select
-                    id="employee-user-employee"
-                    value={employeeUserForm.employeeId}
+                    id="employee-account-employee"
+                    value={employeeAccountForm.employeeId}
                     onChange={(event) =>
-                      setEmployeeUserForm((current) => ({
+                      setEmployeeAccountForm((current) => ({
                         ...current,
                         employeeId: event.target.value,
                       }))
@@ -687,7 +687,7 @@ export function EmployeesPage() {
                   >
                     <option value="">Select employee</option>
                     {employees
-                      .filter((employee: { hasUserAccount: boolean }) => !employee.hasUserAccount)
+                      .filter((employee: { hasLinkedAccount: boolean }) => !employee.hasLinkedAccount)
                       .map(
                         (employee: {
                           id: string
@@ -703,13 +703,13 @@ export function EmployeesPage() {
                   </select>
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="employee-user-password">Temporary Password</Label>
+                  <Label htmlFor="employee-account-password">Temporary Password</Label>
                   <Input
-                    id="employee-user-password"
+                    id="employee-account-password"
                     type="password"
-                    value={employeeUserForm.password}
+                    value={employeeAccountForm.password}
                     onChange={(event) =>
-                      setEmployeeUserForm((current) => ({
+                      setEmployeeAccountForm((current) => ({
                         ...current,
                         password: event.target.value,
                       }))
@@ -721,13 +721,13 @@ export function EmployeesPage() {
                 <Button
                   className="w-full"
                   type="submit"
-                  disabled={creatingEmployeeUser || employees.length === 0}
+                  disabled={creatingEmployeeAccount || employees.length === 0}
                 >
-                  {creatingEmployeeUser ? 'Saving...' : 'Create Employee Login'}
+                  {creatingEmployeeAccount ? 'Saving...' : 'Create Employee Account'}
                 </Button>
                 <p className="text-xs text-muted-foreground">
-                  The user account is linked directly to the employee record. Mobile login uses
-                  this link instead of matching by email.
+                  The account is linked directly to the employee record so mobile sign-in resolves
+                  the employee explicitly.
                 </p>
               </form>
             </CardContent>
@@ -774,8 +774,8 @@ export function EmployeesPage() {
                       employeeNumber: string
                       fullName: string
                       email: string
-                      hasUserAccount: boolean
-                      userAccountEmail?: string | null
+                      hasLinkedAccount: boolean
+                      linkedAccountEmail?: string | null
                       joinDate: string
                       status: string
                       department: { name: string }
@@ -788,9 +788,9 @@ export function EmployeesPage() {
                         <td className="px-4 py-3">{employee.department.name}</td>
                         <td className="px-4 py-3">{employee.designation.title}</td>
                         <td className="px-4 py-3">
-                          {employee.hasUserAccount ? (
+                          {employee.hasLinkedAccount ? (
                             <span className="inline-flex rounded-full bg-blue-100 px-2.5 py-0.5 text-xs font-medium text-blue-800">
-                              {employee.userAccountEmail || 'Linked'}
+                              {employee.linkedAccountEmail || 'Linked'}
                             </span>
                           ) : (
                             <span className="inline-flex rounded-full bg-amber-100 px-2.5 py-0.5 text-xs font-medium text-amber-800">

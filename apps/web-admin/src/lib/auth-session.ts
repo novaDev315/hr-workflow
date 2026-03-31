@@ -7,7 +7,7 @@ export const ADMIN_PANEL_ROLES = [
 
 export type AdminPanelRole = (typeof ADMIN_PANEL_ROLES)[number]
 
-export type StoredAdminUser = {
+export type StoredAdminAccount = {
   id: string
   email: string
   firstName: string
@@ -17,26 +17,41 @@ export type StoredAdminUser = {
   isActive: boolean
 }
 
+const ADMIN_ACCOUNT_STORAGE_KEY = 'admin_account'
+const LEGACY_ADMIN_USER_STORAGE_KEY = 'user'
+
 export function hasAdminPanelAccess(roles: string[] = []) {
   return roles.some((role) =>
     ADMIN_PANEL_ROLES.includes(role as AdminPanelRole)
   )
 }
 
-export function readStoredAdminUser() {
-  const rawUser = localStorage.getItem('user')
-  if (!rawUser) {
+export function readStoredAdminAccount() {
+  const rawAccount =
+    localStorage.getItem(ADMIN_ACCOUNT_STORAGE_KEY) ??
+    localStorage.getItem(LEGACY_ADMIN_USER_STORAGE_KEY)
+
+  if (!rawAccount) {
     return null
   }
 
   try {
-    return JSON.parse(rawUser) as StoredAdminUser
+    return JSON.parse(rawAccount) as StoredAdminAccount
   } catch {
     return null
   }
 }
 
+export function persistAdminSession(payload: {
+  accessToken: string
+  account: StoredAdminAccount
+}) {
+  localStorage.setItem('auth_token', payload.accessToken)
+  localStorage.setItem(ADMIN_ACCOUNT_STORAGE_KEY, JSON.stringify(payload.account))
+}
+
 export function clearAdminSession() {
   localStorage.removeItem('auth_token')
-  localStorage.removeItem('user')
+  localStorage.removeItem(ADMIN_ACCOUNT_STORAGE_KEY)
+  localStorage.removeItem(LEGACY_ADMIN_USER_STORAGE_KEY)
 }

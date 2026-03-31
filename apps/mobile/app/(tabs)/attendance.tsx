@@ -25,9 +25,9 @@ const ATTENDANCE_HISTORY_QUERY = gql`
 `
 
 export default function AttendanceScreen() {
-  const storedUser = useAuthSession((state) => state.user)
+  const storedAccount = useAuthSession((state) => state.account)
   const { data: meData } = useQuery(ME_QUERY)
-  const employeeId = meData?.me?.employeeId ?? storedUser?.employeeId ?? null
+  const employeeId = meData?.me?.employeeId ?? storedAccount?.employeeId ?? null
   const { data, loading } = useQuery(ATTENDANCE_HISTORY_QUERY, {
     variables: {
       filter: employeeId

@@ -8,7 +8,7 @@ const LOGIN_MUTATION = gql`
   mutation MobileLogin($input: LoginInput!) {
     login(input: $input) {
       accessToken
-      user {
+      account {
         id
         email
         firstName
@@ -56,7 +56,7 @@ export default function LoginScreen() {
 
       await saveSession({
         token: payload.accessToken,
-        user: payload.user,
+        account: payload.account,
       })
 
       router.replace('/(tabs)')

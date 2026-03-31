@@ -3,10 +3,10 @@ import { Mutation, Query, Resolver } from '@nestjs/graphql';
 import { CurrentUser, AuthenticatedUser } from '../common/current-user.decorator';
 import {
   AuthBootstrapStatusType,
-  AuthPayloadType,
-  AuthUserType,
+  AccountProfileType,
+  AccountSessionType,
   BootstrapAdminInput,
-  CreateEmployeeUserInput,
+  CreateEmployeeAccountInput,
   LoginInput,
 } from './auth.types';
 import { AuthService } from './auth.service';
@@ -22,12 +22,12 @@ export class AuthResolver {
     return this.authService.getBootstrapStatus();
   }
 
-  @Mutation(() => AuthPayloadType, { name: 'bootstrapAdmin' })
+  @Mutation(() => AccountSessionType, { name: 'bootstrapAdmin' })
   async bootstrapAdmin(@Args('input') input: BootstrapAdminInput) {
     return this.authService.bootstrapAdmin(input);
   }
 
-  @Mutation(() => AuthPayloadType, { name: 'login' })
+  @Mutation(() => AccountSessionType, { name: 'login' })
   async login(@Args('input') input: LoginInput) {
     return this.authService.login(input);
   }
@@ -39,13 +39,13 @@ export class AuthResolver {
   }
 
   @UseGuards(GqlAuthGuard)
-  @Mutation(() => AuthPayloadType, { name: 'createEmployeeUser' })
-  async createEmployeeUser(@Args('input') input: CreateEmployeeUserInput) {
-    return this.authService.createEmployeeUser(input);
+  @Mutation(() => AccountSessionType, { name: 'createEmployeeAccount' })
+  async createEmployeeAccount(@Args('input') input: CreateEmployeeAccountInput) {
+    return this.authService.createEmployeeAccount(input);
   }
 
   @UseGuards(GqlAuthGuard)
-  @Query(() => AuthUserType, { name: 'me' })
+  @Query(() => AccountProfileType, { name: 'me' })
   async me(@CurrentUser() user: AuthenticatedUser) {
     return this.authService.getCurrentUser(user.userId);
   }

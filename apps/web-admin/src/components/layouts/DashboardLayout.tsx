@@ -12,13 +12,13 @@ import {
   BookOpen,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import { clearAdminSession } from '@/lib/auth-session'
 
 export function DashboardLayout() {
   const navigate = useNavigate()
 
   const handleLogout = () => {
-    localStorage.removeItem('auth_token')
-    localStorage.removeItem('user')
+    clearAdminSession()
     navigate('/login')
   }
 

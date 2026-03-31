@@ -15,7 +15,7 @@ import {
 } from 'class-validator';
 
 @ObjectType()
-export class AuthUserType {
+export class AccountProfileType {
   @Field(() => ID)
   id: string;
 
@@ -54,15 +54,15 @@ export class AuthUserType {
 }
 
 @ObjectType()
-export class AuthPayloadType {
+export class AccountSessionType {
   @Field()
   accessToken: string;
 
   @Field()
   expiresIn: string;
 
-  @Field(() => AuthUserType)
-  user: AuthUserType;
+  @Field(() => AccountProfileType)
+  account: AccountProfileType;
 }
 
 @ObjectType()
@@ -71,7 +71,7 @@ export class AuthBootstrapStatusType {
   bootstrapRequired: boolean;
 
   @Field(() => Int)
-  userCount: number;
+  accountCount: number;
 }
 
 @InputType()
@@ -86,7 +86,7 @@ export class LoginInput {
 }
 
 @InputType()
-export class CreateEmployeeUserInput {
+export class CreateEmployeeAccountInput {
   @Field()
   @IsString()
   employeeId: string;

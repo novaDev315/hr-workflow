@@ -45,9 +45,9 @@ const settingsIcons: Array<{
 export default function ProfileScreen() {
   const router = useRouter()
   const clearSession = useAuthSession((state) => state.clearSession)
-  const storedUser = useAuthSession((state) => state.user)
+  const storedAccount = useAuthSession((state) => state.account)
   const { data } = useQuery(ME_QUERY)
-  const user = data?.me ?? storedUser
+  const account = data?.me ?? storedAccount
 
   const handleLogout = async () => {
     Alert.alert(
@@ -72,7 +72,7 @@ export default function ProfileScreen() {
       <View style={styles.header}>
         <View style={styles.avatar}>
           <Text style={styles.avatarText}>
-            {(user?.fullName ?? 'Employee')
+            {(account?.fullName ?? 'Employee')
               .split(' ')
               .slice(0, 2)
               .map((part: string) => part[0] ?? '')
@@ -80,12 +80,12 @@ export default function ProfileScreen() {
               .toUpperCase()}
           </Text>
         </View>
-        <Text style={styles.name}>{user?.fullName ?? 'Employee'}</Text>
+        <Text style={styles.name}>{account?.fullName ?? 'Employee'}</Text>
         <Text style={styles.employeeId}>
-          {user?.employeeNumber ?? 'No employee number'}
+          {account?.employeeNumber ?? 'No employee number'}
         </Text>
         <Text style={styles.department}>
-          {user?.departmentName ?? 'No department assigned'}
+          {account?.departmentName ?? 'No department assigned'}
         </Text>
       </View>
 
@@ -97,12 +97,12 @@ export default function ProfileScreen() {
               ...item,
               value:
                 item.label === 'Email'
-                  ? user?.email ?? 'Not available'
+                  ? account?.email ?? 'Not available'
                   : item.label === 'Designation'
-                    ? user?.designationTitle ?? 'Not assigned'
+                    ? account?.designationTitle ?? 'Not assigned'
                     : item.label === 'Roles'
-                      ? (user?.roles ?? []).join(', ') || 'None'
-                      : user?.employeeStatus ?? 'Unknown',
+                      ? (account?.roles ?? []).join(', ') || 'None'
+                      : account?.employeeStatus ?? 'Unknown',
             }))
             .map((item, i) => (
             <View key={i} style={styles.infoRow}>
@@ -122,7 +122,7 @@ export default function ProfileScreen() {
               ...item,
               value:
                 item.label === 'Department'
-                  ? user?.departmentName ?? 'Unknown'
+                  ? account?.departmentName ?? 'Unknown'
                   : item.value,
             }))
             .map((item, i) => (

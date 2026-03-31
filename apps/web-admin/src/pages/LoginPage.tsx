@@ -5,13 +5,17 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { clearAdminSession, hasAdminPanelAccess } from '@/lib/auth-session'
+import {
+  clearAdminSession,
+  hasAdminPanelAccess,
+  persistAdminSession,
+} from '@/lib/auth-session'
 
 const AUTH_BOOTSTRAP_STATUS = gql`
   query AuthBootstrapStatus {
     authBootstrapStatus {
       bootstrapRequired
-      userCount
+      accountCount
     }
   }
 `
@@ -21,7 +25,7 @@ const LOGIN_MUTATION = gql`
     login(input: $input) {
       accessToken
       expiresIn
-      user {
+      account {
         id
         email
         firstName
@@ -39,7 +43,7 @@ const BOOTSTRAP_ADMIN_MUTATION = gql`
     bootstrapAdmin(input: $input) {
       accessToken
       expiresIn
-      user {
+      account {
         id
         email
         firstName
@@ -70,22 +74,6 @@ export function LoginPage() {
   const subtitle = bootstrapRequired
     ? 'Create the first administrator account'
     : 'Admin Control Panel'
-
-  const persistSession = (payload: {
-    accessToken: string
-    user: {
-      id: string
-      email: string
-      firstName: string
-      lastName: string
-      fullName: string
-      roles: string[]
-      isActive: boolean
-    }
-  }) => {
-    localStorage.setItem('auth_token', payload.accessToken)
-    localStorage.setItem('user', JSON.stringify(payload.user))
-  }
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -121,14 +109,14 @@ export function LoginPage() {
         throw new Error('Authentication response did not include an access token')
       }
 
-      if (!bootstrapRequired && !hasAdminPanelAccess(payload.user.roles)) {
+      if (!bootstrapRequired && !hasAdminPanelAccess(payload.account.roles)) {
         clearAdminSession()
         throw new Error(
           'This account can use the mobile app, but only ADMIN, HR_ADMIN, MANAGER, and SUPERVISOR accounts can access the admin panel.'
         )
       }
 
-      persistSession(payload)
+      persistAdminSession(payload)
 
       navigate('/')
     } catch (error) {
@@ -168,7 +156,7 @@ export function LoginPage() {
                   <Input
                     id="lastName"
                     type="text"
-                    placeholder="User"
+                    placeholder="Administrator"
                     value={lastName}
                     onChange={(e) => setLastName(e.target.value)}
                     required

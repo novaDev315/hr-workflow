@@ -2,9 +2,10 @@ import AsyncStorage from '@react-native-async-storage/async-storage'
 import { create } from 'zustand'
 
 const AUTH_TOKEN_KEY = 'auth_token'
-const AUTH_USER_KEY = 'user'
+const AUTH_ACCOUNT_KEY = 'account'
+const LEGACY_AUTH_USER_KEY = 'user'
 
-export interface AuthUser {
+export interface AccountProfile {
   id: string
   email: string
   firstName: string
@@ -22,57 +23,63 @@ export interface AuthUser {
 interface AuthSessionState {
   isHydrated: boolean
   token: string | null
-  user: AuthUser | null
+  account: AccountProfile | null
   hydrate: () => Promise<void>
-  setSession: (payload: { token: string; user: AuthUser }) => Promise<void>
+  setSession: (payload: { token: string; account: AccountProfile }) => Promise<void>
   clearSession: () => Promise<void>
 }
 
 export const useAuthSession = create<AuthSessionState>((set) => ({
   isHydrated: false,
   token: null,
-  user: null,
+  account: null,
   hydrate: async () => {
     try {
-      const [token, rawUser] = await Promise.all([
+      const [token, rawAccount] = await Promise.all([
         AsyncStorage.getItem(AUTH_TOKEN_KEY),
-        AsyncStorage.getItem(AUTH_USER_KEY),
+        AsyncStorage.getItem(AUTH_ACCOUNT_KEY),
       ])
+
+      const fallbackAccount =
+        rawAccount ?? (await AsyncStorage.getItem(LEGACY_AUTH_USER_KEY))
 
       set({
         token,
-        user: rawUser ? (JSON.parse(rawUser) as AuthUser) : null,
+        account: fallbackAccount
+          ? (JSON.parse(fallbackAccount) as AccountProfile)
+          : null,
         isHydrated: true,
       })
     } catch {
       set({
         token: null,
-        user: null,
+        account: null,
         isHydrated: true,
       })
     }
   },
-  setSession: async ({ token, user }) => {
+  setSession: async ({ token, account }) => {
     await Promise.all([
       AsyncStorage.setItem(AUTH_TOKEN_KEY, token),
-      AsyncStorage.setItem(AUTH_USER_KEY, JSON.stringify(user)),
+      AsyncStorage.setItem(AUTH_ACCOUNT_KEY, JSON.stringify(account)),
     ])
 
     set({
       token,
-      user,
+      account,
       isHydrated: true,
     })
   },
   clearSession: async () => {
     await Promise.all([
       AsyncStorage.removeItem(AUTH_TOKEN_KEY),
-      AsyncStorage.removeItem(AUTH_USER_KEY),
+      AsyncStorage.removeItem(AUTH_ACCOUNT_KEY),
+      AsyncStorage.removeItem(LEGACY_AUTH_USER_KEY),
     ])
 
     set({
       token: null,
-      user: null,
+      account: null,
       isHydrated: true,
     })
   },

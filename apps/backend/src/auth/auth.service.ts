@@ -9,7 +9,7 @@ import { JwtService } from '@nestjs/jwt';
 import { PrismaService } from '../prisma/prisma.service';
 import {
   BootstrapAdminInput,
-  CreateEmployeeUserInput,
+  CreateEmployeeAccountInput,
   LoginInput,
 } from './auth.types';
 import * as bcrypt from 'bcrypt';
@@ -57,11 +57,11 @@ export class AuthService {
     const countRow = await this.prisma.one<{ count: string }>(
       `SELECT COUNT(*)::text AS count FROM users`,
     );
-    const userCount = Number(countRow?.count ?? '0');
+    const accountCount = Number(countRow?.count ?? '0');
 
     return {
-      bootstrapRequired: userCount === 0,
-      userCount,
+      bootstrapRequired: accountCount === 0,
+      accountCount,
     };
   }
 
@@ -208,7 +208,7 @@ export class AuthService {
     );
   }
 
-  async createEmployeeUser(input: CreateEmployeeUserInput) {
+  async createEmployeeAccount(input: CreateEmployeeAccountInput) {
     const employeeId = input.employeeId.trim();
     const passwordHash = await bcrypt.hash(input.password, 10);
 
@@ -243,7 +243,7 @@ export class AuthService {
       );
 
       if (linkedUser) {
-        throw new ConflictException('This employee already has a user account');
+        throw new ConflictException('This employee already has a linked account');
       }
 
       const existingEmailUser = await this.prisma.one<{ id: string }>(
@@ -254,7 +254,7 @@ export class AuthService {
 
       if (existingEmailUser) {
         throw new ConflictException(
-          'A user account already exists for this employee email',
+          'An account already exists for this employee email',
         );
       }
 
@@ -331,7 +331,7 @@ export class AuthService {
         roles: mappedUser.roles,
       }),
       expiresIn,
-      user: mappedUser,
+      account: mappedUser,
     };
   }
 
