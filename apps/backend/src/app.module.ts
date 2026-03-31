@@ -11,6 +11,7 @@ import { EmployeeModule } from './employee/employee.module';
 import { LocationModule } from './location/location.module';
 import { AttendanceModule } from './attendance/attendance.module';
 import { LeaveModule } from './leave/leave.module';
+import { PayrollModule } from './payroll/payroll.module';
 
 @Module({
   imports: [
@@ -37,6 +38,7 @@ import { LeaveModule } from './leave/leave.module';
     LocationModule,
     AttendanceModule,
     LeaveModule,
+    PayrollModule,
   ],
 })
 export class AppModule {}

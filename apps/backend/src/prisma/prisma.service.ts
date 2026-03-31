@@ -244,6 +244,57 @@ export class PrismaService implements OnModuleInit, OnModuleDestroy {
         )
       `,
       `
+        CREATE TABLE IF NOT EXISTS employee_compensations (
+          id TEXT PRIMARY KEY,
+          employee_id TEXT NOT NULL UNIQUE REFERENCES employees(id) ON DELETE CASCADE,
+          base_salary DOUBLE PRECISION NOT NULL,
+          allowance_amount DOUBLE PRECISION NOT NULL DEFAULT 0,
+          deduction_amount DOUBLE PRECISION NOT NULL DEFAULT 0,
+          currency_code TEXT NOT NULL DEFAULT 'AED',
+          effective_from DATE NOT NULL,
+          notes TEXT,
+          created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )
+      `,
+      `
+        CREATE TABLE IF NOT EXISTS payroll_periods (
+          id TEXT PRIMARY KEY,
+          period_month TEXT NOT NULL UNIQUE,
+          start_date DATE NOT NULL,
+          end_date DATE NOT NULL,
+          status TEXT NOT NULL DEFAULT 'OPEN',
+          processed_at TIMESTAMPTZ,
+          paid_at TIMESTAMPTZ,
+          created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )
+      `,
+      `
+        CREATE TABLE IF NOT EXISTS payslips (
+          id TEXT PRIMARY KEY,
+          payroll_period_id TEXT NOT NULL REFERENCES payroll_periods(id) ON DELETE CASCADE,
+          employee_id TEXT NOT NULL REFERENCES employees(id) ON DELETE CASCADE,
+          expected_workdays INTEGER NOT NULL,
+          attended_days DOUBLE PRECISION NOT NULL DEFAULT 0,
+          approved_leave_days DOUBLE PRECISION NOT NULL DEFAULT 0,
+          paid_days DOUBLE PRECISION NOT NULL DEFAULT 0,
+          unpaid_days DOUBLE PRECISION NOT NULL DEFAULT 0,
+          base_salary DOUBLE PRECISION NOT NULL,
+          prorated_base_salary DOUBLE PRECISION NOT NULL,
+          allowance_amount DOUBLE PRECISION NOT NULL DEFAULT 0,
+          deduction_amount DOUBLE PRECISION NOT NULL DEFAULT 0,
+          attendance_deduction DOUBLE PRECISION NOT NULL DEFAULT 0,
+          gross_pay DOUBLE PRECISION NOT NULL,
+          net_pay DOUBLE PRECISION NOT NULL,
+          currency_code TEXT NOT NULL DEFAULT 'AED',
+          status TEXT NOT NULL DEFAULT 'GENERATED',
+          created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          UNIQUE(payroll_period_id, employee_id)
+        )
+      `,
+      `
         CREATE INDEX IF NOT EXISTS idx_user_role_assignments_user_id
         ON user_role_assignments(user_id)
       `,
@@ -313,6 +364,18 @@ export class PrismaService implements OnModuleInit, OnModuleDestroy {
       `
         CREATE INDEX IF NOT EXISTS idx_leave_requests_status
         ON leave_requests(status)
+      `,
+      `
+        CREATE INDEX IF NOT EXISTS idx_payroll_periods_period_month
+        ON payroll_periods(period_month)
+      `,
+      `
+        CREATE INDEX IF NOT EXISTS idx_payslips_employee_id
+        ON payslips(employee_id)
+      `,
+      `
+        CREATE INDEX IF NOT EXISTS idx_payslips_payroll_period_id
+        ON payslips(payroll_period_id)
       `,
       `
         INSERT INTO leave_types (id, code, name, default_days, description, is_active)
