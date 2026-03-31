@@ -1,107 +1,377 @@
+import { FormEvent, useState } from 'react'
+import { gql, useMutation, useQuery } from '@apollo/client'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
-import { Plus, FileText, Download } from 'lucide-react'
+import { Input } from '@/components/ui/input'
+import { Plus, FileText, ExternalLink } from 'lucide-react'
+import { canManageAccounts, readStoredAdminAccount } from '@/lib/auth-session'
+
+const POLICY_DOCUMENTS_QUERY = gql`
+  query PolicyDocuments {
+    policyDocuments {
+      id
+      title
+      category
+      version
+      effectiveDate
+      description
+      status
+      documentUrl
+      content
+      createdAt
+      publishedAt
+    }
+  }
+`
+
+const CREATE_POLICY_DOCUMENT_MUTATION = gql`
+  mutation CreatePolicyDocument($input: CreatePolicyDocumentInput!) {
+    createPolicyDocument(input: $input) {
+      id
+    }
+  }
+`
+
+const PUBLISH_POLICY_DOCUMENT_MUTATION = gql`
+  mutation PublishPolicyDocument($input: PublishPolicyDocumentInput!) {
+    publishPolicyDocument(input: $input) {
+      id
+      status
+    }
+  }
+`
+
+type PolicyFormState = {
+  title: string
+  category: string
+  version: string
+  effectiveDate: string
+  description: string
+  documentUrl: string
+  content: string
+  status: string
+}
+
+const policyFormDefaults: PolicyFormState = {
+  title: '',
+  category: '',
+  version: '1.0',
+  effectiveDate: new Date().toISOString().slice(0, 10),
+  description: '',
+  documentUrl: '',
+  content: '',
+  status: 'DRAFT',
+}
 
 export function PolicyDocumentsPage() {
-  const policies = [
-    {
-      id: '1',
-      title: 'Employee Handbook',
-      category: 'Handbook',
-      version: '2.0',
-      effectiveDate: '2024-01-01',
-      description: 'Complete guide for employees',
-      status: 'Published',
-    },
-    {
-      id: '2',
-      title: 'Leave Policy',
-      category: 'Leave Policy',
-      version: '1.5',
-      effectiveDate: '2024-01-01',
-      description: 'Leave types, accrual, and application process',
-      status: 'Published',
-    },
-    {
-      id: '3',
-      title: 'Code of Conduct',
-      category: 'Code of Conduct',
-      version: '3.0',
-      effectiveDate: '2024-01-01',
-      description: 'Expected behavior and ethics guidelines',
-      status: 'Published',
-    },
-    {
-      id: '4',
-      title: 'Work from Home Policy',
-      category: 'HR Policy',
-      version: '1.0',
-      effectiveDate: '2024-06-01',
-      description: 'Guidelines for remote work',
-      status: 'Published',
-    },
-    {
-      id: '5',
-      title: 'IT Security Policy',
-      category: 'IT Policy',
-      version: '2.1',
-      effectiveDate: '2024-03-01',
-      description: 'Information security and data protection',
-      status: 'Published',
-    },
-  ]
+  const currentAdminAccount = readStoredAdminAccount()
+  const canManagePolicies = canManageAccounts(currentAdminAccount?.roles ?? [])
+  const [policyForm, setPolicyForm] = useState(policyFormDefaults)
+  const [statusMessage, setStatusMessage] = useState<string | null>(null)
+  const [errorMessage, setErrorMessage] = useState<string | null>(null)
+
+  const { data, loading, error, refetch } = useQuery(POLICY_DOCUMENTS_QUERY)
+  const [createPolicyDocument, { loading: creatingPolicyDocument }] = useMutation(
+    CREATE_POLICY_DOCUMENT_MUTATION
+  )
+  const [publishPolicyDocument, { loading: publishingPolicyDocument }] = useMutation(
+    PUBLISH_POLICY_DOCUMENT_MUTATION
+  )
+
+  const policies = data?.policyDocuments ?? []
+
+  const handleCreatePolicy = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    setErrorMessage(null)
+    setStatusMessage(null)
+
+    try {
+      await createPolicyDocument({
+        variables: {
+          input: {
+            title: policyForm.title,
+            category: policyForm.category,
+            version: policyForm.version,
+            effectiveDate: policyForm.effectiveDate,
+            description: policyForm.description,
+            documentUrl: policyForm.documentUrl || null,
+            content: policyForm.content || null,
+            status: policyForm.status,
+          },
+        },
+      })
+      setPolicyForm(policyFormDefaults)
+      setStatusMessage('Policy document created.')
+      await refetch()
+    } catch (mutationError) {
+      setErrorMessage(
+        mutationError instanceof Error
+          ? mutationError.message
+          : 'Unable to create policy document.'
+      )
+    }
+  }
+
+  const handlePublishPolicy = async (policyDocumentId: string) => {
+    setErrorMessage(null)
+    setStatusMessage(null)
+
+    try {
+      await publishPolicyDocument({
+        variables: {
+          input: {
+            policyDocumentId,
+          },
+        },
+      })
+      setStatusMessage('Policy document published.')
+      await refetch()
+    } catch (mutationError) {
+      setErrorMessage(
+        mutationError instanceof Error
+          ? mutationError.message
+          : 'Unable to publish policy document.'
+      )
+    }
+  }
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
         <div>
           <h1 className="text-3xl font-bold">Policy Documents</h1>
           <p className="text-muted-foreground">Company policies and handbooks</p>
         </div>
-        <Button>
-          <Plus className="w-4 h-4 mr-2" />
-          Upload Policy
-        </Button>
+        {canManagePolicies && (
+          <Button onClick={() => setPolicyForm(policyFormDefaults)}>
+            <Plus className="mr-2 h-4 w-4" />
+            New Policy
+          </Button>
+        )}
       </div>
 
-      {/* Policies Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-        {policies.map((policy) => (
-          <Card key={policy.id} className="hover:shadow-md transition-shadow">
-            <CardHeader>
-              <div className="flex items-start justify-between">
-                <FileText className="w-8 h-8 text-primary" />
-                <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
-                  {policy.status}
-                </span>
+      {errorMessage && (
+        <Card className="border-red-200 bg-red-50">
+          <CardContent className="p-4 text-sm text-red-700">{errorMessage}</CardContent>
+        </Card>
+      )}
+
+      {statusMessage && (
+        <Card className="border-emerald-200 bg-emerald-50">
+          <CardContent className="p-4 text-sm text-emerald-700">
+            {statusMessage}
+          </CardContent>
+        </Card>
+      )}
+
+      {canManagePolicies && (
+        <Card>
+          <CardHeader>
+            <CardTitle>Create Policy Document</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <form className="space-y-4" onSubmit={handleCreatePolicy}>
+              <div className="grid gap-4 md:grid-cols-2">
+                <Input
+                  value={policyForm.title}
+                  onChange={(event) =>
+                    setPolicyForm((current) => ({
+                      ...current,
+                      title: event.target.value,
+                    }))
+                  }
+                  placeholder="Policy title"
+                  required
+                />
+                <Input
+                  value={policyForm.category}
+                  onChange={(event) =>
+                    setPolicyForm((current) => ({
+                      ...current,
+                      category: event.target.value,
+                    }))
+                  }
+                  placeholder="Category"
+                  required
+                />
               </div>
-              <CardTitle className="mt-3">{policy.title}</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-2">
-                <p className="text-sm text-muted-foreground">{policy.description}</p>
-                <div className="pt-2 border-t">
-                  <div className="flex justify-between text-sm">
-                    <span className="text-muted-foreground">Category:</span>
-                    <span className="font-medium">{policy.category}</span>
-                  </div>
-                  <div className="flex justify-between text-sm mt-1">
-                    <span className="text-muted-foreground">Version:</span>
-                    <span className="font-medium">{policy.version}</span>
-                  </div>
-                  <div className="flex justify-between text-sm mt-1">
-                    <span className="text-muted-foreground">Effective:</span>
-                    <span className="font-medium">{policy.effectiveDate}</span>
-                  </div>
-                </div>
-                <Button variant="outline" className="w-full mt-4">
-                  <Download className="w-4 h-4 mr-2" />
-                  Download
-                </Button>
+              <div className="grid gap-4 md:grid-cols-3">
+                <Input
+                  value={policyForm.version}
+                  onChange={(event) =>
+                    setPolicyForm((current) => ({
+                      ...current,
+                      version: event.target.value,
+                    }))
+                  }
+                  placeholder="Version"
+                  required
+                />
+                <Input
+                  type="date"
+                  value={policyForm.effectiveDate}
+                  onChange={(event) =>
+                    setPolicyForm((current) => ({
+                      ...current,
+                      effectiveDate: event.target.value,
+                    }))
+                  }
+                  required
+                />
+                <select
+                  value={policyForm.status}
+                  onChange={(event) =>
+                    setPolicyForm((current) => ({
+                      ...current,
+                      status: event.target.value,
+                    }))
+                  }
+                  className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                >
+                  <option value="DRAFT">Draft</option>
+                  <option value="PUBLISHED">Published</option>
+                </select>
               </div>
+              <Input
+                value={policyForm.description}
+                onChange={(event) =>
+                  setPolicyForm((current) => ({
+                    ...current,
+                    description: event.target.value,
+                  }))
+                }
+                placeholder="Short description"
+                required
+              />
+              <Input
+                value={policyForm.documentUrl}
+                onChange={(event) =>
+                  setPolicyForm((current) => ({
+                    ...current,
+                    documentUrl: event.target.value,
+                  }))
+                }
+                placeholder="Optional document URL"
+              />
+              <textarea
+                value={policyForm.content}
+                onChange={(event) =>
+                  setPolicyForm((current) => ({
+                    ...current,
+                    content: event.target.value,
+                  }))
+                }
+                placeholder="Policy summary or text content"
+                className="flex min-h-[140px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+              />
+              <Button type="submit" disabled={creatingPolicyDocument}>
+                {creatingPolicyDocument ? 'Saving...' : 'Save Policy Document'}
+              </Button>
+            </form>
+          </CardContent>
+        </Card>
+      )}
+
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
+        {loading ? (
+          <Card>
+            <CardContent className="p-6 text-sm text-muted-foreground">
+              Loading policy documents...
             </CardContent>
           </Card>
-        ))}
+        ) : error ? (
+          <Card>
+            <CardContent className="p-6 text-sm text-red-600">
+              Unable to load policy documents. {error.message}
+            </CardContent>
+          </Card>
+        ) : policies.length === 0 ? (
+          <Card>
+            <CardContent className="p-6 text-sm text-muted-foreground">
+              No policy documents have been created yet.
+            </CardContent>
+          </Card>
+        ) : (
+          policies.map(
+            (policy: {
+              id: string
+              title: string
+              category: string
+              version: string
+              effectiveDate: string
+              description: string
+              status: string
+              documentUrl?: string | null
+              content?: string | null
+              publishedAt?: string | null
+            }) => (
+              <Card key={policy.id} className="hover:shadow-md transition-shadow">
+                <CardHeader>
+                  <div className="flex items-start justify-between">
+                    <FileText className="h-8 w-8 text-primary" />
+                    <span
+                      className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${
+                        policy.status === 'PUBLISHED'
+                          ? 'bg-green-100 text-green-800'
+                          : 'bg-amber-100 text-amber-800'
+                      }`}
+                    >
+                      {policy.status}
+                    </span>
+                  </div>
+                  <CardTitle className="mt-3">{policy.title}</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="space-y-3">
+                    <p className="text-sm text-muted-foreground">{policy.description}</p>
+                    {policy.content && (
+                      <p className="rounded-md bg-slate-50 p-3 text-sm text-slate-700">
+                        {policy.content}
+                      </p>
+                    )}
+                    <div className="border-t pt-2 text-sm">
+                      <div className="mt-1 flex justify-between gap-3">
+                        <span className="text-muted-foreground">Category:</span>
+                        <span className="font-medium">{policy.category}</span>
+                      </div>
+                      <div className="mt-1 flex justify-between gap-3">
+                        <span className="text-muted-foreground">Version:</span>
+                        <span className="font-medium">{policy.version}</span>
+                      </div>
+                      <div className="mt-1 flex justify-between gap-3">
+                        <span className="text-muted-foreground">Effective:</span>
+                        <span className="font-medium">{policy.effectiveDate}</span>
+                      </div>
+                      <div className="mt-1 flex justify-between gap-3">
+                        <span className="text-muted-foreground">Published:</span>
+                        <span className="font-medium">{policy.publishedAt || 'Draft'}</span>
+                      </div>
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      {policy.documentUrl && (
+                        <Button asChild variant="outline">
+                          <a href={policy.documentUrl} target="_blank" rel="noreferrer">
+                            <ExternalLink className="mr-2 h-4 w-4" />
+                            Open Link
+                          </a>
+                        </Button>
+                      )}
+                      {canManagePolicies && policy.status !== 'PUBLISHED' && (
+                        <Button
+                          type="button"
+                          disabled={publishingPolicyDocument}
+                          onClick={() => handlePublishPolicy(policy.id)}
+                        >
+                          {publishingPolicyDocument ? 'Publishing...' : 'Publish'}
+                        </Button>
+                      )}
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            )
+          )
+        )}
       </div>
     </div>
   )
