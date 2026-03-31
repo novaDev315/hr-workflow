@@ -1,168 +1,98 @@
 # HRFlow Pro
 
-Comprehensive HR Management System with GPS-based attendance tracking, multi-level approval workflows, and payroll processing.
+HRFlow Pro is a Bun-based HR platform with a NestJS modular monolith backend, a React admin portal, and an Expo mobile app.
 
-## Features
+## Current Stack
 
-- **Mobile App** - React Native with Expo SDK 53 for employee self-service
-- **Web Admin Portal** - React 19 with shadcn/ui for HR management
-- **GraphQL API** - Apollo Server with microservices architecture
-- **GPS Attendance** - 100m geofence validation for clock-in/out
-- **Multi-Level Approvals** - 3-tier approval workflow for attendance and leave
-- **Payroll Processing** - Automated salary calculation with HR override capabilities
-- **Multi-Location** - Support for employees across multiple client locations
+- `apps/backend` - NestJS GraphQL backend on Bun
+- `apps/web-admin` - React admin portal
+- `apps/mobile` - Expo mobile app
+- `docker-compose.yml` - local PostgreSQL plus backend runtime
+- `docker-compose.dev.yml` - local PostgreSQL plus backend watch mode
 
-## Architecture
-
-```
-┌──────────────────────────────────────────────────────┐
-│                  Client Layer                        │
-├──────────────┬───────────────────────────────────────┤
-│ Web Admin    │         Mobile App                    │
-│ (React 19)   │    (React Native + Expo)              │
-└──────────────┴───────────────────────────────────────┘
-                        │
-                  GraphQL Gateway
-                  (Apollo Server)
-                        │
-┌──────────────────────────────────────────────────────┐
-│                 Microservices                        │
-├─────────┬──────────┬─────────┬─────────┬───────────┤
-│Employee │Attendance│  Leave  │Location │  Payroll  │
-│Service  │ Service  │ Service │Service  │  Service  │
-└─────────┴──────────┴─────────┴─────────┴───────────┘
-                        │
-┌──────────────────────────────────────────────────────┐
-│         PostgreSQL │ Redis │ RabbitMQ │ MinIO      │
-└──────────────────────────────────────────────────────┘
-```
-
-## Tech Stack
-
-### Frontend
-- **Web**: React 19, shadcn/ui, Tailwind CSS, Apollo Client
-- **Mobile**: React Native, Expo SDK 53, Expo Router, Apollo Client
-
-### Backend
-- **API Gateway**: Apollo Server 4, NestJS, GraphQL
-- **Services**: NestJS, Prisma ORM, GraphQL Federation
-- **Database**: PostgreSQL 15
-- **Cache**: Redis 7
-- **Queue**: RabbitMQ
-- **Storage**: MinIO (S3-compatible)
-
-### Infrastructure
-- **Deployment**: Docker Compose (On-Premise)
-- **Monitoring**: Prometheus + Grafana
-- **Logging**: Elasticsearch + Kibana
+Legacy `services/*`, `apps/api-gateway`, and the root `web-admin/` directory remain in the repository as reference material from the earlier architecture. They are not the primary runtime path for current development.
 
 ## Quick Start
 
 ### Prerequisites
 
-- Node.js 18+
-- Docker & Docker Compose
-- Git
+- Bun `1.3.9+`
+- Docker with Compose
+- Node.js `18+` for tool compatibility
 
-### Installation
+### Local Setup
 
 ```bash
-# Clone repository
-git clone https://github.com/your-org/hrflow-pro.git
-cd hrflow-pro
+git clone <your-repo-url>
+cd rakss
 
-# Install dependencies
-npm install
-
-# Setup environment
+bun install
 cp .env.example .env
-# Edit .env with your configuration
 
-# Start infrastructure
-docker compose up -d postgres redis rabbitmq minio
-
-# Run migrations
-npm run migrate:up
-
-# Start services
-npm run dev
+docker compose up -d postgres
+bun run dev:backend
 ```
 
-### Docker Deployment
+In a second terminal:
 
 ```bash
-# Build and start all services
-docker compose up -d
-
-# View logs
-docker compose logs -f
-
-# Stop services
-docker compose down
+bun run dev:web-admin
 ```
 
-## Project Structure
-
-```
-hrflow-pro/
-├── apps/
-│   ├── web-cp/              # React 19 Web Control Panel
-│   ├── mobile/              # React Native Mobile App
-│   └── api-gateway/         # Apollo GraphQL Gateway
-├── services/
-│   ├── employee/            # Employee Service (Source of Truth)
-│   ├── attendance/          # Attendance & GPS Service
-│   ├── leave/               # Leave Management Service
-│   ├── location/            # Client & Location Service
-│   └── payroll/             # Payroll Processing Service
-├── packages/
-│   ├── shared-types/        # Shared TypeScript types
-│   ├── graphql-schema/      # GraphQL schema definitions
-│   └── utils/               # Shared utilities
-├── infrastructure/
-│   ├── docker/              # Docker configurations
-│   └── monitoring/          # Monitoring configs
-├── config/                  # Configuration files
-├── scripts/                 # Utility scripts
-└── docs/                    # Documentation
-```
-
-## Development
-
-### Running Locally
+Optional mobile app:
 
 ```bash
-# Start database and infrastructure
-docker compose up -d postgres redis rabbitmq
-
-# Run all services in dev mode
-npm run dev
-
-# Run specific service
-npm run dev --workspace=services/employee
-
-# Run tests
-npm run test
-
-# Lint code
-npm run lint
+bun run dev:mobile
 ```
 
-### Database Migrations
+## Useful Commands
 
 ```bash
-# Create migration
-npm run migrate:create --workspace=services/employee
+# Backend
+bun run dev:backend
+bun run build:backend
+bun run test:backend
 
-# Run migrations
-npm run migrate:up
+# Admin portal
+bun run dev:web-admin
+bun run build:web-admin
 
-# Rollback migration
-npm run migrate:down
+# Mobile
+bun run dev:mobile
+bun run typecheck:mobile
 
-# Check migration status
-npm run migrate:status
+# Full verification used in this repo
+bun run build
+
+# Docker helpers
+bun run docker:up
+bun run docker:down
 ```
+
+## Environment
+
+The main backend settings are:
+
+- `BACKEND_PORT`
+- `DATABASE_URL`
+- `JWT_SECRET`
+- `JWT_EXPIRY`
+- `ALLOWED_ORIGINS`
+- `VITE_GRAPHQL_ENDPOINT`
+- `EXPO_PUBLIC_GRAPHQL_ENDPOINT`
+
+See [.env.example](/home/nova/projects/work/rakss/.env.example) for a working local template.
+
+## Implemented Modules
+
+- Auth and account provisioning
+- Company settings, departments, and designations
+- Employee management
+- Location assignment and geofenced attendance
+- Leave balances, requests, and approvals
+- Payroll setup, processing, and payslips
+- Policy document management
+- Live reporting dashboard
 
 ## Documentation
 
@@ -172,76 +102,12 @@ npm run migrate:status
 - [Modular Monolith Rebuild Plan](./docs/MODULAR_MONOLITH_REBUILD_PLAN.md)
 - [Deployment Guide](./docs/DEPLOYMENT.md)
 
-## Key Features
+## Verification
 
-### GPS-Based Attendance
-- 100m geofence radius validation
-- Real-time location tracking
-- Haversine distance calculation
-- Indoor/outdoor compatibility
-
-### Multi-Level Approval Workflow
-1. **Level 1**: Supervisor Review
-2. **Level 2**: Operations Manager Approval
-3. **Level 3**: Manager Verification
-- Automated escalation after 24 hours
-- Bulk approval capabilities
-- Audit trail for all actions
-
-### Multi-Location Support
-- Employees can work at multiple client locations
-- Primary and secondary location assignments
-- Daily location tracking via GPS
-- Location-specific reporting
-
-### Payroll Processing
-- Automated salary calculation from attendance
-- Tax and deduction computation
-- HR override with audit trail
-- Payslip generation (PDF)
-- Bulk payroll processing
-
-## Monitoring
-
-- **Grafana**: http://localhost:3000 (admin/admin)
-- **Prometheus**: http://localhost:9090
-- **RabbitMQ Management**: http://localhost:15672
-- **MinIO Console**: http://localhost:9001
-
-## Testing
+The current monolith workflow has been repeatedly verified with:
 
 ```bash
-# Run all tests
-npm run test
-
-# Run tests for specific service
-npm run test --workspace=services/attendance
-
-# Run e2e tests
-npm run test:e2e
-
-# Run integration tests
-npm run test:integration
+bun run build:backend
+bun run --cwd apps/web-admin build
+bunx tsc --noEmit -p apps/mobile/tsconfig.json
 ```
-
-## Security
-
-- JWT Authentication with refresh tokens
-- Role-based access control (RBAC)
-- Field-level permissions
-- Encrypted data at rest (AES-256)
-- TLS 1.3 for data in transit
-- Comprehensive audit logging
-
-## Contributing
-
-See [CONTRIBUTING.md](./CONTRIBUTING.md) for development guidelines.
-
-## License
-
-Proprietary - All Rights Reserved
-
-## Support
-
-For support, contact: support@hrflow.com
-Documentation: https://docs.hrflow.com
