@@ -86,6 +86,17 @@ export class LoginInput {
 }
 
 @InputType()
+export class CreateEmployeeUserInput {
+  @Field()
+  @IsString()
+  employeeId: string;
+
+  @Field()
+  @MinLength(8)
+  password: string;
+}
+
+@InputType()
 export class BootstrapAdminInput {
   @Field()
   @IsEmail()

@@ -35,6 +35,8 @@ const EMPLOYEE_PAGE_QUERY = gql`
       employmentType
       joinDate
       status
+      hasUserAccount
+      userAccountEmail
       departmentId
       designationId
       department {
@@ -73,6 +75,16 @@ const CREATE_EMPLOYEE_MUTATION = gql`
   }
 `
 
+const CREATE_EMPLOYEE_USER_MUTATION = gql`
+  mutation CreateEmployeeUser($input: CreateEmployeeUserInput!) {
+    createEmployeeUser(input: $input) {
+      user {
+        id
+      }
+    }
+  }
+`
+
 type DepartmentFormState = {
   name: string
   code: string
@@ -96,6 +108,11 @@ type EmployeeFormState = {
   designationId: string
   employmentType: string
   joinDate: string
+}
+
+type EmployeeUserFormState = {
+  employeeId: string
+  password: string
 }
 
 const departmentFormDefaults: DepartmentFormState = {
@@ -123,6 +140,11 @@ const employeeFormDefaults: EmployeeFormState = {
   joinDate: new Date().toISOString().slice(0, 10),
 }
 
+const employeeUserFormDefaults: EmployeeUserFormState = {
+  employeeId: '',
+  password: '',
+}
+
 export function EmployeesPage() {
   const [searchQuery, setSearchQuery] = useState('')
   const deferredSearch = useDeferredValue(searchQuery)
@@ -132,6 +154,7 @@ export function EmployeesPage() {
   const [departmentForm, setDepartmentForm] = useState(departmentFormDefaults)
   const [designationForm, setDesignationForm] = useState(designationFormDefaults)
   const [employeeForm, setEmployeeForm] = useState(employeeFormDefaults)
+  const [employeeUserForm, setEmployeeUserForm] = useState(employeeUserFormDefaults)
 
   const { data, loading, error, refetch } = useQuery(EMPLOYEE_PAGE_QUERY, {
     variables: {
@@ -151,6 +174,9 @@ export function EmployeesPage() {
   )
   const [createEmployee, { loading: creatingEmployee }] = useMutation(
     CREATE_EMPLOYEE_MUTATION
+  )
+  const [createEmployeeUser, { loading: creatingEmployeeUser }] = useMutation(
+    CREATE_EMPLOYEE_USER_MUTATION
   )
 
   const departments = data?.departments ?? []
@@ -255,6 +281,32 @@ export function EmployeesPage() {
     }
   }
 
+  const handleCreateEmployeeUser = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    setErrorMessage(null)
+    setStatusMessage(null)
+
+    try {
+      await createEmployeeUser({
+        variables: {
+          input: {
+            employeeId: employeeUserForm.employeeId,
+            password: employeeUserForm.password,
+          },
+        },
+      })
+      setEmployeeUserForm(employeeUserFormDefaults)
+      setStatusMessage('Employee login created.')
+      await refetch()
+    } catch (mutationError) {
+      setErrorMessage(
+        mutationError instanceof Error
+          ? mutationError.message
+          : 'Unable to create employee login.'
+      )
+    }
+  }
+
   return (
     <div className="space-y-6">
       <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
@@ -296,7 +348,7 @@ export function EmployeesPage() {
       )}
 
       {showForms && (
-        <div className="grid gap-6 xl:grid-cols-3">
+        <div className="grid gap-6 xl:grid-cols-2">
           <Card>
             <CardHeader>
               <CardTitle>Department Setup</CardTitle>
@@ -612,6 +664,74 @@ export function EmployeesPage() {
               </form>
             </CardContent>
           </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle>Employee Login</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <form className="space-y-4" onSubmit={handleCreateEmployeeUser}>
+                <div className="space-y-2">
+                  <Label htmlFor="employee-user-employee">Employee</Label>
+                  <select
+                    id="employee-user-employee"
+                    value={employeeUserForm.employeeId}
+                    onChange={(event) =>
+                      setEmployeeUserForm((current) => ({
+                        ...current,
+                        employeeId: event.target.value,
+                      }))
+                    }
+                    className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                    required
+                  >
+                    <option value="">Select employee</option>
+                    {employees
+                      .filter((employee: { hasUserAccount: boolean }) => !employee.hasUserAccount)
+                      .map(
+                        (employee: {
+                          id: string
+                          fullName: string
+                          employeeNumber: string
+                          email: string
+                        }) => (
+                          <option key={employee.id} value={employee.id}>
+                            {employee.fullName} ({employee.employeeNumber}) • {employee.email}
+                          </option>
+                        )
+                      )}
+                  </select>
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="employee-user-password">Temporary Password</Label>
+                  <Input
+                    id="employee-user-password"
+                    type="password"
+                    value={employeeUserForm.password}
+                    onChange={(event) =>
+                      setEmployeeUserForm((current) => ({
+                        ...current,
+                        password: event.target.value,
+                      }))
+                    }
+                    placeholder="Minimum 8 characters"
+                    required
+                  />
+                </div>
+                <Button
+                  className="w-full"
+                  type="submit"
+                  disabled={creatingEmployeeUser || employees.length === 0}
+                >
+                  {creatingEmployeeUser ? 'Saving...' : 'Create Employee Login'}
+                </Button>
+                <p className="text-xs text-muted-foreground">
+                  The user account is linked directly to the employee record. Mobile login uses
+                  this link instead of matching by email.
+                </p>
+              </form>
+            </CardContent>
+          </Card>
         </div>
       )}
 
@@ -642,6 +762,7 @@ export function EmployeesPage() {
                     <th className="px-4 py-3 text-left">Email</th>
                     <th className="px-4 py-3 text-left">Department</th>
                     <th className="px-4 py-3 text-left">Designation</th>
+                    <th className="px-4 py-3 text-left">Login</th>
                     <th className="px-4 py-3 text-left">Join Date</th>
                     <th className="px-4 py-3 text-left">Status</th>
                   </tr>
@@ -653,6 +774,8 @@ export function EmployeesPage() {
                       employeeNumber: string
                       fullName: string
                       email: string
+                      hasUserAccount: boolean
+                      userAccountEmail?: string | null
                       joinDate: string
                       status: string
                       department: { name: string }
@@ -664,6 +787,17 @@ export function EmployeesPage() {
                         <td className="px-4 py-3">{employee.email}</td>
                         <td className="px-4 py-3">{employee.department.name}</td>
                         <td className="px-4 py-3">{employee.designation.title}</td>
+                        <td className="px-4 py-3">
+                          {employee.hasUserAccount ? (
+                            <span className="inline-flex rounded-full bg-blue-100 px-2.5 py-0.5 text-xs font-medium text-blue-800">
+                              {employee.userAccountEmail || 'Linked'}
+                            </span>
+                          ) : (
+                            <span className="inline-flex rounded-full bg-amber-100 px-2.5 py-0.5 text-xs font-medium text-amber-800">
+                              No login
+                            </span>
+                          )}
+                        </td>
                         <td className="px-4 py-3">{employee.joinDate}</td>
                         <td className="px-4 py-3">
                           <span className="inline-flex rounded-full bg-emerald-100 px-2.5 py-0.5 text-xs font-medium text-emerald-800">

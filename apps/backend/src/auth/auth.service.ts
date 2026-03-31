@@ -7,7 +7,11 @@ import {
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { PrismaService } from '../prisma/prisma.service';
-import { BootstrapAdminInput, LoginInput } from './auth.types';
+import {
+  BootstrapAdminInput,
+  CreateEmployeeUserInput,
+  LoginInput,
+} from './auth.types';
 import * as bcrypt from 'bcrypt';
 import { randomUUID } from 'crypto';
 import {
@@ -18,6 +22,7 @@ import {
 interface UserRow {
   id: string;
   email: string;
+  employeeId?: string | null;
   passwordHash: string;
   firstName: string;
   lastName: string;
@@ -106,16 +111,18 @@ export class AuthService {
           INSERT INTO users (
             id,
             email,
+            employee_id,
             password_hash,
             first_name,
             last_name
           )
-          VALUES ($1, $2, $3, $4, $5)
+          VALUES ($1, $2, $3, $4, $5, $6)
           RETURNING id
         `,
         [
           randomUUID(),
           normalizedEmail,
+          null,
           passwordHash,
           input.firstName.trim(),
           input.lastName.trim(),
@@ -201,6 +208,118 @@ export class AuthService {
     );
   }
 
+  async createEmployeeUser(input: CreateEmployeeUserInput) {
+    const employeeId = input.employeeId.trim();
+    const passwordHash = await bcrypt.hash(input.password, 10);
+
+    const createdUser = await this.prisma.transaction(async (tx) => {
+      const employee = await this.prisma.one<{
+        id: string;
+        email: string;
+        firstName: string;
+        lastName: string;
+      }>(
+        `
+          SELECT
+            id,
+            email,
+            first_name AS "firstName",
+            last_name AS "lastName"
+          FROM employees
+          WHERE id = $1 AND is_active = TRUE
+        `,
+        [employeeId],
+        tx,
+      );
+
+      if (!employee) {
+        throw new NotFoundException('Employee not found or inactive');
+      }
+
+      const linkedUser = await this.prisma.one<{ id: string }>(
+        `SELECT id FROM users WHERE employee_id = $1`,
+        [employeeId],
+        tx,
+      );
+
+      if (linkedUser) {
+        throw new ConflictException('This employee already has a user account');
+      }
+
+      const existingEmailUser = await this.prisma.one<{ id: string }>(
+        `SELECT id FROM users WHERE LOWER(email) = LOWER($1)`,
+        [employee.email],
+        tx,
+      );
+
+      if (existingEmailUser) {
+        throw new ConflictException(
+          'A user account already exists for this employee email',
+        );
+      }
+
+      let employeeRole = await this.prisma.one<{ id: string }>(
+        `SELECT id FROM roles WHERE key = $1`,
+        ['EMPLOYEE'],
+        tx,
+      );
+
+      if (!employeeRole) {
+        employeeRole = await this.prisma.one<{ id: string }>(
+          `
+            INSERT INTO roles (id, key, name, description)
+            VALUES ($1, $2, $3, $4)
+            RETURNING id
+          `,
+          [
+            randomUUID(),
+            'EMPLOYEE',
+            'Employee',
+            'Employee self-service account',
+          ],
+          tx,
+        );
+      }
+
+      const user = await this.prisma.one<{ id: string }>(
+        `
+          INSERT INTO users (
+            id,
+            email,
+            employee_id,
+            password_hash,
+            first_name,
+            last_name
+          )
+          VALUES ($1, $2, $3, $4, $5, $6)
+          RETURNING id
+        `,
+        [
+          randomUUID(),
+          employee.email.trim().toLowerCase(),
+          employee.id,
+          passwordHash,
+          employee.firstName,
+          employee.lastName,
+        ],
+        tx,
+      );
+
+      await this.prisma.query(
+        `
+          INSERT INTO user_role_assignments (id, user_id, role_id)
+          VALUES ($1, $2, $3)
+        `,
+        [randomUUID(), user!.id, employeeRole.id],
+        tx,
+      );
+
+      return this.getUserWithRolesById(user!.id, tx);
+    });
+
+    return this.buildAuthPayload(createdUser);
+  }
+
   private buildAuthPayload(user: UserWithRoles) {
     const mappedUser = this.mapUser(user);
     const expiresIn = process.env.JWT_EXPIRY ?? '3600s';
@@ -239,6 +358,7 @@ export class AuthService {
         SELECT
           id,
           email,
+          employee_id AS "employeeId",
           password_hash AS "passwordHash",
           first_name AS "firstName",
           last_name AS "lastName",
@@ -263,6 +383,7 @@ export class AuthService {
         SELECT
           id,
           email,
+          employee_id AS "employeeId",
           password_hash AS "passwordHash",
           first_name AS "firstName",
           last_name AS "lastName",
@@ -311,10 +432,10 @@ export class AuthService {
         FROM employees e
         INNER JOIN departments d ON d.id = e.department_id
         INNER JOIN designations des ON des.id = e.designation_id
-        WHERE LOWER(e.email) = LOWER($1)
+        WHERE e.id = $1
         LIMIT 1
       `,
-      [user.email],
+      [user.employeeId ?? null],
       client,
     );
 

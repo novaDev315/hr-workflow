@@ -64,6 +64,7 @@ export class PrismaService implements OnModuleInit, OnModuleDestroy {
         CREATE TABLE IF NOT EXISTS users (
           id TEXT PRIMARY KEY,
           email TEXT NOT NULL UNIQUE,
+          employee_id TEXT,
           password_hash TEXT NOT NULL,
           first_name TEXT NOT NULL,
           last_name TEXT NOT NULL,
@@ -227,6 +228,29 @@ export class PrismaService implements OnModuleInit, OnModuleDestroy {
       `
         CREATE INDEX IF NOT EXISTS idx_employees_designation_id
         ON employees(designation_id)
+      `,
+      `
+        ALTER TABLE users
+        ADD COLUMN IF NOT EXISTS employee_id TEXT
+      `,
+      `
+        DO $$
+        BEGIN
+          IF NOT EXISTS (
+            SELECT 1
+            FROM pg_constraint
+            WHERE conname = 'users_employee_id_fkey'
+          ) THEN
+            ALTER TABLE users
+            ADD CONSTRAINT users_employee_id_fkey
+            FOREIGN KEY (employee_id) REFERENCES employees(id) ON DELETE SET NULL;
+          END IF;
+        END $$;
+      `,
+      `
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_users_employee_id_unique
+        ON users(employee_id)
+        WHERE employee_id IS NOT NULL
       `,
       `
         CREATE INDEX IF NOT EXISTS idx_employee_location_assignments_employee_id

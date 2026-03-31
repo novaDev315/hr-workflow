@@ -34,6 +34,7 @@ interface EmployeeRow {
   designationIsActive: boolean;
   supervisorFirstName: string | null;
   supervisorLastName: string | null;
+  userAccountEmail: string | null;
 }
 
 @Injectable()
@@ -95,11 +96,13 @@ export class EmployeeService {
           des.description AS "designationDescription",
           des.is_active AS "designationIsActive",
           s.first_name AS "supervisorFirstName",
-          s.last_name AS "supervisorLastName"
+          s.last_name AS "supervisorLastName",
+          u.email AS "userAccountEmail"
         FROM employees e
         INNER JOIN departments d ON d.id = e.department_id
         INNER JOIN designations des ON des.id = e.designation_id
         LEFT JOIN employees s ON s.id = e.supervisor_id
+        LEFT JOIN users u ON u.employee_id = e.id
         ${where.length > 0 ? `WHERE ${where.join(' AND ')}` : ''}
         ORDER BY e.created_at DESC, e.last_name ASC, e.first_name ASC
       `,
@@ -137,11 +140,13 @@ export class EmployeeService {
           des.description AS "designationDescription",
           des.is_active AS "designationIsActive",
           s.first_name AS "supervisorFirstName",
-          s.last_name AS "supervisorLastName"
+          s.last_name AS "supervisorLastName",
+          u.email AS "userAccountEmail"
         FROM employees e
         INNER JOIN departments d ON d.id = e.department_id
         INNER JOIN designations des ON des.id = e.designation_id
         LEFT JOIN employees s ON s.id = e.supervisor_id
+        LEFT JOIN users u ON u.employee_id = e.id
         WHERE e.id = $1
       `,
       [id],
@@ -287,6 +292,8 @@ export class EmployeeService {
       exitDate: row.exitDate,
       status: row.status,
       isActive: row.isActive,
+      hasUserAccount: Boolean(row.userAccountEmail),
+      userAccountEmail: row.userAccountEmail,
       department: {
         id: row.departmentId,
         name: row.departmentName,

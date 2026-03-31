@@ -6,6 +6,7 @@ import {
   AuthPayloadType,
   AuthUserType,
   BootstrapAdminInput,
+  CreateEmployeeUserInput,
   LoginInput,
 } from './auth.types';
 import { AuthService } from './auth.service';
@@ -35,6 +36,12 @@ export class AuthResolver {
   @Mutation(() => Boolean, { name: 'logout' })
   async logout() {
     return this.authService.logout();
+  }
+
+  @UseGuards(GqlAuthGuard)
+  @Mutation(() => AuthPayloadType, { name: 'createEmployeeUser' })
+  async createEmployeeUser(@Args('input') input: CreateEmployeeUserInput) {
+    return this.authService.createEmployeeUser(input);
   }
 
   @UseGuards(GqlAuthGuard)

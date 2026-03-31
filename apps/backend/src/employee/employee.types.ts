@@ -68,6 +68,12 @@ export class EmployeeType {
 
   @Field()
   isActive: boolean;
+
+  @Field()
+  hasUserAccount: boolean;
+
+  @Field({ nullable: true })
+  userAccountEmail?: string | null;
 }
 
 @InputType()
