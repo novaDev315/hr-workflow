@@ -2,6 +2,7 @@ import { UseGuards } from '@nestjs/common';
 import { Args, Mutation, Query, Resolver } from '@nestjs/graphql';
 import { GqlAuthGuard } from '../auth/gql-auth.guard';
 import { CurrentUser, AuthenticatedUser } from '../common/current-user.decorator';
+import { DocumentExportType } from '../common/document-export.types';
 import {
   CreatePayrollPeriodInput,
   EmployeeCompensationType,
@@ -35,6 +36,14 @@ export class PayrollResolver {
     @Args('filter', { nullable: true }) filter?: PayslipFilterInput,
   ) {
     return this.payrollService.payslips(currentUser, filter);
+  }
+
+  @Query(() => DocumentExportType, { name: 'exportPayslipPdf' })
+  async exportPayslipPdf(
+    @CurrentUser() currentUser: AuthenticatedUser,
+    @Args('payslipId') payslipId: string,
+  ) {
+    return this.payrollService.exportPayslipPdf(currentUser, payslipId);
   }
 
   @Mutation(() => EmployeeCompensationType, { name: 'upsertEmployeeCompensation' })

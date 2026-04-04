@@ -19,6 +19,7 @@ import {
   ProcessPayrollPeriodInput,
   UpsertEmployeeCompensationInput,
 } from './payroll.types';
+import { createSimplePdf } from '../common/simple-pdf';
 
 interface EmployeeCompensationRow {
   id: string;
@@ -66,6 +67,12 @@ interface PayslipRow {
   status: string;
   employeeNumber: string;
   employeeName: string;
+}
+
+interface PayslipExportRow extends PayslipRow {
+  startDate: string;
+  endDate: string;
+  companyName: string | null;
 }
 
 @Injectable()
@@ -496,6 +503,97 @@ export class PayrollService {
     );
 
     return rows.map((row) => this.mapPayslip(row));
+  }
+
+  async exportPayslipPdf(currentUser: AuthenticatedUser, payslipId: string) {
+    const row = await this.prisma.one<PayslipExportRow>(
+      `
+        SELECT
+          ps.id,
+          ps.payroll_period_id AS "payrollPeriodId",
+          ps.employee_id AS "employeeId",
+          pp.period_month AS "periodMonth",
+          pp.start_date::text AS "startDate",
+          pp.end_date::text AS "endDate",
+          ps.expected_workdays AS "expectedWorkdays",
+          ps.attended_days AS "attendedDays",
+          ps.approved_leave_days AS "approvedLeaveDays",
+          ps.paid_days AS "paidDays",
+          ps.unpaid_days AS "unpaidDays",
+          ps.base_salary AS "baseSalary",
+          ps.prorated_base_salary AS "proratedBaseSalary",
+          ps.allowance_amount AS "allowanceAmount",
+          ps.deduction_amount AS "deductionAmount",
+          ps.attendance_deduction AS "attendanceDeduction",
+          ps.gross_pay AS "grossPay",
+          ps.net_pay AS "netPay",
+          ps.currency_code AS "currencyCode",
+          ps.status,
+          e.employee_number AS "employeeNumber",
+          CONCAT(e.first_name, ' ', e.last_name) AS "employeeName",
+          (
+            SELECT company_name
+            FROM company_settings
+            WHERE singleton_key = 'primary'
+            LIMIT 1
+          ) AS "companyName"
+        FROM payslips ps
+        INNER JOIN payroll_periods pp ON pp.id = ps.payroll_period_id
+        INNER JOIN employees e ON e.id = ps.employee_id
+        WHERE ps.id = $1
+      `,
+      [payslipId],
+    );
+
+    if (!row) {
+      throw new NotFoundException('Payslip not found');
+    }
+
+    await this.resolveEmployeeScopeForPayslips(currentUser, row.employeeId);
+
+    const pdf = createSimplePdf(
+      `${row.companyName ?? 'HRFlow'} Payslip`,
+      `${row.periodMonth} payroll statement`,
+      [
+        {
+          heading: 'Employee',
+          lines: [
+            `Name: ${row.employeeName}`,
+            `Employee Number: ${row.employeeNumber}`,
+            `Payroll Period: ${row.periodMonth} (${row.startDate} to ${row.endDate})`,
+            `Status: ${row.status}`,
+          ],
+        },
+        {
+          heading: 'Attendance Summary',
+          lines: [
+            `Expected Workdays: ${row.expectedWorkdays}`,
+            `Attended Days: ${row.attendedDays}`,
+            `Approved Leave Days: ${row.approvedLeaveDays}`,
+            `Paid Days: ${row.paidDays}`,
+            `Unpaid Days: ${row.unpaidDays}`,
+          ],
+        },
+        {
+          heading: 'Earnings And Deductions',
+          lines: [
+            `Base Salary: ${row.currencyCode} ${row.baseSalary.toFixed(2)}`,
+            `Prorated Base Salary: ${row.currencyCode} ${row.proratedBaseSalary.toFixed(2)}`,
+            `Allowance Amount: ${row.currencyCode} ${row.allowanceAmount.toFixed(2)}`,
+            `Fixed Deductions: ${row.currencyCode} ${row.deductionAmount.toFixed(2)}`,
+            `Attendance Deduction: ${row.currencyCode} ${row.attendanceDeduction.toFixed(2)}`,
+            `Gross Pay: ${row.currencyCode} ${row.grossPay.toFixed(2)}`,
+            `Net Pay: ${row.currencyCode} ${row.netPay.toFixed(2)}`,
+          ],
+        },
+      ],
+    );
+
+    return {
+      fileName: `payslip-${row.employeeNumber}-${row.periodMonth}.pdf`,
+      mimeType: 'application/pdf',
+      contentBase64: pdf.toString('base64'),
+    };
   }
 
   private async findEmployeeCompensation(id: string) {

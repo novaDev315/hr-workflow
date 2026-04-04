@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Plus, FileText, ExternalLink } from 'lucide-react'
 import { canManageAccounts, readStoredAdminAccount } from '@/lib/auth-session'
+import { readFileAsBase64 } from '@/lib/download-export'
 
 const POLICY_DOCUMENTS_QUERY = gql`
   query PolicyDocuments {
@@ -17,6 +18,8 @@ const POLICY_DOCUMENTS_QUERY = gql`
       description
       status
       documentUrl
+      documentOriginalName
+      documentMimeType
       content
       createdAt
       publishedAt
@@ -37,6 +40,17 @@ const PUBLISH_POLICY_DOCUMENT_MUTATION = gql`
     publishPolicyDocument(input: $input) {
       id
       status
+    }
+  }
+`
+
+const UPLOAD_POLICY_DOCUMENT_FILE_MUTATION = gql`
+  mutation UploadPolicyDocumentFile($input: UploadPolicyDocumentFileInput!) {
+    uploadPolicyDocumentFile(input: $input) {
+      id
+      documentUrl
+      documentOriginalName
+      documentMimeType
     }
   }
 `
@@ -67,12 +81,16 @@ export function PolicyDocumentsPage() {
   const currentAdminAccount = readStoredAdminAccount()
   const canManagePolicies = canManageAccounts(currentAdminAccount?.roles ?? [])
   const [policyForm, setPolicyForm] = useState(policyFormDefaults)
+  const [selectedFile, setSelectedFile] = useState<File | null>(null)
   const [statusMessage, setStatusMessage] = useState<string | null>(null)
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
 
   const { data, loading, error, refetch } = useQuery(POLICY_DOCUMENTS_QUERY)
   const [createPolicyDocument, { loading: creatingPolicyDocument }] = useMutation(
     CREATE_POLICY_DOCUMENT_MUTATION
+  )
+  const [uploadPolicyDocumentFile, { loading: uploadingPolicyFile }] = useMutation(
+    UPLOAD_POLICY_DOCUMENT_FILE_MUTATION
   )
   const [publishPolicyDocument, { loading: publishingPolicyDocument }] = useMutation(
     PUBLISH_POLICY_DOCUMENT_MUTATION
@@ -86,7 +104,7 @@ export function PolicyDocumentsPage() {
     setStatusMessage(null)
 
     try {
-      await createPolicyDocument({
+      const created = await createPolicyDocument({
         variables: {
           input: {
             title: policyForm.title,
@@ -100,8 +118,27 @@ export function PolicyDocumentsPage() {
           },
         },
       })
+
+      const createdPolicyId = created.data?.createPolicyDocument?.id as string | undefined
+      if (selectedFile && createdPolicyId) {
+        const contentBase64 = await readFileAsBase64(selectedFile)
+        await uploadPolicyDocumentFile({
+          variables: {
+            input: {
+              policyDocumentId: createdPolicyId,
+              fileName: selectedFile.name,
+              mimeType: selectedFile.type || 'application/octet-stream',
+              contentBase64,
+            },
+          },
+        })
+      }
+
       setPolicyForm(policyFormDefaults)
-      setStatusMessage('Policy document created.')
+      setSelectedFile(null)
+      setStatusMessage(
+        selectedFile ? 'Policy document created and file uploaded.' : 'Policy document created.'
+      )
       await refetch()
     } catch (mutationError) {
       setErrorMessage(
@@ -253,6 +290,16 @@ export function PolicyDocumentsPage() {
                 }
                 placeholder="Optional document URL"
               />
+              <div className="space-y-2">
+                <Input
+                  type="file"
+                  accept=".pdf,.doc,.docx,.txt,.rtf,application/pdf,.odt"
+                  onChange={(event) => setSelectedFile(event.target.files?.[0] ?? null)}
+                />
+                <p className="text-xs text-muted-foreground">
+                  Upload a policy file to store it inside HRFlow. External URLs are still optional.
+                </p>
+              </div>
               <textarea
                 value={policyForm.content}
                 onChange={(event) =>
@@ -264,8 +311,10 @@ export function PolicyDocumentsPage() {
                 placeholder="Policy summary or text content"
                 className="flex min-h-[140px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
               />
-              <Button type="submit" disabled={creatingPolicyDocument}>
-                {creatingPolicyDocument ? 'Saving...' : 'Save Policy Document'}
+              <Button type="submit" disabled={creatingPolicyDocument || uploadingPolicyFile}>
+                {creatingPolicyDocument || uploadingPolicyFile
+                  ? 'Saving...'
+                  : 'Save Policy Document'}
               </Button>
             </form>
           </CardContent>
@@ -302,6 +351,8 @@ export function PolicyDocumentsPage() {
               description: string
               status: string
               documentUrl?: string | null
+              documentOriginalName?: string | null
+              documentMimeType?: string | null
               content?: string | null
               publishedAt?: string | null
             }) => (
@@ -352,7 +403,9 @@ export function PolicyDocumentsPage() {
                         <Button asChild variant="outline">
                           <a href={policy.documentUrl} target="_blank" rel="noreferrer">
                             <ExternalLink className="mr-2 h-4 w-4" />
-                            Open Link
+                            {policy.documentOriginalName
+                              ? `Open ${policy.documentOriginalName}`
+                              : 'Open Link'}
                           </a>
                         </Button>
                       )}

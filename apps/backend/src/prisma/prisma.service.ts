@@ -312,6 +312,18 @@ export class PrismaService implements OnModuleInit, OnModuleDestroy {
         )
       `,
       `
+        ALTER TABLE policy_documents
+        ADD COLUMN IF NOT EXISTS document_original_name TEXT
+      `,
+      `
+        ALTER TABLE policy_documents
+        ADD COLUMN IF NOT EXISTS document_mime_type TEXT
+      `,
+      `
+        ALTER TABLE policy_documents
+        ADD COLUMN IF NOT EXISTS stored_file_name TEXT
+      `,
+      `
         CREATE INDEX IF NOT EXISTS idx_user_role_assignments_user_id
         ON user_role_assignments(user_id)
       `,

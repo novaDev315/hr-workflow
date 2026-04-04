@@ -1,10 +1,12 @@
 import {
+  BadRequestException,
   ForbiddenException,
   Injectable,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuthenticatedUser } from '../common/current-user.decorator';
 import { ADMIN_ACCESS_ROLE_KEYS } from '../common/system-roles';
+import { createSimplePdf } from '../common/simple-pdf';
 
 @Injectable()
 export class ReportsService {
@@ -191,6 +193,76 @@ export class ReportsService {
     };
   }
 
+  async exportDashboardPdf(currentUser: AuthenticatedUser, periodMonth?: string) {
+    const normalizedMonth = this.normalizePeriodMonth(periodMonth);
+    const dashboard = await this.dashboard(currentUser, normalizedMonth);
+    const pdf = createSimplePdf(
+      'HRFlow Operational Report',
+      `Reporting month: ${normalizedMonth}`,
+      [
+        {
+          heading: 'Overview',
+          lines: [
+            `Active Employees: ${dashboard.overview.activeEmployees}`,
+            `Pending Leave Requests: ${dashboard.overview.pendingLeaveRequests}`,
+            `Processed Payroll Periods: ${dashboard.overview.processedPayrollPeriods}`,
+            `Published Policies: ${dashboard.overview.publishedPolicies}`,
+            `Monthly Net Pay: ${dashboard.overview.monthlyPayrollNetPay.toFixed(2)}`,
+          ],
+        },
+        {
+          heading: 'Department Headcount',
+          lines: dashboard.departmentHeadcount.map(
+            (row) => `${row.departmentName}: ${row.employeeCount} employees`,
+          ),
+        },
+        {
+          heading: 'Attendance Summary',
+          lines:
+            dashboard.attendanceSummary.length > 0
+              ? dashboard.attendanceSummary.map(
+                  (row) =>
+                    `${row.fullName} (${row.employeeNumber}) - ${row.attendanceDays} attendance days, ${row.overtimeHours.toFixed(2)} overtime hours`,
+                )
+              : ['No attendance records found for this month.'],
+        },
+        {
+          heading: 'Pending Leave Approvals',
+          lines:
+            dashboard.pendingLeaveApprovals.length > 0
+              ? dashboard.pendingLeaveApprovals.map(
+                  (row) =>
+                    `${row.fullName} (${row.employeeNumber}) - ${row.leaveTypeName} from ${row.startDate} to ${row.endDate} for ${row.totalDays} day(s)`,
+                )
+              : ['No pending leave approvals.'],
+        },
+        {
+          heading: 'Payroll Cost By Department',
+          lines: dashboard.payrollDepartmentCosts.map(
+            (row) =>
+              `${row.departmentName}: ${row.payslipCount} payslips, total net pay ${row.totalNetPay.toFixed(2)}`,
+          ),
+        },
+        {
+          heading: 'Published Policies',
+          lines:
+            dashboard.publishedPolicies.length > 0
+              ? dashboard.publishedPolicies.map(
+                  (row) =>
+                    `${row.title} (${row.category}) v${row.version} effective ${row.effectiveDate}`,
+                )
+              : ['No published policies found.'],
+        },
+      ],
+    );
+
+    return {
+      fileName: `reports-${normalizedMonth}.pdf`,
+      mimeType: 'application/pdf',
+      contentBase64: pdf.toString('base64'),
+    };
+  }
+
   private assertCanViewReports(roles: string[]) {
     const hasAccess = roles.some((role) =>
       ADMIN_ACCESS_ROLE_KEYS.includes(
@@ -205,7 +277,12 @@ export class ReportsService {
 
   private normalizePeriodMonth(periodMonth?: string) {
     if (periodMonth?.trim()) {
-      return periodMonth.trim();
+      const normalized = periodMonth.trim();
+      if (!/^\d{4}-\d{2}$/.test(normalized)) {
+        throw new BadRequestException('Report month must use YYYY-MM format');
+      }
+
+      return normalized;
     }
 
     return new Date().toISOString().slice(0, 7);

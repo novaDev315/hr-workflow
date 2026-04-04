@@ -1,0 +1,195 @@
+type PdfLine = {
+  text: string;
+  fontSize?: number;
+};
+
+type PdfSection = {
+  heading?: string;
+  lines: string[];
+};
+
+const PAGE_WIDTH = 612;
+const PAGE_HEIGHT = 792;
+const PAGE_MARGIN_LEFT = 50;
+const PAGE_MARGIN_TOP = 740;
+const PAGE_MARGIN_BOTTOM = 60;
+const DEFAULT_FONT_SIZE = 11;
+const DEFAULT_LINE_HEIGHT = 16;
+const MAX_TEXT_WIDTH = 92;
+
+function sanitizePdfText(value: string) {
+  return value
+    .replace(/[^\x20-\x7E]/g, '?')
+    .replace(/\\/g, '\\\\')
+    .replace(/\(/g, '\\(')
+    .replace(/\)/g, '\\)');
+}
+
+function wrapText(value: string, maxLength = MAX_TEXT_WIDTH) {
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return [''];
+  }
+
+  const words = trimmed.split(/\s+/);
+  const lines: string[] = [];
+  let current = '';
+
+  for (const word of words) {
+    const candidate = current ? `${current} ${word}` : word;
+    if (candidate.length <= maxLength) {
+      current = candidate;
+      continue;
+    }
+
+    if (current) {
+      lines.push(current);
+      current = word;
+      continue;
+    }
+
+    const chunks = word.match(new RegExp(`.{1,${maxLength}}`, 'g')) ?? [word];
+    lines.push(...chunks.slice(0, -1));
+    current = chunks[chunks.length - 1] ?? '';
+  }
+
+  if (current) {
+    lines.push(current);
+  }
+
+  return lines;
+}
+
+function buildLineLayout(title: string, subtitle: string | null, sections: PdfSection[]) {
+  const lines: PdfLine[] = [
+    { text: title, fontSize: 18 },
+  ];
+
+  if (subtitle?.trim()) {
+    lines.push({ text: subtitle.trim(), fontSize: 11 });
+  }
+
+  lines.push({ text: '', fontSize: 11 });
+
+  for (const section of sections) {
+    if (section.heading?.trim()) {
+      lines.push({ text: section.heading.trim(), fontSize: 13 });
+    }
+
+    for (const row of section.lines) {
+      for (const wrapped of wrapText(row)) {
+        lines.push({ text: wrapped, fontSize: DEFAULT_FONT_SIZE });
+      }
+    }
+
+    lines.push({ text: '', fontSize: 11 });
+  }
+
+  return lines;
+}
+
+function paginateLines(lines: PdfLine[]) {
+  const pages: PdfLine[][] = [];
+  let currentPage: PdfLine[] = [];
+  let cursorY = PAGE_MARGIN_TOP;
+
+  for (const line of lines) {
+    const fontSize = line.fontSize ?? DEFAULT_FONT_SIZE;
+    const lineHeight = Math.max(DEFAULT_LINE_HEIGHT, fontSize + 5);
+
+    if (cursorY - lineHeight < PAGE_MARGIN_BOTTOM && currentPage.length > 0) {
+      pages.push(currentPage);
+      currentPage = [];
+      cursorY = PAGE_MARGIN_TOP;
+    }
+
+    currentPage.push(line);
+    cursorY -= lineHeight;
+  }
+
+  if (currentPage.length > 0) {
+    pages.push(currentPage);
+  }
+
+  return pages;
+}
+
+function buildPageContent(page: PdfLine[], pageIndex: number, pageCount: number) {
+  const commands = ['BT'];
+  let cursorY = PAGE_MARGIN_TOP;
+
+  for (const line of page) {
+    const fontSize = line.fontSize ?? DEFAULT_FONT_SIZE;
+    commands.push(`/F1 ${fontSize} Tf`);
+    commands.push(`1 0 0 1 ${PAGE_MARGIN_LEFT} ${cursorY} Tm`);
+    commands.push(`(${sanitizePdfText(line.text)}) Tj`);
+    cursorY -= Math.max(DEFAULT_LINE_HEIGHT, fontSize + 5);
+  }
+
+  commands.push(`/F1 9 Tf`);
+  commands.push(`1 0 0 1 ${PAGE_MARGIN_LEFT} 36 Tm`);
+  commands.push(`(Page ${pageIndex + 1} of ${pageCount}) Tj`);
+  commands.push('ET');
+
+  return commands.join('\n');
+}
+
+function renderPdfDocument(pageContents: string[]) {
+  const objects: string[] = [];
+  const pageRefs: string[] = [];
+
+  objects.push('<< /Type /Catalog /Pages 2 0 R >>');
+  objects.push('');
+  objects.push('<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>');
+
+  for (let index = 0; index < pageContents.length; index += 1) {
+    const pageObjectNumber = 4 + index * 2;
+    const contentObjectNumber = pageObjectNumber + 1;
+    pageRefs.push(`${pageObjectNumber} 0 R`);
+    objects.push(
+      `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${PAGE_WIDTH} ${PAGE_HEIGHT}] /Resources << /Font << /F1 3 0 R >> >> /Contents ${contentObjectNumber} 0 R >>`,
+    );
+
+    const stream = pageContents[index];
+    objects.push(
+      `<< /Length ${Buffer.byteLength(stream, 'utf8')} >>\nstream\n${stream}\nendstream`,
+    );
+  }
+
+  objects[1] = `<< /Type /Pages /Count ${pageRefs.length} /Kids [${pageRefs.join(' ')}] >>`;
+
+  let output = '%PDF-1.4\n';
+  const offsets = [0];
+
+  for (let index = 0; index < objects.length; index += 1) {
+    offsets.push(Buffer.byteLength(output, 'utf8'));
+    output += `${index + 1} 0 obj\n${objects[index]}\nendobj\n`;
+  }
+
+  const xrefOffset = Buffer.byteLength(output, 'utf8');
+  output += `xref\n0 ${objects.length + 1}\n`;
+  output += '0000000000 65535 f \n';
+
+  for (let index = 1; index < offsets.length; index += 1) {
+    output += `${String(offsets[index]).padStart(10, '0')} 00000 n \n`;
+  }
+
+  output += `trailer\n<< /Size ${objects.length + 1} /Root 1 0 R >>\n`;
+  output += `startxref\n${xrefOffset}\n%%EOF`;
+
+  return Buffer.from(output, 'utf8');
+}
+
+export function createSimplePdf(
+  title: string,
+  subtitle: string | null,
+  sections: PdfSection[],
+) {
+  const lines = buildLineLayout(title, subtitle, sections);
+  const pages = paginateLines(lines);
+  const pageContents = pages.map((page, index) =>
+    buildPageContent(page, index, pages.length),
+  );
+
+  return renderPdfDocument(pageContents);
+}

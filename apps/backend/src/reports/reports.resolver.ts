@@ -2,6 +2,7 @@ import { UseGuards } from '@nestjs/common';
 import { Args, Query, Resolver } from '@nestjs/graphql';
 import { GqlAuthGuard } from '../auth/gql-auth.guard';
 import { CurrentUser, AuthenticatedUser } from '../common/current-user.decorator';
+import { DocumentExportType } from '../common/document-export.types';
 import { ReportsDashboardType } from './reports.types';
 import { ReportsService } from './reports.service';
 
@@ -16,5 +17,13 @@ export class ReportsResolver {
     @Args('periodMonth', { nullable: true }) periodMonth?: string,
   ) {
     return this.reportsService.dashboard(currentUser, periodMonth);
+  }
+
+  @Query(() => DocumentExportType, { name: 'exportReportsPdf' })
+  async exportReportsPdf(
+    @CurrentUser() currentUser: AuthenticatedUser,
+    @Args('periodMonth', { nullable: true }) periodMonth?: string,
+  ) {
+    return this.reportsService.exportDashboardPdf(currentUser, periodMonth);
   }
 }

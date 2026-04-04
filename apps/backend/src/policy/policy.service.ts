@@ -6,6 +6,8 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { randomUUID } from 'crypto';
+import { mkdir, writeFile } from 'fs/promises';
+import path from 'path';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuthenticatedUser } from '../common/current-user.decorator';
 import { ACCOUNT_MANAGER_ROLE_KEYS } from '../common/system-roles';
@@ -13,6 +15,7 @@ import { hasAdminPanelAccess } from '../common/access-control';
 import {
   CreatePolicyDocumentInput,
   PublishPolicyDocumentInput,
+  UploadPolicyDocumentFileInput,
 } from './policy.types';
 
 interface PolicyDocumentRow {
@@ -24,6 +27,9 @@ interface PolicyDocumentRow {
   description: string;
   status: string;
   documentUrl: string | null;
+  documentOriginalName: string | null;
+  documentMimeType: string | null;
+  storedFileName: string | null;
   content: string | null;
   createdAt: string;
   publishedAt: string | null;
@@ -45,6 +51,9 @@ export class PolicyService {
           description,
           status,
           document_url AS "documentUrl",
+          document_original_name AS "documentOriginalName",
+          document_mime_type AS "documentMimeType",
+          stored_file_name AS "storedFileName",
           content,
           created_at::text AS "createdAt",
           published_at::text AS "publishedAt"
@@ -151,6 +160,94 @@ export class PolicyService {
     return this.findPolicyDocument(input.policyDocumentId);
   }
 
+  async uploadPolicyDocumentFile(
+    currentUser: AuthenticatedUser,
+    input: UploadPolicyDocumentFileInput,
+  ) {
+    this.assertCanManagePolicies(currentUser.roles);
+
+    const existing = await this.prisma.one<{ id: string }>(
+      `SELECT id FROM policy_documents WHERE id = $1`,
+      [input.policyDocumentId],
+    );
+
+    if (!existing) {
+      throw new NotFoundException('Policy document not found');
+    }
+
+    const fileBuffer = Buffer.from(input.contentBase64, 'base64');
+    if (fileBuffer.length === 0) {
+      throw new BadRequestException('Uploaded policy file cannot be empty');
+    }
+
+    if (fileBuffer.length > 10 * 1024 * 1024) {
+      throw new BadRequestException('Uploaded policy file must be 10 MB or smaller');
+    }
+
+    const safeOriginalName = path.basename(input.fileName.trim());
+    if (!safeOriginalName) {
+      throw new BadRequestException('Uploaded policy file must include a valid file name');
+    }
+
+    const extension = path.extname(safeOriginalName) || '.bin';
+    const storedFileName = `${randomUUID()}${extension}`;
+    const storageDir = this.getPolicyStorageDir();
+    const absolutePath = path.join(storageDir, storedFileName);
+
+    await mkdir(storageDir, { recursive: true });
+    await writeFile(absolutePath, fileBuffer);
+
+    await this.prisma.query(
+      `
+        UPDATE policy_documents
+        SET
+          document_url = $2,
+          document_original_name = $3,
+          document_mime_type = $4,
+          stored_file_name = $5,
+          updated_at = NOW()
+        WHERE id = $1
+      `,
+      [
+        input.policyDocumentId,
+        `${this.getBackendPublicUrl()}/policy-files/${storedFileName}`,
+        safeOriginalName,
+        input.mimeType.trim(),
+        storedFileName,
+      ],
+    );
+
+    return this.findPolicyDocument(input.policyDocumentId);
+  }
+
+  async getStoredPolicyFile(storedFileName: string) {
+    const file = await this.prisma.one<{
+      documentOriginalName: string | null;
+      documentMimeType: string | null;
+      storedFileName: string | null;
+    }>(
+      `
+        SELECT
+          document_original_name AS "documentOriginalName",
+          document_mime_type AS "documentMimeType",
+          stored_file_name AS "storedFileName"
+        FROM policy_documents
+        WHERE stored_file_name = $1
+      `,
+      [storedFileName],
+    );
+
+    if (!file?.storedFileName) {
+      return null;
+    }
+
+    return {
+      originalName: file.documentOriginalName ?? file.storedFileName,
+      mimeType: file.documentMimeType ?? 'application/octet-stream',
+      absolutePath: path.join(this.getPolicyStorageDir(), file.storedFileName),
+    };
+  }
+
   private assertCanManagePolicies(roles: string[]) {
     const hasAccess = roles.some((role) =>
       ACCOUNT_MANAGER_ROLE_KEYS.includes(
@@ -175,6 +272,9 @@ export class PolicyService {
           description,
           status,
           document_url AS "documentUrl",
+          document_original_name AS "documentOriginalName",
+          document_mime_type AS "documentMimeType",
+          stored_file_name AS "storedFileName",
           content,
           created_at::text AS "createdAt",
           published_at::text AS "publishedAt"
@@ -201,9 +301,25 @@ export class PolicyService {
       description: row.description,
       status: row.status,
       documentUrl: row.documentUrl,
+      documentOriginalName: row.documentOriginalName,
+      documentMimeType: row.documentMimeType,
       content: row.content,
       createdAt: row.createdAt,
       publishedAt: row.publishedAt,
     };
+  }
+
+  private getPolicyStorageDir() {
+    return process.env.POLICY_STORAGE_DIR?.trim() || path.resolve(process.cwd(), 'storage/policies');
+  }
+
+  private getBackendPublicUrl() {
+    const configured = process.env.BACKEND_PUBLIC_URL?.trim();
+    if (configured) {
+      return configured.replace(/\/$/, '');
+    }
+
+    const port = Number(process.env.BACKEND_PORT ?? 4001);
+    return `http://localhost:${port}`;
   }
 }

@@ -1,7 +1,9 @@
-import { gql, useQuery } from '@apollo/client'
+import { gql, useApolloClient, useQuery } from '@apollo/client'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { useState } from 'react'
+import { downloadBase64File } from '@/lib/download-export'
 
 const REPORTS_DASHBOARD_QUERY = gql`
   query ReportsDashboard($periodMonth: String) {
@@ -53,8 +55,21 @@ const REPORTS_DASHBOARD_QUERY = gql`
   }
 `
 
+const EXPORT_REPORTS_PDF_QUERY = gql`
+  query ExportReportsPdf($periodMonth: String) {
+    exportReportsPdf(periodMonth: $periodMonth) {
+      fileName
+      mimeType
+      contentBase64
+    }
+  }
+`
+
 export function ReportsPage() {
+  const apolloClient = useApolloClient()
   const [periodMonth, setPeriodMonth] = useState(new Date().toISOString().slice(0, 7))
+  const [exporting, setExporting] = useState(false)
+  const [exportError, setExportError] = useState<string | null>(null)
   const { data, loading, error } = useQuery(REPORTS_DASHBOARD_QUERY, {
     variables: {
       periodMonth,
@@ -62,6 +77,36 @@ export function ReportsPage() {
   })
 
   const dashboard = data?.reportsDashboard
+
+  const handleExportReports = async () => {
+    setExporting(true)
+    setExportError(null)
+
+    try {
+      const { data: exportData } = await apolloClient.query({
+        query: EXPORT_REPORTS_PDF_QUERY,
+        variables: { periodMonth },
+        fetchPolicy: 'no-cache',
+      })
+
+      const exportPayload = exportData?.exportReportsPdf
+      if (!exportPayload) {
+        throw new Error('Report export is unavailable.')
+      }
+
+      downloadBase64File(
+        exportPayload.fileName,
+        exportPayload.mimeType,
+        exportPayload.contentBase64
+      )
+    } catch (queryError) {
+      setExportError(
+        queryError instanceof Error ? queryError.message : 'Unable to export the selected report.'
+      )
+    } finally {
+      setExporting(false)
+    }
+  }
 
   return (
     <div className="space-y-6">
@@ -72,10 +117,19 @@ export function ReportsPage() {
             Live operational reports across employees, attendance, leave, payroll, and policy.
           </p>
         </div>
-        <div className="w-full max-w-xs">
+        <div className="flex w-full max-w-md gap-3">
           <Input type="month" value={periodMonth} onChange={(event) => setPeriodMonth(event.target.value)} />
+          <Button type="button" variant="outline" onClick={handleExportReports} disabled={exporting}>
+            {exporting ? 'Exporting...' : 'Export PDF'}
+          </Button>
         </div>
       </div>
+
+      {exportError && (
+        <Card className="border-red-200 bg-red-50">
+          <CardContent className="p-4 text-sm text-red-700">{exportError}</CardContent>
+        </Card>
+      )}
 
       {loading ? (
         <Card>

@@ -1,10 +1,11 @@
 import { FormEvent, useMemo, useState } from 'react'
-import { gql, useMutation, useQuery } from '@apollo/client'
+import { gql, useApolloClient, useMutation, useQuery } from '@apollo/client'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { canManageAccounts, readStoredAdminAccount } from '@/lib/auth-session'
+import { downloadBase64File } from '@/lib/download-export'
 
 const PAYROLL_PAGE_QUERY = gql`
   query PayrollPageData($filter: PayslipFilterInput) {
@@ -104,6 +105,16 @@ const MARK_PAYROLL_PERIOD_PAID_MUTATION = gql`
   }
 `
 
+const EXPORT_PAYSLIP_PDF_QUERY = gql`
+  query ExportPayslipPdf($payslipId: String!) {
+    exportPayslipPdf(payslipId: $payslipId) {
+      fileName
+      mimeType
+      contentBase64
+    }
+  }
+`
+
 type CompensationFormState = {
   employeeId: string
   baseSalary: string
@@ -123,6 +134,7 @@ const compensationFormDefaults: CompensationFormState = {
 }
 
 export function PayrollPage() {
+  const apolloClient = useApolloClient()
   const currentAdminAccount = readStoredAdminAccount()
   const canManagePayroll = canManageAccounts(currentAdminAccount?.roles ?? [])
   const [selectedPeriodId, setSelectedPeriodId] = useState<string | null>(null)
@@ -264,6 +276,37 @@ export function PayrollPage() {
         mutationError instanceof Error
           ? mutationError.message
           : 'Unable to mark payroll period as paid.'
+      )
+    }
+  }
+
+  const handleDownloadPayslip = async (payslipId: string) => {
+    setErrorMessage(null)
+    setStatusMessage(null)
+
+    try {
+      const { data: exportData } = await apolloClient.query({
+        query: EXPORT_PAYSLIP_PDF_QUERY,
+        variables: { payslipId },
+        fetchPolicy: 'no-cache',
+      })
+
+      const exportPayload = exportData?.exportPayslipPdf
+      if (!exportPayload) {
+        throw new Error('Payslip export is unavailable.')
+      }
+
+      downloadBase64File(
+        exportPayload.fileName,
+        exportPayload.mimeType,
+        exportPayload.contentBase64
+      )
+      setStatusMessage('Payslip PDF downloaded.')
+    } catch (mutationError) {
+      setErrorMessage(
+        mutationError instanceof Error
+          ? mutationError.message
+          : 'Unable to export payslip PDF.'
       )
     }
   }
@@ -602,6 +645,7 @@ export function PayrollPage() {
                     <th className="px-4 py-3 text-left">Net Pay</th>
                     <th className="px-4 py-3 text-left">Attendance Deduction</th>
                     <th className="px-4 py-3 text-left">Status</th>
+                    <th className="px-4 py-3 text-left">Export</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -640,6 +684,15 @@ export function PayrollPage() {
                           <span className="inline-flex rounded-full bg-slate-100 px-2.5 py-0.5 text-xs font-medium text-slate-700">
                             {payslip.status}
                           </span>
+                        </td>
+                        <td className="px-4 py-3">
+                          <Button
+                            type="button"
+                            variant="outline"
+                            onClick={() => handleDownloadPayslip(payslip.id)}
+                          >
+                            Download PDF
+                          </Button>
                         </td>
                       </tr>
                     )

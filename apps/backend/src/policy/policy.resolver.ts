@@ -6,6 +6,7 @@ import {
   CreatePolicyDocumentInput,
   PolicyDocumentType,
   PublishPolicyDocumentInput,
+  UploadPolicyDocumentFileInput,
 } from './policy.types';
 import { PolicyService } from './policy.service';
 
@@ -33,5 +34,13 @@ export class PolicyResolver {
     @Args('input') input: PublishPolicyDocumentInput,
   ) {
     return this.policyService.publishPolicyDocument(currentUser, input);
+  }
+
+  @Mutation(() => PolicyDocumentType, { name: 'uploadPolicyDocumentFile' })
+  async uploadPolicyDocumentFile(
+    @CurrentUser() currentUser: AuthenticatedUser,
+    @Args('input') input: UploadPolicyDocumentFileInput,
+  ) {
+    return this.policyService.uploadPolicyDocumentFile(currentUser, input);
   }
 }

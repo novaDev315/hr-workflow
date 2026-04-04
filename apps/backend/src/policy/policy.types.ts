@@ -37,6 +37,12 @@ export class PolicyDocumentType {
   documentUrl?: string | null;
 
   @Field({ nullable: true })
+  documentOriginalName?: string | null;
+
+  @Field({ nullable: true })
+  documentMimeType?: string | null;
+
+  @Field({ nullable: true })
   content?: string | null;
 
   @Field()
@@ -96,4 +102,25 @@ export class PublishPolicyDocumentInput {
   @Field()
   @IsString()
   policyDocumentId: string;
+}
+
+@InputType()
+export class UploadPolicyDocumentFileInput {
+  @Field()
+  @IsString()
+  policyDocumentId: string;
+
+  @Field()
+  @IsString()
+  @MaxLength(255)
+  fileName: string;
+
+  @Field()
+  @IsString()
+  @MaxLength(120)
+  mimeType: string;
+
+  @Field()
+  @IsString()
+  contentBase64: string;
 }
