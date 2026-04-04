@@ -27,6 +27,24 @@ const LEGACY_ADMIN_USER_STORAGE_KEY = 'user'
 const AUTH_TOKEN_STORAGE_KEY = 'auth_token'
 const SESSION_CHANGE_EVENT = 'hrflow-admin-session-change'
 
+type AdminSessionSnapshot = {
+  token: string | null
+  account: StoredAdminAccount | null
+  hasAccess: boolean
+  isAuthenticated: boolean
+}
+
+const EMPTY_ADMIN_SESSION: AdminSessionSnapshot = {
+  token: null,
+  account: null,
+  hasAccess: false,
+  isAuthenticated: false,
+}
+
+let cachedToken: string | null = null
+let cachedAccountRaw: string | null = null
+let cachedSnapshot: AdminSessionSnapshot = EMPTY_ADMIN_SESSION
+
 export function hasAdminPanelAccess(roles: string[] = []) {
   return roles.some((role) =>
     ADMIN_PANEL_ROLES.includes(role as AdminPanelRole)
@@ -100,27 +118,46 @@ function subscribeToAdminSession(onStoreChange: () => void) {
 }
 
 function getAdminSessionSnapshot() {
-  const token = readAuthToken()
-  const account = readStoredAdminAccount()
-  const hasAccess = account ? hasAdminPanelAccess(account.roles) : false
+  if (typeof window === 'undefined') {
+    return EMPTY_ADMIN_SESSION
+  }
 
-  return {
+  const token = localStorage.getItem(AUTH_TOKEN_STORAGE_KEY)
+  const accountRaw =
+    localStorage.getItem(ADMIN_ACCOUNT_STORAGE_KEY) ??
+    localStorage.getItem(LEGACY_ADMIN_USER_STORAGE_KEY)
+
+  if (token === cachedToken && accountRaw === cachedAccountRaw) {
+    return cachedSnapshot
+  }
+
+  let account: StoredAdminAccount | null = null
+
+  if (accountRaw) {
+    try {
+      account = JSON.parse(accountRaw) as StoredAdminAccount
+    } catch {
+      account = null
+    }
+  }
+
+  const hasAccess = account ? hasAdminPanelAccess(account.roles) : false
+  cachedToken = token
+  cachedAccountRaw = accountRaw
+  cachedSnapshot = {
     token,
     account,
     hasAccess,
     isAuthenticated: Boolean(token && account),
   }
+
+  return cachedSnapshot
 }
 
 export function useAdminSession() {
   return useSyncExternalStore(
     subscribeToAdminSession,
     getAdminSessionSnapshot,
-    () => ({
-      token: null,
-      account: null,
-      hasAccess: false,
-      isAuthenticated: false,
-    })
+    () => EMPTY_ADMIN_SESSION
   )
 }
