@@ -10,12 +10,14 @@ import {
   FileText,
   BarChart3,
   BookOpen,
+  ShieldCheck,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import { clearAdminSession } from '@/lib/auth-session'
+import { clearAdminSession, useAdminSession } from '@/lib/auth-session'
 
 export function DashboardLayout() {
   const navigate = useNavigate()
+  const { account } = useAdminSession()
 
   const handleLogout = () => {
     clearAdminSession()
@@ -44,6 +46,17 @@ export function DashboardLayout() {
             <h1 className="text-2xl font-bold text-primary">HRFlow Pro</h1>
             <p className="text-sm text-muted-foreground">Admin Panel</p>
           </div>
+
+          {account && (
+            <div className="border-b px-6 py-4">
+              <p className="text-sm font-semibold text-foreground">{account.fullName}</p>
+              <p className="text-xs text-muted-foreground">{account.email}</p>
+              <div className="mt-3 flex items-center gap-2 text-xs text-muted-foreground">
+                <ShieldCheck className="h-4 w-4" />
+                <span>{account.roles.join(', ')}</span>
+              </div>
+            </div>
+          )}
 
           {/* Navigation */}
           <nav className="flex-1 p-4 space-y-1">
