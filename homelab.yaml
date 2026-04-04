@@ -22,9 +22,10 @@ deploy:
 
 database:
   migration:
-    enabled: false
+    enabled: true
+    command: bun run migrate:deploy
     timeout_seconds: 300
-    required_for_ship: false
+    required_for_ship: true
 
 # Git configuration
 git:
@@ -49,5 +50,7 @@ services:
         name: rakss_backend_production
     database:
       migration:
-        enabled: false
+        enabled: true
+        command: bun run migrate:deploy
+        required_for_ship: true
         env_file: .env.production

@@ -7,6 +7,7 @@
   "scripts": {
     "build": "nest build",
     "dev": "nest start --watch",
+    "migrate:deploy": "node dist/scripts/ensure-schema.js",
     "start": "node dist/main",
     "start:prod": "node dist/main",
     "test": "jest --passWithNoTests",
