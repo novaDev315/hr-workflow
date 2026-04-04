@@ -22,10 +22,8 @@ deploy:
 
 database:
   migration:
-    enabled: true
-    command: bun run migrate:deploy
+    enabled: false
     timeout_seconds: 300
-    required_for_ship: true
 
 # Git configuration
 git:
