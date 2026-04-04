@@ -1,9 +1,12 @@
 import {
   BadRequestException,
+  ForbiddenException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
 import { randomUUID } from 'crypto';
+import { AuthenticatedUser } from '../common/current-user.decorator';
+import { hasAdminPanelAccess } from '../common/access-control';
 import { PrismaService } from '../prisma/prisma.service';
 import { LocationService } from '../location/location.service';
 import {
@@ -38,7 +41,11 @@ export class AttendanceService {
     private readonly locationService: LocationService,
   ) {}
 
-  async clockIn(input: ClockInInput) {
+  async clockIn(currentUser: AuthenticatedUser, input: ClockInInput) {
+    const employeeId = await this.resolveScopedEmployeeId(
+      currentUser,
+      input.employeeId,
+    );
     const today = new Date().toISOString().slice(0, 10);
     const existing = await this.prisma.one<{ id: string; clockInAt: string | null }>(
       `
@@ -46,7 +53,7 @@ export class AttendanceService {
         FROM attendance_records
         WHERE employee_id = $1 AND attendance_date = $2
       `,
-      [input.employeeId, today],
+      [employeeId, today],
     );
 
     if (existing?.clockInAt) {
@@ -54,7 +61,7 @@ export class AttendanceService {
     }
 
     const { location, geofence } = await this.locationService.validateAttendanceContext(
-      input.employeeId,
+      employeeId,
       input.locationId,
       input.latitude,
       input.longitude,
@@ -91,7 +98,7 @@ export class AttendanceService {
         ],
       );
 
-      return this.findOne(existing.id);
+      return this.findOne(currentUser, existing.id);
     }
 
     const created = await this.prisma.one<{ id: string }>(
@@ -115,7 +122,7 @@ export class AttendanceService {
       `,
       [
         randomUUID(),
-        input.employeeId,
+        employeeId,
         location.id,
         today,
         now.toISOString(),
@@ -127,10 +134,14 @@ export class AttendanceService {
       ],
     );
 
-    return this.findOne(created!.id);
+    return this.findOne(currentUser, created!.id);
   }
 
-  async clockOut(input: ClockOutInput) {
+  async clockOut(currentUser: AuthenticatedUser, input: ClockOutInput) {
+    const employeeId = await this.resolveScopedEmployeeId(
+      currentUser,
+      input.employeeId,
+    );
     const today = new Date().toISOString().slice(0, 10);
     const attendance = await this.prisma.one<{
       id: string;
@@ -147,7 +158,7 @@ export class AttendanceService {
         FROM attendance_records
         WHERE employee_id = $1 AND attendance_date = $2
       `,
-      [input.employeeId, today],
+      [employeeId, today],
     );
 
     if (!attendance) {
@@ -163,7 +174,7 @@ export class AttendanceService {
     }
 
     const { geofence } = await this.locationService.validateAttendanceContext(
-      input.employeeId,
+      employeeId,
       attendance.locationId,
       input.latitude,
       input.longitude,
@@ -213,15 +224,22 @@ export class AttendanceService {
       ],
     );
 
-    return this.findOne(attendance.id);
+    return this.findOne(currentUser, attendance.id);
   }
 
-  async findAll(filter?: AttendanceFilterInput) {
+  async findAll(
+    currentUser: AuthenticatedUser,
+    filter?: AttendanceFilterInput,
+  ) {
     const values: unknown[] = [];
     const where: string[] = [];
+    const scopedEmployeeId = await this.resolveOptionalEmployeeScope(
+      currentUser,
+      filter?.employeeId,
+    );
 
-    if (filter?.employeeId) {
-      values.push(filter.employeeId);
+    if (scopedEmployeeId) {
+      values.push(scopedEmployeeId);
       where.push(`a.employee_id = $${values.length}`);
     }
 
@@ -276,7 +294,7 @@ export class AttendanceService {
     return rows.map((row) => this.mapAttendance(row));
   }
 
-  async findOne(id: string) {
+  async findOne(currentUser: AuthenticatedUser, id: string) {
     const row = await this.prisma.one<AttendanceRow>(
       `
         SELECT
@@ -308,7 +326,66 @@ export class AttendanceService {
       throw new NotFoundException(`Attendance record ${id} not found`);
     }
 
+    if (!hasAdminPanelAccess(currentUser.roles)) {
+      const linkedEmployeeId = await this.getLinkedEmployeeId(currentUser);
+      if (row.employeeId !== linkedEmployeeId) {
+        throw new ForbiddenException(
+          'This account can only access attendance for its linked employee profile',
+        );
+      }
+    }
+
     return this.mapAttendance(row);
+  }
+
+  private async resolveOptionalEmployeeScope(
+    currentUser: AuthenticatedUser,
+    employeeId?: string,
+  ) {
+    if (hasAdminPanelAccess(currentUser.roles)) {
+      return employeeId?.trim() || null;
+    }
+
+    if (employeeId?.trim()) {
+      return this.resolveScopedEmployeeId(currentUser, employeeId);
+    }
+
+    return this.getLinkedEmployeeId(currentUser);
+  }
+
+  private async resolveScopedEmployeeId(
+    currentUser: AuthenticatedUser,
+    employeeId: string,
+  ) {
+    const normalizedEmployeeId = employeeId.trim();
+
+    if (hasAdminPanelAccess(currentUser.roles)) {
+      return normalizedEmployeeId;
+    }
+
+    const linkedEmployeeId = await this.getLinkedEmployeeId(currentUser);
+    if (linkedEmployeeId !== normalizedEmployeeId) {
+      throw new ForbiddenException(
+        'This account can only manage attendance for its linked employee profile',
+      );
+    }
+
+    return linkedEmployeeId;
+  }
+
+  private async getLinkedEmployeeId(currentUser: AuthenticatedUser) {
+    const account = await this.prisma.one<{ employeeId: string | null }>(
+      `SELECT employee_id AS "employeeId" FROM users WHERE id = $1`,
+      [currentUser.userId],
+    );
+
+    if (!account?.employeeId) {
+      throw new ForbiddenException(
+        'This account can sign in, but it is not linked to an employee profile',
+      );
+    }
+
+    return account.employeeId;
   }
 
   private mapAttendance(row: AttendanceRow) {

@@ -9,6 +9,7 @@ import { randomUUID } from 'crypto';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuthenticatedUser } from '../common/current-user.decorator';
 import { ACCOUNT_MANAGER_ROLE_KEYS } from '../common/system-roles';
+import { hasAdminPanelAccess } from '../common/access-control';
 import {
   CreatePolicyDocumentInput,
   PublishPolicyDocumentInput,
@@ -32,7 +33,7 @@ interface PolicyDocumentRow {
 export class PolicyService {
   constructor(private readonly prisma: PrismaService) {}
 
-  async policyDocuments() {
+  async policyDocuments(currentUser: AuthenticatedUser) {
     const rows = await this.prisma.many<PolicyDocumentRow>(
       `
         SELECT
@@ -48,6 +49,7 @@ export class PolicyService {
           created_at::text AS "createdAt",
           published_at::text AS "publishedAt"
         FROM policy_documents
+        ${hasAdminPanelAccess(currentUser.roles) ? '' : `WHERE status = 'PUBLISHED'`}
         ORDER BY effective_date DESC, created_at DESC
       `,
     );

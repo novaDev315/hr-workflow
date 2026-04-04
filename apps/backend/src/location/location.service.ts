@@ -6,6 +6,11 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { randomUUID } from 'crypto';
+import { AuthenticatedUser } from '../common/current-user.decorator';
+import {
+  assertAdminPanelAccess,
+  hasAdminPanelAccess,
+} from '../common/access-control';
 import { PrismaService } from '../prisma/prisma.service';
 import {
   AssignEmployeeLocationInput,
@@ -36,7 +41,8 @@ export class LocationService {
     private readonly geofence: GeofenceService,
   ) {}
 
-  async findAll(activeOnly = true) {
+  async findAll(currentUser: AuthenticatedUser, activeOnly = true) {
+    assertAdminPanelAccess(currentUser.roles);
     const rows = await this.prisma.many<LocationRow>(
       `
         SELECT
@@ -62,7 +68,8 @@ export class LocationService {
     return rows.map((row) => this.mapLocation(row));
   }
 
-  async findOne(id: string) {
+  async findOne(currentUser: AuthenticatedUser, id: string) {
+    assertAdminPanelAccess(currentUser.roles);
     const row = await this.prisma.one<LocationRow>(
       `
         SELECT
@@ -92,7 +99,8 @@ export class LocationService {
     return this.mapLocation(row);
   }
 
-  async create(input: CreateLocationInput) {
+  async create(currentUser: AuthenticatedUser, input: CreateLocationInput) {
+    assertAdminPanelAccess(currentUser.roles);
     const code = input.code.trim().toUpperCase();
     const existing = await this.prisma.one<{ id: string }>(
       `SELECT id FROM locations WHERE code = $1`,
@@ -138,12 +146,16 @@ export class LocationService {
       ],
     );
 
-    return this.findOne(created!.id);
+    return this.findOne(currentUser, created!.id);
   }
 
-  async assignEmployee(input: AssignEmployeeLocationInput) {
+  async assignEmployee(
+    currentUser: AuthenticatedUser,
+    input: AssignEmployeeLocationInput,
+  ) {
+    assertAdminPanelAccess(currentUser.roles);
     await this.ensureEmployeeExists(input.employeeId);
-    await this.findOne(input.locationId);
+    await this.findOne(currentUser, input.locationId);
 
     return this.prisma.transaction(async (client) => {
       if (input.isPrimary) {
@@ -211,7 +223,11 @@ export class LocationService {
     });
   }
 
-  async getEmployeeLocations(employeeId: string) {
+  async getEmployeeLocations(
+    currentUser: AuthenticatedUser,
+    employeeId: string,
+  ) {
+    await this.assertEmployeeScope(currentUser, employeeId);
     await this.ensureEmployeeExists(employeeId);
 
     const rows = await this.prisma.many<any>(
@@ -280,7 +296,7 @@ export class LocationService {
     longitude: number,
   ) {
     await this.ensureEmployeeExists(employeeId);
-    const location = await this.findOne(locationId);
+    const location = await this.findLocationById(locationId);
 
     if (!location.isActive) {
       throw new BadRequestException('Selected location is inactive');
@@ -324,6 +340,36 @@ export class LocationService {
       location,
       geofence,
     };
+  }
+
+  private async findLocationById(id: string) {
+    const row = await this.prisma.one<LocationRow>(
+      `
+        SELECT
+          id,
+          code,
+          name,
+          latitude,
+          longitude,
+          geofence_radius AS "geofenceRadius",
+          address,
+          city,
+          state,
+          country,
+          postal_code AS "postalCode",
+          landmark,
+          is_active AS "isActive"
+        FROM locations
+        WHERE id = $1
+      `,
+      [id],
+    );
+
+    if (!row) {
+      throw new NotFoundException(`Location with ID ${id} not found`);
+    }
+
+    return this.mapLocation(row);
   }
 
   private async getAssignment(id: string, client?: any) {
@@ -396,6 +442,26 @@ export class LocationService {
 
     if (!employee) {
       throw new NotFoundException('Employee not found or inactive');
+    }
+  }
+
+  private async assertEmployeeScope(
+    currentUser: AuthenticatedUser,
+    employeeId: string,
+  ) {
+    if (hasAdminPanelAccess(currentUser.roles)) {
+      return;
+    }
+
+    const account = await this.prisma.one<{ employeeId: string | null }>(
+      `SELECT employee_id AS "employeeId" FROM users WHERE id = $1`,
+      [currentUser.userId],
+    );
+
+    if (!account?.employeeId || account.employeeId !== employeeId) {
+      throw new ForbiddenException(
+        'This account can only access location assignments for its linked employee profile',
+      );
     }
   }
 

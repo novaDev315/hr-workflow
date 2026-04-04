@@ -5,6 +5,8 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { randomUUID } from 'crypto';
+import { AuthenticatedUser } from '../common/current-user.decorator';
+import { assertAdminPanelAccess } from '../common/access-control';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateEmployeeInput, EmployeeFilterInput } from './employee.types';
 
@@ -42,7 +44,8 @@ interface EmployeeRow {
 export class EmployeeService {
   constructor(private readonly prisma: PrismaService) {}
 
-  async findAll(filter?: EmployeeFilterInput) {
+  async findAll(currentUser: AuthenticatedUser, filter?: EmployeeFilterInput) {
+    assertAdminPanelAccess(currentUser.roles);
     const values: unknown[] = [];
     const where: string[] = [];
 
@@ -120,7 +123,8 @@ export class EmployeeService {
     return rows.map((row) => this.mapEmployee(row));
   }
 
-  async findOne(id: string) {
+  async findOne(currentUser: AuthenticatedUser, id: string) {
+    assertAdminPanelAccess(currentUser.roles);
     const row = await this.prisma.one<EmployeeRow>(
       `
         SELECT
@@ -174,7 +178,8 @@ export class EmployeeService {
     return this.mapEmployee(row);
   }
 
-  async create(input: CreateEmployeeInput) {
+  async create(currentUser: AuthenticatedUser, input: CreateEmployeeInput) {
+    assertAdminPanelAccess(currentUser.roles);
     const normalizedEmail = input.email.trim().toLowerCase();
     const existing = await this.prisma.one<{ id: string }>(
       `SELECT id FROM employees WHERE email = $1`,
@@ -262,7 +267,7 @@ export class EmployeeService {
       ],
     );
 
-    return this.findOne(created!.id);
+    return this.findOne(currentUser, created!.id);
   }
 
   private async generateEmployeeNumber() {

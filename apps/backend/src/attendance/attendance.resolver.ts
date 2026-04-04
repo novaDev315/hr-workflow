@@ -1,6 +1,7 @@
 import { UseGuards } from '@nestjs/common';
 import { Args, ID, Mutation, Query, Resolver } from '@nestjs/graphql';
 import { GqlAuthGuard } from '../auth/gql-auth.guard';
+import { CurrentUser, AuthenticatedUser } from '../common/current-user.decorator';
 import { AttendanceService } from './attendance.service';
 import {
   AttendanceFilterInput,
@@ -16,23 +17,33 @@ export class AttendanceResolver {
 
   @Query(() => [AttendanceRecordType], { name: 'attendanceRecords' })
   async attendanceRecords(
+    @CurrentUser() currentUser: AuthenticatedUser,
     @Args('filter', { nullable: true }) filter?: AttendanceFilterInput,
   ) {
-    return this.attendanceService.findAll(filter);
+    return this.attendanceService.findAll(currentUser, filter);
   }
 
   @Query(() => AttendanceRecordType, { name: 'attendanceRecord' })
-  async attendanceRecord(@Args('id', { type: () => ID }) id: string) {
-    return this.attendanceService.findOne(id);
+  async attendanceRecord(
+    @CurrentUser() currentUser: AuthenticatedUser,
+    @Args('id', { type: () => ID }) id: string,
+  ) {
+    return this.attendanceService.findOne(currentUser, id);
   }
 
   @Mutation(() => AttendanceRecordType, { name: 'clockIn' })
-  async clockIn(@Args('input') input: ClockInInput) {
-    return this.attendanceService.clockIn(input);
+  async clockIn(
+    @CurrentUser() currentUser: AuthenticatedUser,
+    @Args('input') input: ClockInInput,
+  ) {
+    return this.attendanceService.clockIn(currentUser, input);
   }
 
   @Mutation(() => AttendanceRecordType, { name: 'clockOut' })
-  async clockOut(@Args('input') input: ClockOutInput) {
-    return this.attendanceService.clockOut(input);
+  async clockOut(
+    @CurrentUser() currentUser: AuthenticatedUser,
+    @Args('input') input: ClockOutInput,
+  ) {
+    return this.attendanceService.clockOut(currentUser, input);
   }
 }

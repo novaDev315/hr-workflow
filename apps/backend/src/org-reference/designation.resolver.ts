@@ -3,6 +3,8 @@ import { Args, Mutation, Query, Resolver } from '@nestjs/graphql';
 import { CreateDesignationInput, DesignationType } from '../auth/auth.types';
 import { DesignationService } from './designation.service';
 import { GqlAuthGuard } from '../auth/gql-auth.guard';
+import { CurrentUser, AuthenticatedUser } from '../common/current-user.decorator';
+import { assertAdminPanelAccess } from '../common/access-control';
 
 @UseGuards(GqlAuthGuard)
 @Resolver(() => DesignationType)
@@ -11,10 +13,12 @@ export class DesignationResolver {
 
   @Query(() => [DesignationType], { name: 'designations' })
   async designations(
+    @CurrentUser() currentUser: AuthenticatedUser,
     @Args('departmentId', { nullable: true }) departmentId?: string,
     @Args('includeInactive', { type: () => Boolean, nullable: true })
     includeInactive?: boolean,
   ) {
+    assertAdminPanelAccess(currentUser.roles);
     return this.designationService.findAll({
       departmentId,
       includeInactive: includeInactive ?? false,
@@ -22,7 +26,11 @@ export class DesignationResolver {
   }
 
   @Mutation(() => DesignationType, { name: 'createDesignation' })
-  async createDesignation(@Args('input') input: CreateDesignationInput) {
+  async createDesignation(
+    @CurrentUser() currentUser: AuthenticatedUser,
+    @Args('input') input: CreateDesignationInput,
+  ) {
+    assertAdminPanelAccess(currentUser.roles);
     return this.designationService.create(input);
   }
 }

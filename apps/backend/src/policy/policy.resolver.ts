@@ -15,8 +15,8 @@ export class PolicyResolver {
   constructor(private readonly policyService: PolicyService) {}
 
   @Query(() => [PolicyDocumentType], { name: 'policyDocuments' })
-  async policyDocuments() {
-    return this.policyService.policyDocuments();
+  async policyDocuments(@CurrentUser() currentUser: AuthenticatedUser) {
+    return this.policyService.policyDocuments(currentUser);
   }
 
   @Mutation(() => PolicyDocumentType, { name: 'createPolicyDocument' })
