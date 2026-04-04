@@ -1,8 +1,29 @@
 import { ApolloClient, InMemoryCache, HttpLink, from } from '@apollo/client';
 import { setContext } from '@apollo/client/link/context';
 
+function resolveGraphqlEndpoint(): string {
+  if (import.meta.env.VITE_GRAPHQL_ENDPOINT) {
+    return import.meta.env.VITE_GRAPHQL_ENDPOINT;
+  }
+
+  if (typeof window === 'undefined') {
+    return 'http://localhost:4001/graphql';
+  }
+
+  const { protocol, hostname } = window.location;
+  if (hostname === 'localhost' || hostname === '127.0.0.1') {
+    return 'http://localhost:4001/graphql';
+  }
+
+  const apiHostname = hostname.startsWith('admin.')
+    ? `api.${hostname.slice('admin.'.length)}`
+    : `api.${hostname}`;
+
+  return `${protocol}//${apiHostname}/graphql`;
+}
+
 const httpLink = new HttpLink({
-  uri: import.meta.env.VITE_GRAPHQL_ENDPOINT || 'http://localhost:4001/graphql',
+  uri: resolveGraphqlEndpoint(),
 });
 
 const authLink = setContext((_, { headers }) => {

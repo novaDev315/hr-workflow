@@ -54,3 +54,10 @@ services:
         command: bun run migrate:deploy
         required_for_ship: true
         env_file: .env.production
+  web-admin:
+    dockerfile: apps/web-admin/Dockerfile
+    context: apps/web-admin
+    service_type: frontend
+    domain: admin
+    health_endpoint: /health
+    port: 8080
