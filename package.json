@@ -5,9 +5,9 @@
   "private": true,
   "packageManager": "bun@1.3.9",
   "workspaces": [
-    "apps/*",
-    "services/*",
-    "packages/*"
+    "apps/backend",
+    "apps/mobile",
+    "apps/web-admin"
   ],
   "scripts": {
     "dev": "bun run dev:backend",
