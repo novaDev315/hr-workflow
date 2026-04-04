@@ -1,3 +1,4 @@
+import { useEffect } from 'react'
 import { Routes, Route, Navigate } from 'react-router-dom'
 import { LoginPage } from './pages/LoginPage'
 import { DashboardLayout } from './components/layouts/DashboardLayout'
@@ -18,9 +19,11 @@ import {
 function App() {
   const { isAuthenticated, hasAccess } = useAdminSession()
 
-  if (isAuthenticated && !hasAccess) {
-    clearAdminSession()
-  }
+  useEffect(() => {
+    if (isAuthenticated && !hasAccess) {
+      clearAdminSession()
+    }
+  }, [hasAccess, isAuthenticated])
 
   return (
     <Routes>
