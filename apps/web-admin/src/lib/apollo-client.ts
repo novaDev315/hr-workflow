@@ -15,11 +15,7 @@ function resolveGraphqlEndpoint(): string {
     return 'http://localhost:4001/graphql';
   }
 
-  const apiHostname = hostname.startsWith('admin.')
-    ? `api.${hostname.slice('admin.'.length)}`
-    : `api.${hostname}`;
-
-  return `${protocol}//${apiHostname}/graphql`;
+  return `${protocol}//${hostname}/graphql`;
 }
 
 const httpLink = new HttpLink({
