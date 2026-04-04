@@ -5,31 +5,25 @@
 project: rakss
 version: v1.0
 type: monorepo
-
 workspace:
   monorepo: turborepo
   package_manager: bun
-
 # Default build settings (can be overridden per service)
 build:
   context: .
   cache: true
-
 # Default deployment settings
 deploy:
   target: web
   base_domain: rakss
-
 database:
   migration:
     enabled: false
     timeout_seconds: 300
-
 # Git configuration
 git:
   remote: gitea
   branch: main
-
 # Services - each service can be deployed independently
 services:
   backend:
