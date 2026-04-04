@@ -4,7 +4,10 @@ import { CreateDesignationInput, DesignationType } from '../auth/auth.types';
 import { DesignationService } from './designation.service';
 import { GqlAuthGuard } from '../auth/gql-auth.guard';
 import { CurrentUser, AuthenticatedUser } from '../common/current-user.decorator';
-import { assertAdminPanelAccess } from '../common/access-control';
+import {
+  assertAccountManagerAccess,
+  assertAdminPanelAccess,
+} from '../common/access-control';
 
 @UseGuards(GqlAuthGuard)
 @Resolver(() => DesignationType)
@@ -30,7 +33,7 @@ export class DesignationResolver {
     @CurrentUser() currentUser: AuthenticatedUser,
     @Args('input') input: CreateDesignationInput,
   ) {
-    assertAdminPanelAccess(currentUser.roles);
+    assertAccountManagerAccess(currentUser.roles);
     return this.designationService.create(input);
   }
 }

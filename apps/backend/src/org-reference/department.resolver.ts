@@ -4,7 +4,10 @@ import { CreateDepartmentInput, DepartmentType } from '../auth/auth.types';
 import { DepartmentService } from './department.service';
 import { GqlAuthGuard } from '../auth/gql-auth.guard';
 import { CurrentUser, AuthenticatedUser } from '../common/current-user.decorator';
-import { assertAdminPanelAccess } from '../common/access-control';
+import {
+  assertAccountManagerAccess,
+  assertAdminPanelAccess,
+} from '../common/access-control';
 
 @UseGuards(GqlAuthGuard)
 @Resolver(() => DepartmentType)
@@ -26,7 +29,7 @@ export class DepartmentResolver {
     @CurrentUser() currentUser: AuthenticatedUser,
     @Args('input') input: CreateDepartmentInput,
   ) {
-    assertAdminPanelAccess(currentUser.roles);
+    assertAccountManagerAccess(currentUser.roles);
     return this.departmentService.create(input);
   }
 }

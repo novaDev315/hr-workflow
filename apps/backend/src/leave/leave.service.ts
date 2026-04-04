@@ -13,6 +13,12 @@ import {
   ADMIN_ACCESS_ROLE_KEYS,
 } from '../common/system-roles';
 import {
+  buildEmployeeVisibilityClause,
+  canAccessEmployeeWithinScope,
+  hasGlobalAdminAccess,
+  resolveEmployeeVisibilityScope,
+} from '../common/access-control';
+import {
   CreateLeaveTypeInput,
   LeaveRequestFilterInput,
   RequestLeaveInput,
@@ -31,6 +37,8 @@ interface LeaveTypeRow {
 interface LeaveRequestRow {
   id: string;
   employeeId: string;
+  departmentId: string | null;
+  supervisorId: string | null;
   leaveTypeId: string;
   startDate: string;
   endDate: string;
@@ -227,8 +235,24 @@ export class LeaveService {
       throw new BadRequestException('Review status must be APPROVED or REJECTED');
     }
 
-    const existing = await this.prisma.one<{ id: string; status: string }>(
-      `SELECT id, status FROM leave_requests WHERE id = $1`,
+    const existing = await this.prisma.one<{
+      id: string;
+      status: string;
+      employeeId: string;
+      departmentId: string | null;
+      supervisorId: string | null;
+    }>(
+      `
+        SELECT
+          lr.id,
+          lr.status,
+          lr.employee_id AS "employeeId",
+          e.department_id AS "departmentId",
+          e.supervisor_id AS "supervisorId"
+        FROM leave_requests lr
+        INNER JOIN employees e ON e.id = lr.employee_id
+        WHERE lr.id = $1
+      `,
       [input.requestId],
     );
 
@@ -238,6 +262,19 @@ export class LeaveService {
 
     if (existing.status !== 'PENDING') {
       throw new BadRequestException('Only pending leave requests can be reviewed');
+    }
+
+    const scope = await resolveEmployeeVisibilityScope(this.prisma, currentUser);
+    if (
+      !canAccessEmployeeWithinScope(scope, {
+        employeeId: existing.employeeId,
+        departmentId: existing.departmentId,
+        supervisorId: existing.supervisorId,
+      })
+    ) {
+      throw new ForbiddenException(
+        'This account is not allowed to review leave for the requested employee',
+      );
     }
 
     await this.prisma.query(
@@ -266,14 +303,25 @@ export class LeaveService {
     currentUser: AuthenticatedUser,
     filter?: LeaveRequestFilterInput,
   ) {
-    const scopedEmployeeId = await this.resolveEmployeeScopeForQuery(
-      currentUser,
-      filter?.employeeId,
-    );
+    const scope = await resolveEmployeeVisibilityScope(this.prisma, currentUser);
     const values: unknown[] = [];
     const where: string[] = [];
 
-    if (scopedEmployeeId) {
+    const visibilityClause = buildEmployeeVisibilityClause(values, scope, {
+      employeeId: 'e.id',
+      departmentId: 'e.department_id',
+      supervisorId: 'e.supervisor_id',
+    });
+
+    if (visibilityClause) {
+      where.push(visibilityClause);
+    }
+
+    if (filter?.employeeId?.trim()) {
+      const scopedEmployeeId = await this.resolveScopedEmployeeId(
+        currentUser,
+        filter.employeeId,
+      );
       values.push(scopedEmployeeId);
       where.push(`lr.employee_id = $${values.length}`);
     }
@@ -298,6 +346,8 @@ export class LeaveService {
         SELECT
           lr.id,
           lr.employee_id AS "employeeId",
+          e.department_id AS "departmentId",
+          e.supervisor_id AS "supervisorId",
           lr.leave_type_id AS "leaveTypeId",
           lr.start_date::text AS "startDate",
           lr.end_date::text AS "endDate",
@@ -401,6 +451,8 @@ export class LeaveService {
         SELECT
           lr.id,
           lr.employee_id AS "employeeId",
+          e.department_id AS "departmentId",
+          e.supervisor_id AS "supervisorId",
           lr.leave_type_id AS "leaveTypeId",
           lr.start_date::text AS "startDate",
           lr.end_date::text AS "endDate",
@@ -445,63 +497,37 @@ export class LeaveService {
     if (!normalizedEmployeeId) {
       throw new BadRequestException('Employee is required');
     }
-
-    if (this.canManageLeaveAcrossEmployees(currentUser.roles)) {
-      return normalizedEmployeeId;
-    }
-
-    const account = await this.prisma.one<{ employeeId: string | null }>(
-      `SELECT employee_id AS "employeeId" FROM users WHERE id = $1`,
-      [currentUser.userId],
+    const scope = await resolveEmployeeVisibilityScope(this.prisma, currentUser);
+    const employee = await this.prisma.one<{
+      id: string;
+      departmentId: string | null;
+      supervisorId: string | null;
+    }>(
+      `
+        SELECT
+          id,
+          department_id AS "departmentId",
+          supervisor_id AS "supervisorId"
+        FROM employees
+        WHERE id = $1
+      `,
+      [normalizedEmployeeId],
     );
 
-    if (!account?.employeeId) {
+    if (
+      !employee ||
+      !canAccessEmployeeWithinScope(scope, {
+        employeeId: employee.id,
+        departmentId: employee.departmentId,
+        supervisorId: employee.supervisorId,
+      })
+    ) {
       throw new ForbiddenException(
-        'This account can sign in, but it is not linked to an employee profile',
+        'This account is not allowed to manage leave for the requested employee',
       );
     }
 
-    if (account.employeeId !== normalizedEmployeeId) {
-      throw new ForbiddenException('This account can only manage its own leave requests');
-    }
-
-    return account.employeeId;
-  }
-
-  private async resolveEmployeeScopeForQuery(
-    currentUser: AuthenticatedUser,
-    requestedEmployeeId?: string,
-  ) {
-    if (requestedEmployeeId?.trim()) {
-      return this.resolveScopedEmployeeId(currentUser, requestedEmployeeId);
-    }
-
-    if (this.canManageLeaveAcrossEmployees(currentUser.roles)) {
-      return null;
-    }
-
-    return this.resolveScopedEmployeeId(currentUser, await this.getLinkedEmployeeId(currentUser));
-  }
-
-  private async getLinkedEmployeeId(currentUser: AuthenticatedUser) {
-    const account = await this.prisma.one<{ employeeId: string | null }>(
-      `SELECT employee_id AS "employeeId" FROM users WHERE id = $1`,
-      [currentUser.userId],
-    );
-
-    if (!account?.employeeId) {
-      throw new ForbiddenException(
-        'This account can sign in, but it is not linked to an employee profile',
-      );
-    }
-
-    return account.employeeId;
-  }
-
-  private canManageLeaveAcrossEmployees(roles: string[]) {
-    return roles.some((role) =>
-      ADMIN_ACCESS_ROLE_KEYS.includes(role as (typeof ADMIN_ACCESS_ROLE_KEYS)[number]),
-    );
+    return employee.id;
   }
 
   private assertCanManageLeavePolicies(roles: string[]) {
@@ -517,7 +543,11 @@ export class LeaveService {
   }
 
   private assertCanReviewLeaveRequests(roles: string[]) {
-    if (!this.canManageLeaveAcrossEmployees(roles)) {
+    const hasAccess = roles.some((role) =>
+      ADMIN_ACCESS_ROLE_KEYS.includes(role as (typeof ADMIN_ACCESS_ROLE_KEYS)[number]),
+    );
+
+    if (!hasAccess) {
       throw new ForbiddenException(
         'Only staff and admin accounts can review leave requests',
       );

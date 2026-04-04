@@ -1,12 +1,19 @@
 import {
   BadRequestException,
   ConflictException,
+  ForbiddenException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
 import { randomUUID } from 'crypto';
 import { AuthenticatedUser } from '../common/current-user.decorator';
-import { assertAdminPanelAccess } from '../common/access-control';
+import {
+  assertAdminPanelAccess,
+  assertAccountManagerAccess,
+  buildEmployeeVisibilityClause,
+  canAccessEmployeeWithinScope,
+  resolveEmployeeVisibilityScope,
+} from '../common/access-control';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateEmployeeInput, EmployeeFilterInput } from './employee.types';
 
@@ -46,8 +53,18 @@ export class EmployeeService {
 
   async findAll(currentUser: AuthenticatedUser, filter?: EmployeeFilterInput) {
     assertAdminPanelAccess(currentUser.roles);
+    const scope = await resolveEmployeeVisibilityScope(this.prisma, currentUser);
     const values: unknown[] = [];
     const where: string[] = [];
+    const scopeClause = buildEmployeeVisibilityClause(values, scope, {
+      employeeId: 'e.id',
+      departmentId: 'e.department_id',
+      supervisorId: 'e.supervisor_id',
+    });
+
+    if (scopeClause) {
+      where.push(scopeClause);
+    }
 
     if (filter?.search?.trim()) {
       const search = `%${filter.search.trim().toLowerCase()}%`;
@@ -125,6 +142,7 @@ export class EmployeeService {
 
   async findOne(currentUser: AuthenticatedUser, id: string) {
     assertAdminPanelAccess(currentUser.roles);
+    const scope = await resolveEmployeeVisibilityScope(this.prisma, currentUser);
     const row = await this.prisma.one<EmployeeRow>(
       `
         SELECT
@@ -175,11 +193,23 @@ export class EmployeeService {
       throw new NotFoundException(`Employee with ID ${id} not found`);
     }
 
+    if (
+      !canAccessEmployeeWithinScope(scope, {
+        employeeId: row.id,
+        departmentId: row.departmentId,
+        supervisorId: row.supervisorId,
+      })
+    ) {
+      throw new ForbiddenException(
+        'This account is not allowed to access the requested employee record',
+      );
+    }
+
     return this.mapEmployee(row);
   }
 
   async create(currentUser: AuthenticatedUser, input: CreateEmployeeInput) {
-    assertAdminPanelAccess(currentUser.roles);
+    assertAccountManagerAccess(currentUser.roles);
     const normalizedEmail = input.email.trim().toLowerCase();
     const existing = await this.prisma.one<{ id: string }>(
       `SELECT id FROM employees WHERE email = $1`,

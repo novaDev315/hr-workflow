@@ -8,8 +8,13 @@ import {
 import { randomUUID } from 'crypto';
 import { AuthenticatedUser } from '../common/current-user.decorator';
 import {
-  assertAdminPanelAccess,
-  hasAdminPanelAccess,
+    assertAdminPanelAccess,
+  assertAccountManagerAccess,
+  buildEmployeeVisibilityClause,
+  canAccessEmployeeWithinScope,
+  hasGlobalAdminAccess,
+  hasManagerAccess,
+  resolveEmployeeVisibilityScope,
 } from '../common/access-control';
 import { PrismaService } from '../prisma/prisma.service';
 import {
@@ -43,26 +48,57 @@ export class LocationService {
 
   async findAll(currentUser: AuthenticatedUser, activeOnly = true) {
     assertAdminPanelAccess(currentUser.roles);
+    const scope = await resolveEmployeeVisibilityScope(this.prisma, currentUser);
+    const values: unknown[] = [];
+    const where: string[] = [];
+
+    if (activeOnly) {
+      where.push('l.is_active = TRUE');
+    }
+
+    if (!hasGlobalAdminAccess(currentUser.roles)) {
+      const scopedValues: unknown[] = [];
+      const scopedClause = buildEmployeeVisibilityClause(scopedValues, scope, {
+        employeeId: 'e.id',
+        departmentId: 'e.department_id',
+        supervisorId: 'e.supervisor_id',
+      });
+
+      where.push(`
+        EXISTS (
+          SELECT 1
+          FROM employee_location_assignments ela
+          INNER JOIN employees e ON e.id = ela.employee_id
+          WHERE ela.location_id = l.id
+            AND ela.status = 'ACTIVE'
+            AND (ela.release_date IS NULL OR ela.release_date >= CURRENT_DATE)
+            ${scopedClause ? `AND ${scopedClause}` : ''}
+        )
+      `);
+      values.push(...scopedValues);
+    }
+
     const rows = await this.prisma.many<LocationRow>(
       `
         SELECT
-          id,
-          code,
-          name,
-          latitude,
-          longitude,
-          geofence_radius AS "geofenceRadius",
-          address,
-          city,
-          state,
-          country,
-          postal_code AS "postalCode",
-          landmark,
-          is_active AS "isActive"
-        FROM locations
-        ${activeOnly ? 'WHERE is_active = TRUE' : ''}
-        ORDER BY name ASC
+          l.id,
+          l.code,
+          l.name,
+          l.latitude,
+          l.longitude,
+          l.geofence_radius AS "geofenceRadius",
+          l.address,
+          l.city,
+          l.state,
+          l.country,
+          l.postal_code AS "postalCode",
+          l.landmark,
+          l.is_active AS "isActive"
+        FROM locations l
+        ${where.length > 0 ? `WHERE ${where.join(' AND ')}` : ''}
+        ORDER BY l.name ASC
       `,
+      values,
     );
 
     return rows.map((row) => this.mapLocation(row));
@@ -96,11 +132,20 @@ export class LocationService {
       throw new NotFoundException(`Location with ID ${id} not found`);
     }
 
+    if (!hasGlobalAdminAccess(currentUser.roles)) {
+      const rows = await this.findAll(currentUser, false);
+      if (!rows.some((location) => location.id === id)) {
+        throw new ForbiddenException(
+          'This account is not allowed to access the requested location',
+        );
+      }
+    }
+
     return this.mapLocation(row);
   }
 
   async create(currentUser: AuthenticatedUser, input: CreateLocationInput) {
-    assertAdminPanelAccess(currentUser.roles);
+    assertAccountManagerAccess(currentUser.roles);
     const code = input.code.trim().toUpperCase();
     const existing = await this.prisma.one<{ id: string }>(
       `SELECT id FROM locations WHERE code = $1`,
@@ -154,6 +199,16 @@ export class LocationService {
     input: AssignEmployeeLocationInput,
   ) {
     assertAdminPanelAccess(currentUser.roles);
+    if (
+      !hasGlobalAdminAccess(currentUser.roles) &&
+      !hasManagerAccess(currentUser.roles)
+    ) {
+      throw new ForbiddenException(
+        'Only ADMIN, HR_ADMIN, and MANAGER accounts can assign employee locations',
+      );
+    }
+
+    await this.assertEmployeeScope(currentUser, input.employeeId);
     await this.ensureEmployeeExists(input.employeeId);
     await this.findOne(currentUser, input.locationId);
 
@@ -449,18 +504,33 @@ export class LocationService {
     currentUser: AuthenticatedUser,
     employeeId: string,
   ) {
-    if (hasAdminPanelAccess(currentUser.roles)) {
-      return;
-    }
-
-    const account = await this.prisma.one<{ employeeId: string | null }>(
-      `SELECT employee_id AS "employeeId" FROM users WHERE id = $1`,
-      [currentUser.userId],
+    const scope = await resolveEmployeeVisibilityScope(this.prisma, currentUser);
+    const employee = await this.prisma.one<{
+      id: string;
+      departmentId: string | null;
+      supervisorId: string | null;
+    }>(
+      `
+        SELECT
+          id,
+          department_id AS "departmentId",
+          supervisor_id AS "supervisorId"
+        FROM employees
+        WHERE id = $1
+      `,
+      [employeeId],
     );
 
-    if (!account?.employeeId || account.employeeId !== employeeId) {
+    if (
+      !employee ||
+      !canAccessEmployeeWithinScope(scope, {
+        employeeId: employee.id,
+        departmentId: employee.departmentId,
+        supervisorId: employee.supervisorId,
+      })
+    ) {
       throw new ForbiddenException(
-        'This account can only access location assignments for its linked employee profile',
+        'This account is not allowed to access location assignments for the requested employee',
       );
     }
   }

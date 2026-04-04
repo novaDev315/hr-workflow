@@ -10,7 +10,6 @@ import { PrismaService } from '../prisma/prisma.service';
 import { AuthenticatedUser } from '../common/current-user.decorator';
 import {
   ACCOUNT_MANAGER_ROLE_KEYS,
-  ADMIN_ACCESS_ROLE_KEYS,
 } from '../common/system-roles';
 import {
   CreatePayrollPeriodInput,
@@ -20,6 +19,7 @@ import {
   UpsertEmployeeCompensationInput,
 } from './payroll.types';
 import { createSimplePdf } from '../common/simple-pdf';
+import { hasAccountManagerAccess } from '../common/access-control';
 
 interface EmployeeCompensationRow {
   id: string;
@@ -697,11 +697,7 @@ export class PayrollService {
   }
 
   private canViewPayrollAcrossEmployees(roles: string[]) {
-    return roles.some((role) =>
-      ADMIN_ACCESS_ROLE_KEYS.includes(
-        role as (typeof ADMIN_ACCESS_ROLE_KEYS)[number],
-      ),
-    );
+    return hasAccountManagerAccess(roles);
   }
 
   private async resolveEmployeeScopeForPayslips(

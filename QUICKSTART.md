@@ -18,6 +18,12 @@ cp .env.example .env
 
 The defaults are set up for local development with PostgreSQL on Docker and the backend on `http://localhost:4001/graphql`.
 
+Optional isolated test database using the homelab central Postgres:
+
+```bash
+homelab apps database create rakss --service backend --db-type postgres --mode central --db-name rakss_backend_test --env-file .env.test
+```
+
 ## 3. Start PostgreSQL
 
 ```bash
@@ -92,5 +98,6 @@ bun run docker:down
 ## Notes
 
 - The active implementation is the modular monolith in `apps/backend`.
-- Legacy `services/*` and `apps/api-gateway` are not the primary local runtime path.
+- Legacy `services/*` and `apps/api-gateway` have been removed from the active codebase.
 - The database schema is bootstrapped automatically when the backend starts.
+- `bun run test:backend` uses `.env.test` first when `NODE_ENV=test`.

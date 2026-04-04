@@ -6,7 +6,11 @@ import {
 } from '@nestjs/common';
 import { randomUUID } from 'crypto';
 import { AuthenticatedUser } from '../common/current-user.decorator';
-import { hasAdminPanelAccess } from '../common/access-control';
+import {
+  buildEmployeeVisibilityClause,
+  canAccessEmployeeWithinScope,
+  resolveEmployeeVisibilityScope,
+} from '../common/access-control';
 import { PrismaService } from '../prisma/prisma.service';
 import { LocationService } from '../location/location.service';
 import {
@@ -30,6 +34,8 @@ interface AttendanceRow {
   status: string;
   employeeName: string;
   employeeNumber: string;
+  departmentId: string | null;
+  supervisorId: string | null;
   locationCode: string;
   locationName: string;
 }
@@ -233,12 +239,22 @@ export class AttendanceService {
   ) {
     const values: unknown[] = [];
     const where: string[] = [];
-    const scopedEmployeeId = await this.resolveOptionalEmployeeScope(
-      currentUser,
-      filter?.employeeId,
-    );
+    const scope = await resolveEmployeeVisibilityScope(this.prisma, currentUser);
+    const visibilityClause = buildEmployeeVisibilityClause(values, scope, {
+      employeeId: 'e.id',
+      departmentId: 'e.department_id',
+      supervisorId: 'e.supervisor_id',
+    });
 
-    if (scopedEmployeeId) {
+    if (visibilityClause) {
+      where.push(visibilityClause);
+    }
+
+    if (filter?.employeeId?.trim()) {
+      const scopedEmployeeId = await this.resolveScopedEmployeeId(
+        currentUser,
+        filter.employeeId,
+      );
       values.push(scopedEmployeeId);
       where.push(`a.employee_id = $${values.length}`);
     }
@@ -280,6 +296,8 @@ export class AttendanceService {
           a.status,
           e.employee_number AS "employeeNumber",
           CONCAT(e.first_name, ' ', e.last_name) AS "employeeName",
+          e.department_id AS "departmentId",
+          e.supervisor_id AS "supervisorId",
           l.code AS "locationCode",
           l.name AS "locationName"
         FROM attendance_records a
@@ -312,6 +330,8 @@ export class AttendanceService {
           a.status,
           e.employee_number AS "employeeNumber",
           CONCAT(e.first_name, ' ', e.last_name) AS "employeeName",
+          e.department_id AS "departmentId",
+          e.supervisor_id AS "supervisorId",
           l.code AS "locationCode",
           l.name AS "locationName"
         FROM attendance_records a
@@ -326,31 +346,20 @@ export class AttendanceService {
       throw new NotFoundException(`Attendance record ${id} not found`);
     }
 
-    if (!hasAdminPanelAccess(currentUser.roles)) {
-      const linkedEmployeeId = await this.getLinkedEmployeeId(currentUser);
-      if (row.employeeId !== linkedEmployeeId) {
-        throw new ForbiddenException(
-          'This account can only access attendance for its linked employee profile',
-        );
-      }
+    const scope = await resolveEmployeeVisibilityScope(this.prisma, currentUser);
+    if (
+      !canAccessEmployeeWithinScope(scope, {
+        employeeId: row.employeeId,
+        departmentId: row.departmentId,
+        supervisorId: row.supervisorId,
+      })
+    ) {
+      throw new ForbiddenException(
+        'This account is not allowed to access attendance for the requested employee',
+      );
     }
 
     return this.mapAttendance(row);
-  }
-
-  private async resolveOptionalEmployeeScope(
-    currentUser: AuthenticatedUser,
-    employeeId?: string,
-  ) {
-    if (hasAdminPanelAccess(currentUser.roles)) {
-      return employeeId?.trim() || null;
-    }
-
-    if (employeeId?.trim()) {
-      return this.resolveScopedEmployeeId(currentUser, employeeId);
-    }
-
-    return this.getLinkedEmployeeId(currentUser);
   }
 
   private async resolveScopedEmployeeId(
@@ -358,34 +367,37 @@ export class AttendanceService {
     employeeId: string,
   ) {
     const normalizedEmployeeId = employeeId.trim();
-
-    if (hasAdminPanelAccess(currentUser.roles)) {
-      return normalizedEmployeeId;
-    }
-
-    const linkedEmployeeId = await this.getLinkedEmployeeId(currentUser);
-    if (linkedEmployeeId !== normalizedEmployeeId) {
-      throw new ForbiddenException(
-        'This account can only manage attendance for its linked employee profile',
-      );
-    }
-
-    return linkedEmployeeId;
-  }
-
-  private async getLinkedEmployeeId(currentUser: AuthenticatedUser) {
-    const account = await this.prisma.one<{ employeeId: string | null }>(
-      `SELECT employee_id AS "employeeId" FROM users WHERE id = $1`,
-      [currentUser.userId],
+    const scope = await resolveEmployeeVisibilityScope(this.prisma, currentUser);
+    const employee = await this.prisma.one<{
+      id: string;
+      departmentId: string | null;
+      supervisorId: string | null;
+    }>(
+      `
+        SELECT
+          id,
+          department_id AS "departmentId",
+          supervisor_id AS "supervisorId"
+        FROM employees
+        WHERE id = $1
+      `,
+      [normalizedEmployeeId],
     );
 
-    if (!account?.employeeId) {
+    if (
+      !employee ||
+      !canAccessEmployeeWithinScope(scope, {
+        employeeId: employee.id,
+        departmentId: employee.departmentId,
+        supervisorId: employee.supervisorId,
+      })
+    ) {
       throw new ForbiddenException(
-        'This account can sign in, but it is not linked to an employee profile',
+        'This account is not allowed to manage attendance for the requested employee',
       );
     }
 
-    return account.employeeId;
+    return employee.id;
   }
 
   private mapAttendance(row: AttendanceRow) {

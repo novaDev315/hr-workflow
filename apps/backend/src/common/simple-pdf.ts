@@ -1,6 +1,7 @@
 type PdfLine = {
   text: string;
   fontSize?: number;
+  font?: 'regular' | 'bold';
 };
 
 type PdfSection = {
@@ -62,18 +63,23 @@ function wrapText(value: string, maxLength = MAX_TEXT_WIDTH) {
 
 function buildLineLayout(title: string, subtitle: string | null, sections: PdfSection[]) {
   const lines: PdfLine[] = [
-    { text: title, fontSize: 18 },
+    { text: title, fontSize: 20, font: 'bold' },
   ];
 
   if (subtitle?.trim()) {
     lines.push({ text: subtitle.trim(), fontSize: 11 });
   }
 
+  lines.push({
+    text: `Generated at ${new Date().toISOString().replace('T', ' ').slice(0, 16)} UTC`,
+    fontSize: 9,
+  });
+
   lines.push({ text: '', fontSize: 11 });
 
   for (const section of sections) {
     if (section.heading?.trim()) {
-      lines.push({ text: section.heading.trim(), fontSize: 13 });
+      lines.push({ text: section.heading.trim(), fontSize: 13, font: 'bold' });
     }
 
     for (const row of section.lines) {
@@ -115,12 +121,17 @@ function paginateLines(lines: PdfLine[]) {
 }
 
 function buildPageContent(page: PdfLine[], pageIndex: number, pageCount: number) {
-  const commands = ['BT'];
+  const commands = [
+    '0.18 0.36 0.68 RG',
+    '1.4 w',
+    `${PAGE_MARGIN_LEFT} 724 m ${PAGE_WIDTH - PAGE_MARGIN_LEFT} 724 l S`,
+    'BT',
+  ];
   let cursorY = PAGE_MARGIN_TOP;
 
   for (const line of page) {
     const fontSize = line.fontSize ?? DEFAULT_FONT_SIZE;
-    commands.push(`/F1 ${fontSize} Tf`);
+    commands.push(`/${line.font === 'bold' ? 'F2' : 'F1'} ${fontSize} Tf`);
     commands.push(`1 0 0 1 ${PAGE_MARGIN_LEFT} ${cursorY} Tm`);
     commands.push(`(${sanitizePdfText(line.text)}) Tj`);
     cursorY -= Math.max(DEFAULT_LINE_HEIGHT, fontSize + 5);
@@ -128,7 +139,7 @@ function buildPageContent(page: PdfLine[], pageIndex: number, pageCount: number)
 
   commands.push(`/F1 9 Tf`);
   commands.push(`1 0 0 1 ${PAGE_MARGIN_LEFT} 36 Tm`);
-  commands.push(`(Page ${pageIndex + 1} of ${pageCount}) Tj`);
+  commands.push(`(HRFlow | Page ${pageIndex + 1} of ${pageCount}) Tj`);
   commands.push('ET');
 
   return commands.join('\n');
@@ -141,13 +152,14 @@ function renderPdfDocument(pageContents: string[]) {
   objects.push('<< /Type /Catalog /Pages 2 0 R >>');
   objects.push('');
   objects.push('<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>');
+  objects.push('<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold >>');
 
   for (let index = 0; index < pageContents.length; index += 1) {
-    const pageObjectNumber = 4 + index * 2;
+    const pageObjectNumber = 5 + index * 2;
     const contentObjectNumber = pageObjectNumber + 1;
     pageRefs.push(`${pageObjectNumber} 0 R`);
     objects.push(
-      `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${PAGE_WIDTH} ${PAGE_HEIGHT}] /Resources << /Font << /F1 3 0 R >> >> /Contents ${contentObjectNumber} 0 R >>`,
+      `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${PAGE_WIDTH} ${PAGE_HEIGHT}] /Resources << /Font << /F1 3 0 R /F2 4 0 R >> >> /Contents ${contentObjectNumber} 0 R >>`,
     );
 
     const stream = pageContents[index];

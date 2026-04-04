@@ -10,7 +10,7 @@ HRFlow Pro is a Bun-based HR platform with a NestJS modular monolith backend, a 
 - `docker-compose.yml` - local PostgreSQL plus backend runtime
 - `docker-compose.dev.yml` - local PostgreSQL plus backend watch mode
 
-Legacy `services/*`, `apps/api-gateway`, and the root `web-admin/` directory remain in the repository as reference material from the earlier architecture. They are not the primary runtime path for current development.
+Legacy `services/*`, `apps/api-gateway`, and the root `web-admin/` directory have been removed. The Bun monolith is now the only supported runtime path in this repository.
 
 ## Quick Start
 
@@ -83,6 +83,12 @@ The main backend settings are:
 
 See [.env.example](/home/nova/projects/work/rakss/.env.example) for a working local template.
 
+Test runs can also use a separate `.env.test` file. This repository now supports central homelab Postgres provisioning for test isolation:
+
+```bash
+homelab apps database create rakss --service backend --db-type postgres --mode central --db-name rakss_backend_test --env-file .env.test
+```
+
 ## Implemented Modules
 
 - Auth and account provisioning
@@ -110,4 +116,5 @@ The current monolith workflow has been repeatedly verified with:
 bun run build:backend
 bun run --cwd apps/web-admin build
 bunx tsc --noEmit -p apps/mobile/tsconfig.json
+bun run test:backend
 ```

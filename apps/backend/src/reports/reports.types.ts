@@ -115,6 +115,9 @@ export class PublishedPolicyReportType {
 
 @ObjectType()
 export class ReportsDashboardType {
+  @Field()
+  accessScopeLabel: string;
+
   @Field(() => ReportsOverviewType)
   overview: ReportsOverviewType;
 

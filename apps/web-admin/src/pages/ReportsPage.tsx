@@ -8,6 +8,7 @@ import { downloadBase64File } from '@/lib/download-export'
 const REPORTS_DASHBOARD_QUERY = gql`
   query ReportsDashboard($periodMonth: String) {
     reportsDashboard(periodMonth: $periodMonth) {
+      accessScopeLabel
       overview {
         activeEmployees
         pendingLeaveRequests
@@ -145,6 +146,15 @@ export function ReportsPage() {
         </Card>
       ) : (
         <>
+          <Card>
+            <CardContent className="flex items-center justify-between p-4 text-sm">
+              <span className="font-medium">Report scope</span>
+              <span className="text-muted-foreground">
+                {dashboard?.accessScopeLabel ?? 'Current account scope'}
+              </span>
+            </CardContent>
+          </Card>
+
           <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
             {[
               { label: 'Active Employees', value: dashboard?.overview.activeEmployees ?? 0 },
