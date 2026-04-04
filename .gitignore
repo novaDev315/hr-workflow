@@ -15,6 +15,7 @@ out/
 
 # Environment
 .env
+.env.production
 .env.local
 .env.test
 .env.development.local

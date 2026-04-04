@@ -1,0 +1,41 @@
+# .syncignore - Files to exclude from homelab apps sync
+# Uses rsync exclude pattern syntax
+
+# Dependencies
+node_modules/
+.venv/
+venv/
+vendor/
+target/
+
+# Build outputs
+dist/
+build/
+.next/
+__pycache__/
+
+# Git
+.git/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Environment files (synced separately)
+.env*
+!.env.example
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+logs/
+
+# Test coverage
+coverage/
+.coverage
+htmlcov/
