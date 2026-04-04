@@ -16,6 +16,7 @@ out/
 # Environment
 .env
 .env.local
+.env.test
 .env.development.local
 .env.test.local
 .env.production.local
@@ -64,3 +65,4 @@ backups/*.sql
 
 # Build artifacts
 *.tsbuildinfo
+apps/backend/src/schema.gql

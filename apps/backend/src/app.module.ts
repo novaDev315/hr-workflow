@@ -19,7 +19,10 @@ import { ReportsModule } from './reports/reports.module';
   imports: [
     ConfigModule.forRoot({
       isGlobal: true,
-      envFilePath: ['.env', '../../.env'],
+      envFilePath:
+        process.env.NODE_ENV === 'test'
+          ? ['.env.test', '../../.env.test', '.env', '../../.env']
+          : ['.env', '../../.env'],
     }),
     GraphQLModule.forRoot<ApolloDriverConfig>({
       driver: ApolloDriver,
