@@ -4,6 +4,10 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { CreditCard, Receipt, Wallet } from 'lucide-react'
+import { MetricCard } from '@/components/ui/metric-card'
+import { Notice } from '@/components/ui/notice'
+import { StatusBadge } from '@/components/ui/status-badge'
 import { canManageAccounts, readStoredAdminAccount } from '@/lib/auth-session'
 import { downloadBase64File } from '@/lib/download-export'
 
@@ -142,6 +146,7 @@ export function PayrollPage() {
   const [compensationForm, setCompensationForm] = useState(compensationFormDefaults)
   const [statusMessage, setStatusMessage] = useState<string | null>(null)
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
+  const [showSetup, setShowSetup] = useState(false)
 
   const { data, loading, error, refetch } = useQuery(PAYROLL_PAGE_QUERY, {
     skip: !canManagePayroll,
@@ -313,11 +318,7 @@ export function PayrollPage() {
 
   if (!canManagePayroll) {
     return (
-      <div className="space-y-6">
-        <div>
-          <h1 className="text-3xl font-bold">Payroll Management</h1>
-          <p className="text-muted-foreground">Process payroll and generate payslips</p>
-        </div>
+      <div className="space-y-4">
         <Card>
           <CardContent className="p-6 text-sm text-muted-foreground">
             Payroll access is limited to ADMIN and HR_ADMIN accounts.
@@ -328,35 +329,60 @@ export function PayrollPage() {
   }
 
   return (
-    <div className="space-y-6">
-      <div>
-        <h1 className="text-3xl font-bold">Payroll Management</h1>
-        <p className="text-muted-foreground">
-          Manage compensation, process payroll periods, and review generated payslips.
-        </p>
+    <div className="space-y-4">
+      <Card>
+        <CardContent className="flex flex-col gap-4 p-5 sm:flex-row sm:items-end sm:justify-between sm:p-6">
+          <div>
+            <p className="app-kicker">Payroll workspace</p>
+            <h2 className="mt-2 text-2xl font-semibold tracking-[-0.04em] text-foreground">
+              Keep the monthly cycle clear and low-noise.
+            </h2>
+            <p className="mt-2 max-w-2xl text-sm leading-6 text-muted-foreground">
+              Process periods, inspect payslips, and open compensation setup only when changes are needed.
+            </p>
+          </div>
+          <Button variant="outline" onClick={() => setShowSetup((current) => !current)}>
+            {showSetup ? 'Hide compensation setup' : 'Open compensation setup'}
+          </Button>
+        </CardContent>
+      </Card>
+
+      <div className="grid gap-4 md:grid-cols-3">
+        <MetricCard
+          detail="Saved compensation profiles"
+          icon={Wallet}
+          label="Compensation"
+          tone="bg-sky-100 text-sky-800"
+          value={String(compensationProfiles.length)}
+        />
+        <MetricCard
+          detail="Payroll periods created"
+          icon={CreditCard}
+          label="Periods"
+          tone="bg-emerald-100 text-emerald-800"
+          value={String(payrollPeriods.length)}
+        />
+        <MetricCard
+          detail="Payslips in current view"
+          icon={Receipt}
+          label="Payslips"
+          tone="bg-amber-100 text-amber-800"
+          value={String(payslips.length)}
+        />
       </div>
 
-      {errorMessage && (
-        <Card className="border-red-200 bg-red-50">
-          <CardContent className="p-4 text-sm text-red-700">{errorMessage}</CardContent>
-        </Card>
-      )}
+      {errorMessage ? <Notice tone="danger">{errorMessage}</Notice> : null}
+      {statusMessage ? <Notice tone="success">{statusMessage}</Notice> : null}
 
-      {statusMessage && (
-        <Card className="border-emerald-200 bg-emerald-50">
-          <CardContent className="p-4 text-sm text-emerald-700">
-            {statusMessage}
-          </CardContent>
-        </Card>
-      )}
-
-      <div className="grid gap-6 xl:grid-cols-2">
-        <Card>
-          <CardHeader>
-            <CardTitle>Compensation Setup</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <form className="space-y-4" onSubmit={handleSaveCompensation}>
+      <div className="grid gap-4 xl:grid-cols-2">
+        {showSetup ? (
+          <Card>
+            <CardHeader>
+              <p className="app-kicker">Setup</p>
+              <CardTitle>Compensation Setup</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <form className="space-y-4" onSubmit={handleSaveCompensation}>
               <div className="space-y-2">
                 <Label htmlFor="compensation-employee">Employee</Label>
                 <select
@@ -471,11 +497,19 @@ export function PayrollPage() {
                 {savingCompensation ? 'Saving...' : 'Save Compensation'}
               </Button>
             </form>
-          </CardContent>
-        </Card>
+            </CardContent>
+          </Card>
+        ) : (
+          <Card className="border-dashed bg-secondary/50">
+            <CardContent className="p-6 text-sm text-muted-foreground">
+              Compensation setup is hidden to keep the page focused on periods and payslips.
+            </CardContent>
+          </Card>
+        )}
 
         <Card>
           <CardHeader>
+            <p className="app-kicker">Cycle</p>
             <CardTitle>Payroll Periods</CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
@@ -566,6 +600,7 @@ export function PayrollPage() {
 
       <Card>
         <CardHeader>
+          <p className="app-kicker">Register</p>
           <CardTitle>Compensation Register</CardTitle>
         </CardHeader>
         <CardContent>
@@ -625,6 +660,7 @@ export function PayrollPage() {
 
       <Card>
         <CardHeader>
+          <p className="app-kicker">Payslips</p>
           <CardTitle>
             {selectedPeriod ? `Payslips for ${selectedPeriod.periodMonth}` : 'Recent Payslips'}
           </CardTitle>
@@ -681,9 +717,17 @@ export function PayrollPage() {
                           {payslip.currencyCode} {payslip.attendanceDeduction.toFixed(2)}
                         </td>
                         <td className="px-4 py-3">
-                          <span className="inline-flex rounded-full bg-slate-100 px-2.5 py-0.5 text-xs font-medium text-slate-700">
+                          <StatusBadge
+                            tone={
+                              payslip.status === 'PAID'
+                                ? 'success'
+                                : payslip.status === 'PROCESSED'
+                                  ? 'info'
+                                  : 'warning'
+                            }
+                          >
                             {payslip.status}
-                          </span>
+                          </StatusBadge>
                         </td>
                         <td className="px-4 py-3">
                           <Button

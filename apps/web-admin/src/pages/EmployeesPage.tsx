@@ -4,7 +4,10 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { Plus, Search } from 'lucide-react'
+import { Building2, Plus, Search, ShieldCheck, Users } from 'lucide-react'
+import { MetricCard } from '@/components/ui/metric-card'
+import { Notice } from '@/components/ui/notice'
+import { StatusBadge } from '@/components/ui/status-badge'
 import { canManageAccounts, readStoredAdminAccount } from '@/lib/auth-session'
 
 const EMPLOYEE_PAGE_QUERY = gql`
@@ -211,6 +214,12 @@ export function EmployeesPage() {
   const departments = data?.departments ?? []
   const designations = data?.designations ?? []
   const employees = data?.employees ?? []
+  const linkedAccountsCount = employees.filter(
+    (employee: { hasLinkedAccount: boolean }) => employee.hasLinkedAccount
+  ).length
+  const activeEmployeesCount = employees.filter(
+    (employee: { status: string }) => employee.status === 'ACTIVE'
+  ).length
 
   const employeeDesignationOptions = employeeForm.departmentId
     ? designations.filter(
@@ -376,47 +385,72 @@ export function EmployeesPage() {
   }
 
   return (
-    <div className="space-y-6">
-      <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-        <div>
-          <h1 className="text-3xl font-bold">Employees</h1>
-          <p className="text-muted-foreground">
-            Create departments, designations, and employees from the real backend.
-          </p>
-        </div>
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
-          <div className="relative min-w-[260px]">
-            <Search className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
-            <Input
-              value={searchQuery}
-              onChange={(event) => setSearchQuery(event.target.value)}
-              placeholder="Search employees"
-              className="pl-10"
-            />
+    <div className="space-y-4">
+      <Card>
+        <CardContent className="flex flex-col gap-4 p-5 sm:flex-row sm:items-end sm:justify-between sm:p-6">
+          <div>
+            <p className="app-kicker">Workforce setup</p>
+            <h2 className="mt-2 text-2xl font-semibold tracking-[-0.04em] text-foreground">
+              Keep people records clean and easy to scan.
+            </h2>
+            <p className="mt-2 max-w-2xl text-sm leading-6 text-muted-foreground">
+              Search first, then open setup only when you need to create departments, roles, or accounts.
+            </p>
           </div>
-          <Button onClick={() => setShowForms((current) => !current)}>
-            <Plus className="mr-2 h-4 w-4" />
-            {showForms ? 'Hide Setup' : 'Add Records'}
-          </Button>
-        </div>
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+            <div className="relative min-w-[280px]">
+              <Search className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                value={searchQuery}
+                onChange={(event) => setSearchQuery(event.target.value)}
+                placeholder="Search employees"
+                className="pl-11"
+              />
+            </div>
+            <Button onClick={() => setShowForms((current) => !current)}>
+              <Plus className="mr-2 h-4 w-4" />
+              {showForms ? 'Hide setup' : 'Add records'}
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
+
+      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+        <MetricCard
+          detail="All employee records"
+          icon={Users}
+          label="Employees"
+          tone="bg-sky-100 text-sky-800"
+          value={String(employees.length)}
+        />
+        <MetricCard
+          detail="Ready for daily operations"
+          icon={ShieldCheck}
+          label="Active"
+          tone="bg-emerald-100 text-emerald-800"
+          value={String(activeEmployeesCount)}
+        />
+        <MetricCard
+          detail="Configured teams"
+          icon={Building2}
+          label="Departments"
+          tone="bg-amber-100 text-amber-800"
+          value={String(departments.length)}
+        />
+        <MetricCard
+          detail="Linked mobile/admin access"
+          icon={ShieldCheck}
+          label="Accounts linked"
+          tone="bg-violet-100 text-violet-800"
+          value={String(linkedAccountsCount)}
+        />
       </div>
 
-      {errorMessage && (
-        <Card className="border-red-200 bg-red-50">
-          <CardContent className="p-4 text-sm text-red-700">{errorMessage}</CardContent>
-        </Card>
-      )}
-
-      {statusMessage && (
-        <Card className="border-emerald-200 bg-emerald-50">
-          <CardContent className="p-4 text-sm text-emerald-700">
-            {statusMessage}
-          </CardContent>
-        </Card>
-      )}
+      {errorMessage ? <Notice tone="danger">{errorMessage}</Notice> : null}
+      {statusMessage ? <Notice tone="success">{statusMessage}</Notice> : null}
 
       {showForms && (
-        <div className="grid gap-6 xl:grid-cols-2">
+        <div className="grid gap-4 xl:grid-cols-2">
           <Card>
             <CardHeader>
               <CardTitle>Department Setup</CardTitle>
@@ -911,15 +945,14 @@ export function EmployeesPage() {
 
       <Card>
         <CardHeader>
+          <p className="app-kicker">Roster</p>
           <CardTitle>Employee List</CardTitle>
         </CardHeader>
         <CardContent>
           {loading ? (
             <p className="text-sm text-muted-foreground">Loading employees...</p>
           ) : error ? (
-            <p className="text-sm text-red-600">
-              Unable to load employee data. {error.message}
-            </p>
+            <Notice tone="danger">Unable to load employee data. {error.message}</Notice>
           ) : employees.length === 0 ? (
             <div className="py-10 text-center">
               <p className="text-sm text-muted-foreground">
@@ -965,33 +998,28 @@ export function EmployeesPage() {
                         <td className="px-4 py-3">
                           {employee.hasLinkedAccount ? (
                             <div className="space-y-2">
-                              <span className="inline-flex rounded-full bg-blue-100 px-2.5 py-0.5 text-xs font-medium text-blue-800">
+                              <StatusBadge tone="info">
                                 {employee.linkedAccountEmail || 'Linked'}
-                              </span>
+                              </StatusBadge>
                               {employee.linkedAccountRoles.length > 0 && (
                                 <div className="flex flex-wrap gap-1">
                                   {employee.linkedAccountRoles.map((role) => (
-                                    <span
-                                      key={role}
-                                      className="inline-flex rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-medium text-slate-700"
-                                    >
+                                    <StatusBadge key={role} tone="neutral">
                                       {role}
-                                    </span>
+                                    </StatusBadge>
                                   ))}
                                 </div>
                               )}
                             </div>
                           ) : (
-                            <span className="inline-flex rounded-full bg-amber-100 px-2.5 py-0.5 text-xs font-medium text-amber-800">
-                              No login
-                            </span>
+                            <StatusBadge tone="warning">No login</StatusBadge>
                           )}
                         </td>
                         <td className="px-4 py-3">{employee.joinDate}</td>
                         <td className="px-4 py-3">
-                          <span className="inline-flex rounded-full bg-emerald-100 px-2.5 py-0.5 text-xs font-medium text-emerald-800">
+                          <StatusBadge tone="success">
                             {employee.status}
-                          </span>
+                          </StatusBadge>
                         </td>
                       </tr>
                     )

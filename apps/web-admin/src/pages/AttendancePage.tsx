@@ -4,6 +4,10 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { Clock3, MapPin, Settings2 } from 'lucide-react'
+import { MetricCard } from '@/components/ui/metric-card'
+import { Notice } from '@/components/ui/notice'
+import { StatusBadge } from '@/components/ui/status-badge'
 
 const ATTENDANCE_WORKSPACE_QUERY = gql`
   query AttendanceWorkspace($filter: AttendanceFilterInput) {
@@ -153,6 +157,7 @@ export function AttendancePage() {
   const [attendanceFilterEmployeeId, setAttendanceFilterEmployeeId] = useState('')
   const [statusMessage, setStatusMessage] = useState<string | null>(null)
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
+  const [showSetup, setShowSetup] = useState(false)
 
   const {
     data,
@@ -192,6 +197,9 @@ export function AttendancePage() {
   const locations = data?.locations ?? []
   const attendanceRecords = data?.attendanceRecords ?? []
   const activeAssignments = assignmentsData?.employeeLocations ?? []
+  const activeLocationsCount = locations.filter(
+    (location: { isActive: boolean }) => location.isActive
+  ).length
 
   const selectedAttendanceLocation = attendanceForm.locationId
     ? locations.find((location: { id: string }) => location.id === attendanceForm.locationId)
@@ -321,35 +329,350 @@ export function AttendancePage() {
   }
 
   return (
-    <div className="space-y-6">
-      <div>
-        <h1 className="text-3xl font-bold">Attendance Management</h1>
-        <p className="text-muted-foreground">
-          Manage locations, assignments, and live attendance records from one workspace.
-        </p>
+    <div className="space-y-4">
+      <Card>
+        <CardContent className="flex flex-col gap-4 p-5 sm:flex-row sm:items-end sm:justify-between sm:p-6">
+          <div>
+            <p className="app-kicker">Attendance workspace</p>
+            <h2 className="mt-2 text-2xl font-semibold tracking-[-0.04em] text-foreground">
+              Keep daily attendance actions front and center.
+            </h2>
+            <p className="mt-2 max-w-2xl text-sm leading-6 text-muted-foreground">
+              Record attendance fast, review current activity, and open setup only when location changes are needed.
+            </p>
+          </div>
+          <Button variant="outline" onClick={() => setShowSetup((current) => !current)}>
+            <Settings2 className="mr-2 h-4 w-4" />
+            {showSetup ? 'Hide setup' : 'Open setup'}
+          </Button>
+        </CardContent>
+      </Card>
+
+      <div className="grid gap-4 md:grid-cols-3">
+        <MetricCard
+          detail="Records in current view"
+          icon={Clock3}
+          label="Attendance records"
+          tone="bg-sky-100 text-sky-800"
+          value={String(attendanceRecords.length)}
+        />
+        <MetricCard
+          detail="Locations currently usable"
+          icon={MapPin}
+          label="Active locations"
+          tone="bg-emerald-100 text-emerald-800"
+          value={String(activeLocationsCount)}
+        />
+        <MetricCard
+          detail="Assignments for selected employee"
+          icon={Settings2}
+          label="Active assignments"
+          tone="bg-amber-100 text-amber-800"
+          value={String(activeAssignments.length)}
+        />
       </div>
 
-      {errorMessage && (
-        <Card className="border-red-200 bg-red-50">
-          <CardContent className="p-4 text-sm text-red-700">{errorMessage}</CardContent>
-        </Card>
-      )}
+      {errorMessage ? <Notice tone="danger">{errorMessage}</Notice> : null}
+      {statusMessage ? <Notice tone="success">{statusMessage}</Notice> : null}
 
-      {statusMessage && (
-        <Card className="border-emerald-200 bg-emerald-50">
-          <CardContent className="p-4 text-sm text-emerald-700">
-            {statusMessage}
-          </CardContent>
-        </Card>
-      )}
-
-      <div className="grid gap-6 xl:grid-cols-3">
+      <div className="grid gap-4 xl:grid-cols-[0.95fr_1.05fr]">
         <Card>
           <CardHeader>
-            <CardTitle>Create Location</CardTitle>
+            <p className="app-kicker">Action</p>
+            <CardTitle>Attendance Action</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="attendance-employee">Employee</Label>
+              <select
+                id="attendance-employee"
+                value={attendanceForm.employeeId}
+                onChange={(event) =>
+                  setAttendanceForm((current) => ({
+                    ...current,
+                    employeeId: event.target.value,
+                  }))
+                }
+              >
+                <option value="">Select employee</option>
+                {employees.map(
+                  (employee: {
+                    id: string
+                    fullName: string
+                    employeeNumber: string
+                  }) => (
+                    <option key={employee.id} value={employee.id}>
+                      {employee.fullName} ({employee.employeeNumber})
+                    </option>
+                  )
+                )}
+              </select>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="attendance-location">Location</Label>
+              <select
+                id="attendance-location"
+                value={attendanceForm.locationId}
+                onChange={(event) =>
+                  setAttendanceForm((current) => ({
+                    ...current,
+                    locationId: event.target.value,
+                  }))
+                }
+              >
+                <option value="">Select location</option>
+                {locations
+                  .filter((location: { isActive: boolean }) => location.isActive)
+                  .map((location: { id: string; name: string; code: string }) => (
+                    <option key={location.id} value={location.id}>
+                      {location.name} ({location.code})
+                    </option>
+                  ))}
+              </select>
+            </div>
+            <div className="grid gap-4 sm:grid-cols-2">
+              <div className="space-y-2">
+                <Label htmlFor="attendance-latitude">Latitude</Label>
+                <Input
+                  id="attendance-latitude"
+                  type="number"
+                  step="any"
+                  value={attendanceForm.latitude}
+                  onChange={(event) =>
+                    setAttendanceForm((current) => ({
+                      ...current,
+                      latitude: event.target.value,
+                    }))
+                  }
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="attendance-longitude">Longitude</Label>
+                <Input
+                  id="attendance-longitude"
+                  type="number"
+                  step="any"
+                  value={attendanceForm.longitude}
+                  onChange={(event) =>
+                    setAttendanceForm((current) => ({
+                      ...current,
+                      longitude: event.target.value,
+                    }))
+                  }
+                />
+              </div>
+            </div>
+            {selectedAttendanceLocation ? (
+              <div className="app-muted-surface p-4 text-sm text-muted-foreground">
+                Using {selectedAttendanceLocation.name} defaults with a{' '}
+                {selectedAttendanceLocation.geofenceRadius}m geofence radius.
+              </div>
+            ) : null}
+            <div className="space-y-2">
+              <Label htmlFor="attendance-notes">Notes</Label>
+              <Input
+                id="attendance-notes"
+                value={attendanceForm.notes}
+                onChange={(event) =>
+                  setAttendanceForm((current) => ({
+                    ...current,
+                    notes: event.target.value,
+                  }))
+                }
+                placeholder="Optional note for this action"
+              />
+            </div>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <Button
+                type="button"
+                onClick={handleClockIn}
+                disabled={
+                  clockingIn ||
+                  !attendanceForm.employeeId ||
+                  !attendanceForm.locationId ||
+                  !attendanceForm.latitude ||
+                  !attendanceForm.longitude
+                }
+              >
+                {clockingIn ? 'Clocking In...' : 'Clock In'}
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={handleClockOut}
+                disabled={
+                  clockingOut ||
+                  !attendanceForm.employeeId ||
+                  !attendanceForm.latitude ||
+                  !attendanceForm.longitude
+                }
+              >
+                {clockingOut ? 'Clocking Out...' : 'Clock Out'}
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+              <div>
+                <p className="app-kicker">Live log</p>
+                <CardTitle>Attendance Records</CardTitle>
+              </div>
+              <div className="min-w-[250px]">
+                <Label htmlFor="attendance-filter-employee">Filter by Employee</Label>
+                <select
+                  id="attendance-filter-employee"
+                  value={attendanceFilterEmployeeId}
+                  onChange={(event) => setAttendanceFilterEmployeeId(event.target.value)}
+                  className="mt-2"
+                >
+                  <option value="">All employees</option>
+                  {employees.map(
+                    (employee: {
+                      id: string
+                      fullName: string
+                      employeeNumber: string
+                    }) => (
+                      <option key={employee.id} value={employee.id}>
+                        {employee.fullName} ({employee.employeeNumber})
+                      </option>
+                    )
+                  )}
+                </select>
+              </div>
+            </div>
           </CardHeader>
           <CardContent>
-            <form className="space-y-4" onSubmit={handleCreateLocation}>
+            {loading ? (
+              <p className="text-sm text-muted-foreground">Loading attendance data...</p>
+            ) : error ? (
+              <Notice tone="danger">Unable to load attendance data. {error.message}</Notice>
+            ) : attendanceRecords.length === 0 ? (
+              <p className="text-sm text-muted-foreground">
+                No attendance records yet. Use the action panel to create the first one.
+              </p>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full">
+                  <thead>
+                    <tr className="border-b">
+                      <th className="px-4 py-3 text-left">Date</th>
+                      <th className="px-4 py-3 text-left">Employee</th>
+                      <th className="px-4 py-3 text-left">Location</th>
+                      <th className="px-4 py-3 text-left">Clock In</th>
+                      <th className="px-4 py-3 text-left">Clock Out</th>
+                      <th className="px-4 py-3 text-left">Hours</th>
+                      <th className="px-4 py-3 text-left">Status</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {attendanceRecords.map(
+                      (record: {
+                        id: string
+                        attendanceDate: string
+                        clockInAt?: string | null
+                        clockOutAt?: string | null
+                        totalHours?: number | null
+                        status: string
+                        employee: { fullName: string; employeeNumber: string }
+                        location: { name: string; code: string }
+                      }) => (
+                        <tr key={record.id} className="border-b hover:bg-gray-50">
+                          <td className="px-4 py-3">{record.attendanceDate}</td>
+                          <td className="px-4 py-3">
+                            <div className="font-medium">{record.employee.fullName}</div>
+                            <div className="text-xs text-muted-foreground">
+                              {record.employee.employeeNumber}
+                            </div>
+                          </td>
+                          <td className="px-4 py-3">
+                            {record.location.name} ({record.location.code})
+                          </td>
+                          <td className="px-4 py-3">
+                            {record.clockInAt
+                              ? new Date(record.clockInAt).toLocaleTimeString()
+                              : '—'}
+                          </td>
+                          <td className="px-4 py-3">
+                            {record.clockOutAt
+                              ? new Date(record.clockOutAt).toLocaleTimeString()
+                              : '—'}
+                          </td>
+                          <td className="px-4 py-3">
+                            {record.totalHours != null ? `${record.totalHours}h` : '—'}
+                          </td>
+                          <td className="px-4 py-3">
+                            <StatusBadge tone="info">{record.status}</StatusBadge>
+                          </td>
+                        </tr>
+                      )
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      </div>
+
+      <div className="grid gap-4 xl:grid-cols-[0.95fr_1.05fr]">
+        <Card>
+          <CardHeader>
+            <p className="app-kicker">Locations</p>
+            <CardTitle>Location list</CardTitle>
+          </CardHeader>
+          <CardContent>
+            {locations.length === 0 ? (
+              <p className="text-sm text-muted-foreground">No locations created yet.</p>
+            ) : (
+              <div className="space-y-3">
+                {locations.map(
+                  (location: {
+                    id: string
+                    name: string
+                    code: string
+                    city?: string | null
+                    address: string
+                    geofenceRadius: number
+                    isActive: boolean
+                  }) => (
+                    <div key={location.id} className="app-muted-surface p-4">
+                      <div className="flex items-center justify-between gap-3">
+                        <div>
+                          <div className="font-medium">
+                            {location.name} ({location.code})
+                          </div>
+                          <div className="text-sm text-muted-foreground">
+                            {location.city ? `${location.city} • ` : ''}
+                            {location.address}
+                          </div>
+                        </div>
+                        <StatusBadge tone={location.isActive ? 'success' : 'neutral'}>
+                          {location.isActive ? 'ACTIVE' : 'INACTIVE'}
+                        </StatusBadge>
+                      </div>
+                      <div className="mt-2 text-sm text-muted-foreground">
+                        Geofence radius: {location.geofenceRadius}m
+                      </div>
+                    </div>
+                  )
+                )}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
+        {showSetup ? (
+          <div className="grid gap-4 xl:grid-cols-2">
+            <Card>
+              <CardHeader>
+                <p className="app-kicker">Setup</p>
+                <CardTitle>Create Location</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <form className="space-y-4" onSubmit={handleCreateLocation}>
               <div className="space-y-2">
                 <Label htmlFor="location-name">Location Name</Label>
                 <Input
@@ -459,15 +782,16 @@ export function AttendancePage() {
                 {creatingLocation ? 'Saving...' : 'Create Location'}
               </Button>
             </form>
-          </CardContent>
-        </Card>
+              </CardContent>
+            </Card>
 
-        <Card>
-          <CardHeader>
-            <CardTitle>Assign Employee</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <form className="space-y-4" onSubmit={handleAssignLocation}>
+            <Card>
+              <CardHeader>
+                <p className="app-kicker">Setup</p>
+                <CardTitle>Assign Employee</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <form className="space-y-4" onSubmit={handleAssignLocation}>
               <div className="space-y-2">
                 <Label htmlFor="assignment-employee">Employee</Label>
                 <select
@@ -544,340 +868,47 @@ export function AttendancePage() {
               </Button>
             </form>
 
-            {assignmentForm.employeeId && activeAssignments.length > 0 && (
-              <div className="mt-6 space-y-3">
-                <h3 className="text-sm font-semibold">Active Assignments</h3>
-                {activeAssignments.map(
-                  (assignment: {
-                    id: string
-                    isPrimary: boolean
-                    assignedDate: string
-                    location: { name: string; code: string; geofenceRadius: number }
-                  }) => (
-                    <div
-                      key={assignment.id}
-                      className="rounded-lg border border-border bg-muted/40 p-3 text-sm"
-                    >
-                      <div className="font-medium">
-                        {assignment.location.name} ({assignment.location.code})
-                      </div>
-                      <div className="text-muted-foreground">
-                        {assignment.isPrimary ? 'Primary' : 'Secondary'} assignment
-                      </div>
-                      <div className="text-muted-foreground">
-                        Radius: {assignment.location.geofenceRadius}m
-                      </div>
-                      <div className="text-muted-foreground">
-                        Assigned: {assignment.assignedDate}
-                      </div>
-                    </div>
-                  )
-                )}
-              </div>
-            )}
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader>
-            <CardTitle>Attendance Action</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="space-y-2">
-              <Label htmlFor="attendance-employee">Employee</Label>
-              <select
-                id="attendance-employee"
-                value={attendanceForm.employeeId}
-                onChange={(event) =>
-                  setAttendanceForm((current) => ({
-                    ...current,
-                    employeeId: event.target.value,
-                  }))
-                }
-                className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
-              >
-                <option value="">Select employee</option>
-                {employees.map(
-                  (employee: {
-                    id: string
-                    fullName: string
-                    employeeNumber: string
-                  }) => (
-                    <option key={employee.id} value={employee.id}>
-                      {employee.fullName} ({employee.employeeNumber})
-                    </option>
-                  )
-                )}
-              </select>
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="attendance-location">Location</Label>
-              <select
-                id="attendance-location"
-                value={attendanceForm.locationId}
-                onChange={(event) =>
-                  setAttendanceForm((current) => ({
-                    ...current,
-                    locationId: event.target.value,
-                  }))
-                }
-                className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
-              >
-                <option value="">Select location</option>
-                {locations
-                  .filter((location: { isActive: boolean }) => location.isActive)
-                  .map((location: { id: string; name: string; code: string }) => (
-                    <option key={location.id} value={location.id}>
-                      {location.name} ({location.code})
-                    </option>
-                  ))}
-              </select>
-            </div>
-            <div className="grid gap-4 sm:grid-cols-2">
-              <div className="space-y-2">
-                <Label htmlFor="attendance-latitude">Latitude</Label>
-                <Input
-                  id="attendance-latitude"
-                  type="number"
-                  step="any"
-                  value={attendanceForm.latitude}
-                  onChange={(event) =>
-                    setAttendanceForm((current) => ({
-                      ...current,
-                      latitude: event.target.value,
-                    }))
-                  }
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="attendance-longitude">Longitude</Label>
-                <Input
-                  id="attendance-longitude"
-                  type="number"
-                  step="any"
-                  value={attendanceForm.longitude}
-                  onChange={(event) =>
-                    setAttendanceForm((current) => ({
-                      ...current,
-                      longitude: event.target.value,
-                    }))
-                  }
-                />
-              </div>
-            </div>
-            {selectedAttendanceLocation && (
-              <p className="text-xs text-muted-foreground">
-                Using {selectedAttendanceLocation.name} coordinates and a{' '}
-                {selectedAttendanceLocation.geofenceRadius}m geofence by default.
-              </p>
-            )}
-            <div className="space-y-2">
-              <Label htmlFor="attendance-notes">Notes</Label>
-              <Input
-                id="attendance-notes"
-                value={attendanceForm.notes}
-                onChange={(event) =>
-                  setAttendanceForm((current) => ({
-                    ...current,
-                    notes: event.target.value,
-                  }))
-                }
-                placeholder="Optional note for this action"
-              />
-            </div>
-            <div className="grid gap-3 sm:grid-cols-2">
-              <Button
-                type="button"
-                onClick={handleClockIn}
-                disabled={
-                  clockingIn ||
-                  !attendanceForm.employeeId ||
-                  !attendanceForm.locationId ||
-                  !attendanceForm.latitude ||
-                  !attendanceForm.longitude
-                }
-              >
-                {clockingIn ? 'Clocking In...' : 'Clock In'}
-              </Button>
-              <Button
-                type="button"
-                variant="outline"
-                onClick={handleClockOut}
-                disabled={
-                  clockingOut ||
-                  !attendanceForm.employeeId ||
-                  !attendanceForm.latitude ||
-                  !attendanceForm.longitude
-                }
-              >
-                {clockingOut ? 'Clocking Out...' : 'Clock Out'}
-              </Button>
-            </div>
-          </CardContent>
-        </Card>
-      </div>
-
-      <div className="grid gap-6 xl:grid-cols-[1.2fr_1fr]">
-        <Card>
-          <CardHeader>
-            <CardTitle>Attendance Records</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center">
-              <div className="min-w-[260px]">
-                <Label htmlFor="attendance-filter-employee">Filter by Employee</Label>
-                <select
-                  id="attendance-filter-employee"
-                  value={attendanceFilterEmployeeId}
-                  onChange={(event) => setAttendanceFilterEmployeeId(event.target.value)}
-                  className="mt-2 flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
-                >
-                  <option value="">All employees</option>
-                  {employees.map(
-                    (employee: {
+              {assignmentForm.employeeId && activeAssignments.length > 0 ? (
+                <div className="mt-6 space-y-3">
+                  <h3 className="text-sm font-semibold">Active Assignments</h3>
+                  {activeAssignments.map(
+                    (assignment: {
                       id: string
-                      fullName: string
-                      employeeNumber: string
+                      isPrimary: boolean
+                      assignedDate: string
+                      location: { name: string; code: string; geofenceRadius: number }
                     }) => (
-                      <option key={employee.id} value={employee.id}>
-                        {employee.fullName} ({employee.employeeNumber})
-                      </option>
+                      <div
+                        key={assignment.id}
+                        className="rounded-lg border border-border bg-muted/40 p-3 text-sm"
+                      >
+                        <div className="font-medium">
+                          {assignment.location.name} ({assignment.location.code})
+                        </div>
+                        <div className="text-muted-foreground">
+                          {assignment.isPrimary ? 'Primary' : 'Secondary'} assignment
+                        </div>
+                        <div className="text-muted-foreground">
+                          Radius: {assignment.location.geofenceRadius}m
+                        </div>
+                        <div className="text-muted-foreground">
+                          Assigned: {assignment.assignedDate}
+                        </div>
+                      </div>
                     )
                   )}
-                </select>
-              </div>
-            </div>
-
-            {loading ? (
-              <p className="text-sm text-muted-foreground">Loading attendance data...</p>
-            ) : error ? (
-              <p className="text-sm text-red-600">
-                Unable to load attendance data. {error.message}
-              </p>
-            ) : attendanceRecords.length === 0 ? (
-              <p className="text-sm text-muted-foreground">
-                No attendance records yet. Use the action card to create the first one.
-              </p>
-            ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full">
-                  <thead>
-                    <tr className="border-b">
-                      <th className="px-4 py-3 text-left">Date</th>
-                      <th className="px-4 py-3 text-left">Employee</th>
-                      <th className="px-4 py-3 text-left">Location</th>
-                      <th className="px-4 py-3 text-left">Clock In</th>
-                      <th className="px-4 py-3 text-left">Clock Out</th>
-                      <th className="px-4 py-3 text-left">Hours</th>
-                      <th className="px-4 py-3 text-left">Status</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {attendanceRecords.map(
-                      (record: {
-                        id: string
-                        attendanceDate: string
-                        clockInAt?: string | null
-                        clockOutAt?: string | null
-                        totalHours?: number | null
-                        status: string
-                        employee: { fullName: string; employeeNumber: string }
-                        location: { name: string; code: string }
-                      }) => (
-                        <tr key={record.id} className="border-b hover:bg-gray-50">
-                          <td className="px-4 py-3">{record.attendanceDate}</td>
-                          <td className="px-4 py-3">
-                            <div className="font-medium">{record.employee.fullName}</div>
-                            <div className="text-xs text-muted-foreground">
-                              {record.employee.employeeNumber}
-                            </div>
-                          </td>
-                          <td className="px-4 py-3">
-                            {record.location.name} ({record.location.code})
-                          </td>
-                          <td className="px-4 py-3">
-                            {record.clockInAt
-                              ? new Date(record.clockInAt).toLocaleTimeString()
-                              : '—'}
-                          </td>
-                          <td className="px-4 py-3">
-                            {record.clockOutAt
-                              ? new Date(record.clockOutAt).toLocaleTimeString()
-                              : '—'}
-                          </td>
-                          <td className="px-4 py-3">
-                            {record.totalHours != null ? `${record.totalHours}h` : '—'}
-                          </td>
-                          <td className="px-4 py-3">
-                            <span className="inline-flex rounded-full bg-blue-100 px-2.5 py-0.5 text-xs font-medium text-blue-800">
-                              {record.status}
-                            </span>
-                          </td>
-                        </tr>
-                      )
-                    )}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader>
-            <CardTitle>Locations</CardTitle>
-          </CardHeader>
-          <CardContent>
-            {locations.length === 0 ? (
-              <p className="text-sm text-muted-foreground">
-                No locations created yet.
-              </p>
-            ) : (
-              <div className="space-y-3">
-                {locations.map(
-                  (location: {
-                    id: string
-                    name: string
-                    code: string
-                    city?: string | null
-                    address: string
-                    geofenceRadius: number
-                    isActive: boolean
-                  }) => (
-                    <div
-                      key={location.id}
-                      className="rounded-lg border border-border bg-muted/40 p-4"
-                    >
-                      <div className="flex items-center justify-between gap-3">
-                        <div>
-                          <div className="font-medium">
-                            {location.name} ({location.code})
-                          </div>
-                          <div className="text-sm text-muted-foreground">
-                            {location.city ? `${location.city} • ` : ''}
-                            {location.address}
-                          </div>
-                        </div>
-                        <span
-                          className={`inline-flex rounded-full px-2.5 py-0.5 text-xs font-medium ${
-                            location.isActive
-                              ? 'bg-emerald-100 text-emerald-800'
-                              : 'bg-slate-200 text-slate-700'
-                          }`}
-                        >
-                          {location.isActive ? 'ACTIVE' : 'INACTIVE'}
-                        </span>
-                      </div>
-                      <div className="mt-2 text-sm text-muted-foreground">
-                        Geofence radius: {location.geofenceRadius}m
-                      </div>
-                    </div>
-                  )
-                )}
-              </div>
-            )}
-          </CardContent>
-        </Card>
+                </div>
+              ) : null}
+              </CardContent>
+            </Card>
+          </div>
+        ) : (
+          <Card className="border-dashed bg-secondary/50">
+            <CardContent className="p-6 text-sm text-muted-foreground">
+              Setup is hidden to keep the page focused. Open setup to create locations or assign staff.
+            </CardContent>
+          </Card>
+        )}
       </div>
     </div>
   )

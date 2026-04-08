@@ -4,6 +4,10 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { CalendarClock, FileCheck2, PlaneTakeoff } from 'lucide-react'
+import { MetricCard } from '@/components/ui/metric-card'
+import { Notice } from '@/components/ui/notice'
+import { StatusBadge } from '@/components/ui/status-badge'
 import { canManageAccounts, readStoredAdminAccount } from '@/lib/auth-session'
 
 const LEAVE_PAGE_QUERY = gql`
@@ -93,6 +97,9 @@ export function LeavePage() {
   const pendingRequests = leaveRequests.filter(
     (request: { status: string }) => request.status === 'PENDING'
   )
+  const approvedRequests = leaveRequests.filter(
+    (request: { status: string }) => request.status === 'APPROVED'
+  ).length
 
   const handleCreateLeaveType = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
@@ -152,31 +159,50 @@ export function LeavePage() {
   }
 
   return (
-    <div className="space-y-6">
-      <div>
-        <h1 className="text-3xl font-bold">Leave Management</h1>
-        <p className="text-muted-foreground">
-          Review employee leave requests and manage leave types.
-        </p>
+    <div className="space-y-4">
+      <Card>
+        <CardContent className="p-5 sm:p-6">
+          <p className="app-kicker">Leave control</p>
+          <h2 className="mt-2 text-2xl font-semibold tracking-[-0.04em] text-foreground">
+            Review requests quickly and keep policy simple.
+          </h2>
+          <p className="mt-2 max-w-2xl text-sm leading-6 text-muted-foreground">
+            Pending decisions stay first, while leave types remain close by without crowding the page.
+          </p>
+        </CardContent>
+      </Card>
+
+      <div className="grid gap-4 md:grid-cols-3">
+        <MetricCard
+          detail="Awaiting manager action"
+          icon={CalendarClock}
+          label="Pending"
+          tone="bg-amber-100 text-amber-800"
+          value={String(pendingRequests.length)}
+        />
+        <MetricCard
+          detail="Configured leave types"
+          icon={PlaneTakeoff}
+          label="Policies"
+          tone="bg-sky-100 text-sky-800"
+          value={String(leaveTypes.length)}
+        />
+        <MetricCard
+          detail="Approved requests in history"
+          icon={FileCheck2}
+          label="Approved"
+          tone="bg-emerald-100 text-emerald-800"
+          value={String(approvedRequests)}
+        />
       </div>
 
-      {errorMessage && (
-        <Card className="border-red-200 bg-red-50">
-          <CardContent className="p-4 text-sm text-red-700">{errorMessage}</CardContent>
-        </Card>
-      )}
+      {errorMessage ? <Notice tone="danger">{errorMessage}</Notice> : null}
+      {statusMessage ? <Notice tone="success">{statusMessage}</Notice> : null}
 
-      {statusMessage && (
-        <Card className="border-emerald-200 bg-emerald-50">
-          <CardContent className="p-4 text-sm text-emerald-700">
-            {statusMessage}
-          </CardContent>
-        </Card>
-      )}
-
-      <div className="grid gap-6 xl:grid-cols-2">
+      <div className="grid gap-4 xl:grid-cols-2">
         <Card>
           <CardHeader>
+            <p className="app-kicker">Approvals</p>
             <CardTitle>Pending Requests</CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
@@ -209,9 +235,7 @@ export function LeavePage() {
                           {request.employee.employeeNumber} • {request.leaveType.name}
                         </p>
                       </div>
-                      <span className="inline-flex rounded-full bg-amber-100 px-2.5 py-0.5 text-xs font-medium text-amber-800">
-                        Pending
-                      </span>
+                      <StatusBadge tone="warning">Pending</StatusBadge>
                     </div>
                     <p className="mt-3 text-sm text-muted-foreground">
                       {request.startDate} to {request.endDate} • {request.totalDays} day(s)
@@ -255,6 +279,7 @@ export function LeavePage() {
 
         <Card>
           <CardHeader>
+            <p className="app-kicker">Policy</p>
             <CardTitle>Leave Types</CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
@@ -273,9 +298,9 @@ export function LeavePage() {
                         <p className="font-medium">{leaveType.name}</p>
                         <p className="text-sm text-muted-foreground">{leaveType.code}</p>
                       </div>
-                      <span className="inline-flex rounded-full bg-blue-100 px-2.5 py-0.5 text-xs font-medium text-blue-800">
+                      <StatusBadge tone="info">
                         {leaveType.defaultDays} days
-                      </span>
+                      </StatusBadge>
                     </div>
                     {leaveType.description && (
                       <p className="mt-2 text-sm text-muted-foreground">
@@ -365,6 +390,7 @@ export function LeavePage() {
 
       <Card>
         <CardHeader>
+          <p className="app-kicker">History</p>
           <CardTitle>Request History</CardTitle>
         </CardHeader>
         <CardContent>
@@ -410,9 +436,17 @@ export function LeavePage() {
                         </td>
                         <td className="px-4 py-3">{request.totalDays}</td>
                         <td className="px-4 py-3">
-                          <span className="inline-flex rounded-full bg-slate-100 px-2.5 py-0.5 text-xs font-medium text-slate-700">
+                          <StatusBadge
+                            tone={
+                              request.status === 'APPROVED'
+                                ? 'success'
+                                : request.status === 'REJECTED'
+                                  ? 'danger'
+                                  : 'warning'
+                            }
+                          >
                             {request.status}
-                          </span>
+                          </StatusBadge>
                         </td>
                         <td className="px-4 py-3">{request.reviewedByName || '—'}</td>
                       </tr>

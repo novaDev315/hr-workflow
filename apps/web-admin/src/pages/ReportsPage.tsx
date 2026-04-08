@@ -1,9 +1,15 @@
-import { gql, useApolloClient, useQuery } from '@apollo/client'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
 import { useState } from 'react'
+import { gql, useApolloClient, useQuery } from '@apollo/client'
+import { Download, FileText, Users } from 'lucide-react'
+
+import { Button } from '@/components/ui/button'
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Input } from '@/components/ui/input'
+import { MetricCard } from '@/components/ui/metric-card'
+import { Notice } from '@/components/ui/notice'
+import { StatusBadge } from '@/components/ui/status-badge'
 import { downloadBase64File } from '@/lib/download-export'
+import { formatCurrency, formatDate } from '@/lib/utils'
 
 const REPORTS_DASHBOARD_QUERY = gql`
   query ReportsDashboard($periodMonth: String) {
@@ -72,9 +78,7 @@ export function ReportsPage() {
   const [exporting, setExporting] = useState(false)
   const [exportError, setExportError] = useState<string | null>(null)
   const { data, loading, error } = useQuery(REPORTS_DASHBOARD_QUERY, {
-    variables: {
-      periodMonth,
-    },
+    variables: { periodMonth },
   })
 
   const dashboard = data?.reportsDashboard
@@ -110,83 +114,80 @@ export function ReportsPage() {
   }
 
   return (
-    <div className="space-y-6">
-      <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-        <div>
-          <h1 className="text-3xl font-bold">Reports</h1>
-          <p className="text-muted-foreground">
-            Live operational reports across employees, attendance, leave, payroll, and policy.
-          </p>
-        </div>
-        <div className="flex w-full max-w-md gap-3">
-          <Input type="month" value={periodMonth} onChange={(event) => setPeriodMonth(event.target.value)} />
-          <Button type="button" variant="outline" onClick={handleExportReports} disabled={exporting}>
-            {exporting ? 'Exporting...' : 'Export PDF'}
-          </Button>
-        </div>
-      </div>
+    <div className="space-y-4">
+      <Card>
+        <CardContent className="flex flex-col gap-4 p-5 sm:flex-row sm:items-end sm:justify-between sm:p-6">
+          <div>
+            <p className="app-kicker">Monthly reporting</p>
+            <h2 className="mt-2 text-2xl font-semibold tracking-[-0.04em] text-foreground">
+              Export the essentials for leadership.
+            </h2>
+            <p className="mt-2 max-w-2xl text-sm leading-6 text-muted-foreground">
+              Reports stay compact here: scope, people movement, payroll weight, and approval pressure.
+            </p>
+          </div>
+          <div className="flex w-full max-w-md gap-3">
+            <Input type="month" value={periodMonth} onChange={(event) => setPeriodMonth(event.target.value)} />
+            <Button type="button" variant="outline" onClick={handleExportReports} disabled={exporting}>
+              <Download className="mr-2 h-4 w-4" />
+              {exporting ? 'Exporting...' : 'Export PDF'}
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
 
-      {exportError && (
-        <Card className="border-red-200 bg-red-50">
-          <CardContent className="p-4 text-sm text-red-700">{exportError}</CardContent>
-        </Card>
-      )}
+      {exportError ? <Notice tone="danger">{exportError}</Notice> : null}
 
       {loading ? (
         <Card>
-          <CardContent className="p-6 text-sm text-muted-foreground">
-            Loading reports...
-          </CardContent>
+          <CardContent className="p-6 text-sm text-muted-foreground">Loading reports...</CardContent>
         </Card>
       ) : error ? (
-        <Card>
-          <CardContent className="p-6 text-sm text-red-600">
-            Unable to load reports. {error.message}
-          </CardContent>
-        </Card>
+        <Notice tone="danger">Unable to load reports. {error.message}</Notice>
       ) : (
         <>
-          <Card>
-            <CardContent className="flex items-center justify-between p-4 text-sm">
-              <span className="font-medium">Report scope</span>
-              <span className="text-muted-foreground">
-                {dashboard?.accessScopeLabel ?? 'Current account scope'}
-              </span>
-            </CardContent>
-          </Card>
-
-          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
-            {[
-              { label: 'Active Employees', value: dashboard?.overview.activeEmployees ?? 0 },
-              { label: 'Pending Leave', value: dashboard?.overview.pendingLeaveRequests ?? 0 },
-              { label: 'Processed Payrolls', value: dashboard?.overview.processedPayrollPeriods ?? 0 },
-              { label: 'Published Policies', value: dashboard?.overview.publishedPolicies ?? 0 },
-              {
-                label: 'Monthly Net Pay',
-                value: (dashboard?.overview.monthlyPayrollNetPay ?? 0).toFixed(2),
-              },
-            ].map((item) => (
-              <Card key={item.label}>
-                <CardHeader className="pb-2">
-                  <CardTitle className="text-sm text-muted-foreground">{item.label}</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <p className="text-2xl font-bold">{item.value}</p>
-                </CardContent>
-              </Card>
-            ))}
+          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+            <MetricCard
+              detail={dashboard?.accessScopeLabel ?? 'Current scope'}
+              icon={Users}
+              label="Active employees"
+              tone="bg-sky-100 text-sky-800"
+              value={String(dashboard?.overview.activeEmployees ?? 0)}
+            />
+            <MetricCard
+              detail="Waiting for review"
+              icon={FileText}
+              label="Pending leave"
+              tone="bg-amber-100 text-amber-800"
+              value={String(dashboard?.overview.pendingLeaveRequests ?? 0)}
+            />
+            <MetricCard
+              detail="Completed cycles"
+              label="Payroll periods"
+              tone="bg-emerald-100 text-emerald-800"
+              value={String(dashboard?.overview.processedPayrollPeriods ?? 0)}
+            />
+            <MetricCard
+              detail={`${dashboard?.overview.publishedPolicies ?? 0} published policies`}
+              label="Monthly net pay"
+              tone="bg-rose-100 text-rose-800"
+              value={formatCurrency(dashboard?.overview.monthlyPayrollNetPay ?? 0)}
+            />
           </div>
 
-          <div className="grid gap-6 xl:grid-cols-2">
+          <div className="grid gap-4 xl:grid-cols-2">
             <Card>
               <CardHeader>
-                <CardTitle>Department Headcount</CardTitle>
+                <p className="app-kicker">Headcount</p>
+                <CardTitle>Department overview</CardTitle>
               </CardHeader>
               <CardContent className="space-y-3">
                 {dashboard?.departmentHeadcount.map((row: { departmentName: string; employeeCount: number }) => (
-                  <div key={row.departmentName} className="flex items-center justify-between rounded-md border p-3">
-                    <span className="font-medium">{row.departmentName}</span>
-                    <span className="text-sm text-muted-foreground">{row.employeeCount} employees</span>
+                  <div key={row.departmentName} className="app-muted-surface p-4">
+                    <div className="flex items-center justify-between gap-4">
+                      <p className="font-semibold text-foreground">{row.departmentName}</p>
+                      <StatusBadge tone="neutral">{row.employeeCount} employees</StatusBadge>
+                    </div>
                   </div>
                 ))}
               </CardContent>
@@ -194,21 +195,24 @@ export function ReportsPage() {
 
             <Card>
               <CardHeader>
-                <CardTitle>Payroll Cost by Department</CardTitle>
+                <p className="app-kicker">Payroll</p>
+                <CardTitle>Department cost weight</CardTitle>
               </CardHeader>
               <CardContent className="space-y-3">
                 {dashboard?.payrollDepartmentCosts.map(
                   (row: { departmentName: string; payslipCount: number; totalNetPay: number }) => (
-                    <div key={row.departmentName} className="rounded-md border p-3">
-                      <div className="flex items-center justify-between">
-                        <span className="font-medium">{row.departmentName}</span>
-                        <span className="text-sm text-muted-foreground">
-                          {row.payslipCount} payslips
-                        </span>
+                    <div key={row.departmentName} className="app-muted-surface p-4">
+                      <div className="flex items-center justify-between gap-4">
+                        <div>
+                          <p className="font-semibold text-foreground">{row.departmentName}</p>
+                          <p className="mt-1 text-sm text-muted-foreground">
+                            {row.payslipCount} payslips
+                          </p>
+                        </div>
+                        <p className="text-sm font-semibold text-foreground">
+                          {formatCurrency(row.totalNetPay)}
+                        </p>
                       </div>
-                      <p className="mt-2 text-sm text-muted-foreground">
-                        Net pay: {row.totalNetPay.toFixed(2)}
-                      </p>
                     </div>
                   )
                 )}
@@ -216,142 +220,120 @@ export function ReportsPage() {
             </Card>
           </div>
 
-          <div className="grid gap-6 xl:grid-cols-2">
+          <div className="grid gap-4 xl:grid-cols-2">
             <Card>
               <CardHeader>
-                <CardTitle>Recent Hires</CardTitle>
+                <p className="app-kicker">People movement</p>
+                <CardTitle>Recent hires and attendance signal</CardTitle>
               </CardHeader>
-              <CardContent>
-                <div className="overflow-x-auto">
-                  <table className="w-full">
-                    <thead>
-                      <tr className="border-b">
-                        <th className="px-4 py-3 text-left">Employee</th>
-                        <th className="px-4 py-3 text-left">Department</th>
-                        <th className="px-4 py-3 text-left">Designation</th>
-                        <th className="px-4 py-3 text-left">Join Date</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {dashboard?.recentHires.map(
-                        (row: {
-                          employeeNumber: string
-                          fullName: string
-                          departmentName: string
-                          designationTitle: string
-                          joinDate: string
-                        }) => (
-                          <tr key={`${row.employeeNumber}-${row.joinDate}`} className="border-b hover:bg-gray-50">
-                            <td className="px-4 py-3">
-                              {row.fullName}
-                              <div className="text-xs text-muted-foreground">{row.employeeNumber}</div>
-                            </td>
-                            <td className="px-4 py-3">{row.departmentName}</td>
-                            <td className="px-4 py-3">{row.designationTitle}</td>
-                            <td className="px-4 py-3">{row.joinDate}</td>
-                          </tr>
-                        )
-                      )}
-                    </tbody>
-                  </table>
-                </div>
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardHeader>
-                <CardTitle>Attendance Summary</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="overflow-x-auto">
-                  <table className="w-full">
-                    <thead>
-                      <tr className="border-b">
-                        <th className="px-4 py-3 text-left">Employee</th>
-                        <th className="px-4 py-3 text-left">Attendance Days</th>
-                        <th className="px-4 py-3 text-left">Overtime Hours</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {dashboard?.attendanceSummary.map(
-                        (row: {
-                          employeeNumber: string
-                          fullName: string
-                          attendanceDays: number
-                          overtimeHours: number
-                        }) => (
-                          <tr key={row.employeeNumber} className="border-b hover:bg-gray-50">
-                            <td className="px-4 py-3">
-                              {row.fullName}
-                              <div className="text-xs text-muted-foreground">{row.employeeNumber}</div>
-                            </td>
-                            <td className="px-4 py-3">{row.attendanceDays}</td>
-                            <td className="px-4 py-3">{row.overtimeHours.toFixed(2)}</td>
-                          </tr>
-                        )
-                      )}
-                    </tbody>
-                  </table>
-                </div>
-              </CardContent>
-            </Card>
-          </div>
-
-          <div className="grid gap-6 xl:grid-cols-2">
-            <Card>
-              <CardHeader>
-                <CardTitle>Pending Leave Approval</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-3">
-                {dashboard?.pendingLeaveApprovals.length === 0 ? (
-                  <p className="text-sm text-muted-foreground">No pending leave approvals.</p>
-                ) : (
-                  dashboard?.pendingLeaveApprovals.map(
+              <CardContent className="space-y-4">
+                <div className="space-y-3">
+                  {dashboard?.recentHires.map(
                     (row: {
                       employeeNumber: string
                       fullName: string
-                      leaveTypeName: string
-                      startDate: string
-                      endDate: string
-                      totalDays: number
+                      departmentName: string
+                      designationTitle: string
+                      joinDate: string
                     }) => (
-                      <div key={`${row.employeeNumber}-${row.startDate}`} className="rounded-md border p-3">
-                        <p className="font-medium">
-                          {row.fullName} <span className="text-sm text-muted-foreground">({row.employeeNumber})</span>
-                        </p>
-                        <p className="mt-1 text-sm text-muted-foreground">
-                          {row.leaveTypeName} • {row.startDate} to {row.endDate} • {row.totalDays} day(s)
+                      <div key={`${row.employeeNumber}-${row.joinDate}`} className="app-muted-surface p-4">
+                        <div className="flex items-start justify-between gap-3">
+                          <div>
+                            <p className="font-semibold text-foreground">{row.fullName}</p>
+                            <p className="mt-1 text-sm text-muted-foreground">
+                              {row.departmentName} · {row.designationTitle}
+                            </p>
+                          </div>
+                          <StatusBadge tone="info">{formatDate(row.joinDate)}</StatusBadge>
+                        </div>
+                      </div>
+                    )
+                  )}
+                </div>
+
+                <div className="space-y-3 border-t border-border/70 pt-4">
+                  {dashboard?.attendanceSummary.map(
+                    (row: {
+                      employeeNumber: string
+                      fullName: string
+                      attendanceDays: number
+                      overtimeHours: number
+                    }) => (
+                      <div key={row.employeeNumber} className="app-muted-surface p-4">
+                        <div className="flex items-center justify-between gap-3">
+                          <div>
+                            <p className="font-semibold text-foreground">{row.fullName}</p>
+                            <p className="mt-1 text-sm text-muted-foreground">{row.employeeNumber}</p>
+                          </div>
+                          <StatusBadge tone="accent">{row.attendanceDays} days</StatusBadge>
+                        </div>
+                        <p className="mt-3 text-sm text-muted-foreground">
+                          Overtime: {row.overtimeHours.toFixed(2)} hours
                         </p>
                       </div>
                     )
-                  )
-                )}
+                  )}
+                </div>
               </CardContent>
             </Card>
 
             <Card>
               <CardHeader>
-                <CardTitle>Published Policies</CardTitle>
+                <p className="app-kicker">Governance</p>
+                <CardTitle>Approvals and published policy</CardTitle>
               </CardHeader>
-              <CardContent className="space-y-3">
-                {dashboard?.publishedPolicies.map(
-                  (row: {
-                    title: string
-                    category: string
-                    version: string
-                    effectiveDate: string
-                  }) => (
-                    <div key={`${row.title}-${row.version}`} className="rounded-md border p-3">
-                      <div className="flex items-center justify-between">
-                        <p className="font-medium">{row.title}</p>
-                        <span className="text-xs text-muted-foreground">v{row.version}</span>
+              <CardContent className="space-y-4">
+                <div className="space-y-3">
+                  {dashboard?.pendingLeaveApprovals.length === 0 ? (
+                    <p className="text-sm text-muted-foreground">No pending leave approvals.</p>
+                  ) : (
+                    dashboard?.pendingLeaveApprovals.map(
+                      (row: {
+                        employeeNumber: string
+                        fullName: string
+                        leaveTypeName: string
+                        startDate: string
+                        endDate: string
+                        totalDays: number
+                      }) => (
+                        <div key={`${row.employeeNumber}-${row.startDate}`} className="app-muted-surface p-4">
+                          <div className="flex items-start justify-between gap-3">
+                            <div>
+                              <p className="font-semibold text-foreground">{row.fullName}</p>
+                              <p className="mt-1 text-sm text-muted-foreground">
+                                {row.leaveTypeName} · {formatDate(row.startDate)} to {formatDate(row.endDate)}
+                              </p>
+                            </div>
+                            <StatusBadge tone="warning">{row.totalDays} days</StatusBadge>
+                          </div>
+                        </div>
+                      )
+                    )
+                  )}
+                </div>
+
+                <div className="space-y-3 border-t border-border/70 pt-4">
+                  {dashboard?.publishedPolicies.map(
+                    (row: {
+                      title: string
+                      category: string
+                      version: string
+                      effectiveDate: string
+                    }) => (
+                      <div key={`${row.title}-${row.version}`} className="app-muted-surface p-4">
+                        <div className="flex items-start justify-between gap-3">
+                          <div>
+                            <p className="font-semibold text-foreground">{row.title}</p>
+                            <p className="mt-1 text-sm text-muted-foreground">
+                              {row.category} · Effective {formatDate(row.effectiveDate)}
+                            </p>
+                          </div>
+                          <StatusBadge tone="neutral">v{row.version}</StatusBadge>
+                        </div>
                       </div>
-                      <p className="mt-1 text-sm text-muted-foreground">
-                        {row.category} • Effective {row.effectiveDate}
-                      </p>
-                    </div>
-                  )
-                )}
+                    )
+                  )}
+                </div>
               </CardContent>
             </Card>
           </div>
