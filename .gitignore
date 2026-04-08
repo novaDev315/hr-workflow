@@ -70,6 +70,7 @@ apps/backend/src/schema.gql
 
 # Local agent tooling
 .claude/
+.codex
 .codex/
 .playwright-cli/
 output/
