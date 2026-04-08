@@ -16,6 +16,7 @@ build:
 deploy:
   target: web
   base_domain: rakss
+  port: 5173
 database:
   migration:
     enabled: false

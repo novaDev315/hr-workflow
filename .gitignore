@@ -67,3 +67,9 @@ backups/*.sql
 # Build artifacts
 *.tsbuildinfo
 apps/backend/src/schema.gql
+
+# Local agent tooling
+.claude/
+.codex/
+.playwright-cli/
+output/
