@@ -1,4 +1,4 @@
-import { useApolloClient } from '@apollo/client'
+import { useApolloClient } from "@apollo/client";
 import {
   BarChart3,
   BookOpen,
@@ -8,111 +8,118 @@ import {
   FileText,
   LayoutDashboard,
   LogOut,
+  Menu,
   Search,
   ShieldCheck,
   Users,
-} from 'lucide-react'
-import { useEffect } from 'react'
-import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
+  X,
+} from "lucide-react";
+import { useEffect, useState } from "react";
+import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 
-import { Button } from '@/components/ui/button'
-import { StatusBadge } from '@/components/ui/status-badge'
-import { clearAdminSession, useAdminSession } from '@/lib/auth-session'
-import { formatDate } from '@/lib/utils'
+import { Button } from "@/components/ui/button";
+import { StatusBadge } from "@/components/ui/status-badge";
+import { clearAdminSession, useAdminSession } from "@/lib/auth-session";
+import { formatDate } from "@/lib/utils";
 
 const primaryNavigation = [
   {
-    name: 'Home',
-    href: '/',
+    name: "Home",
+    href: "/",
     icon: LayoutDashboard,
-    description: 'Daily overview.',
+    description: "Daily overview.",
   },
   {
-    name: 'People Directory',
-    href: '/directory',
+    name: "People Directory",
+    href: "/directory",
     icon: Search,
-    description: 'Search people and key employee details.',
+    description: "Search people and key employee details.",
   },
   {
-    name: 'Leaves',
-    href: '/leave',
+    name: "Leaves",
+    href: "/leave",
     icon: Calendar,
-    description: 'Review leave requests and policies.',
+    description: "Review leave requests and policies.",
   },
   {
-    name: 'Attendance',
-    href: '/attendance',
+    name: "Attendance",
+    href: "/attendance",
     icon: Briefcase,
-    description: 'Track attendance activity and locations.',
+    description: "Track attendance activity and locations.",
   },
   {
-    name: 'Payroll',
-    href: '/payroll',
+    name: "Payroll",
+    href: "/payroll",
     icon: DollarSign,
-    description: 'Run monthly payroll operations.',
+    description: "Run monthly payroll operations.",
   },
-]
+];
 
 const secondaryNavigation = [
   {
-    name: 'Employees',
-    href: '/employees',
+    name: "Employees",
+    href: "/employees",
     icon: Users,
-    description: 'Maintain employee records and access.',
+    description: "Maintain employee records and access.",
   },
   {
-    name: 'Recruitment',
-    href: '/recruitment',
+    name: "Recruitment",
+    href: "/recruitment",
     icon: FileText,
-    description: 'Live hiring records.',
+    description: "Live hiring records.",
   },
   {
-    name: 'Reports',
-    href: '/reports',
+    name: "Reports",
+    href: "/reports",
     icon: BarChart3,
-    description: 'Exports and monthly reporting.',
+    description: "Exports and monthly reporting.",
   },
   {
-    name: 'Policies',
-    href: '/policies',
+    name: "Policies",
+    href: "/policies",
     icon: BookOpen,
-    description: 'Policy documents and publishing.',
+    description: "Policy documents and publishing.",
   },
-]
+];
 
-const navigation = [...primaryNavigation, ...secondaryNavigation]
+const navigation = [...primaryNavigation, ...secondaryNavigation];
 
 export function DashboardLayout() {
-  const apolloClient = useApolloClient()
-  const location = useLocation()
-  const navigate = useNavigate()
-  const { account } = useAdminSession()
+  const apolloClient = useApolloClient();
+  const location = useLocation();
+  const navigate = useNavigate();
+  const { account } = useAdminSession();
+  const [mobileNavOpen, setMobileNavOpen] = useState(false);
 
   const currentPage =
     navigation.find((item) =>
-      item.href === '/'
-        ? location.pathname === '/'
-        : location.pathname.startsWith(item.href)
-    ) ?? navigation[0]
+      item.href === "/"
+        ? location.pathname === "/"
+        : location.pathname.startsWith(item.href),
+    ) ?? navigation[0];
 
   useEffect(() => {
-    document.title = `${currentPage.name} - Rakss HR Admin`
-  }, [currentPage.name])
+    document.title = `${currentPage.name} - Rakss HR Admin`;
+  }, [currentPage.name]);
+
+  useEffect(() => {
+    setMobileNavOpen(false);
+  }, [location.pathname]);
 
   const handleLogout = async () => {
-    clearAdminSession()
-    await apolloClient.clearStore()
-    navigate('/login')
-  }
+    clearAdminSession();
+    await apolloClient.clearStore();
+    navigate("/login");
+  };
 
   const initials = account?.fullName
     ? account.fullName
-        .split(' ')
+        .split(" ")
         .slice(0, 2)
-        .map((part) => part[0] ?? '')
-        .join('')
+        .map((part) => part[0] ?? "")
+        .join("")
         .toUpperCase()
-    : 'RA'
+    : "RA";
 
   return (
     <div className="min-h-screen px-3 py-3 sm:px-4 sm:py-4">
@@ -120,49 +127,84 @@ export function DashboardLayout() {
         <div className="lg:grid lg:min-h-[calc(100vh-1.5rem)] lg:grid-cols-[250px_minmax(0,1fr)]">
           <aside className="border-b border-border/70 bg-white lg:border-b-0 lg:border-r">
             <div className="space-y-6 p-4 sm:p-5">
-              <div className="flex items-center gap-3">
-                <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-primary text-primary-foreground">
-                  <ShieldCheck className="h-5 w-5" />
+              <div className="flex items-center justify-between gap-3">
+                <div className="flex items-center gap-3">
+                  <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-primary text-primary-foreground">
+                    <ShieldCheck className="h-5 w-5" />
+                  </div>
+                  <div>
+                    <p className="app-kicker">Rakss HR</p>
+                    <p className="mt-1 text-lg font-semibold tracking-[-0.03em] text-foreground">
+                      Admin workspace
+                    </p>
+                  </div>
                 </div>
-                <div>
-                  <p className="app-kicker">Rakss HR</p>
-                  <p className="mt-1 text-lg font-semibold tracking-[-0.03em] text-foreground">
-                    Admin workspace
-                  </p>
-                </div>
+
+                <Button
+                  aria-label={
+                    mobileNavOpen ? "Close navigation" : "Open navigation"
+                  }
+                  className="lg:hidden"
+                  onClick={() => setMobileNavOpen((current) => !current)}
+                  size="icon"
+                  type="button"
+                  variant="outline"
+                >
+                  {mobileNavOpen ? (
+                    <X className="h-4 w-4" />
+                  ) : (
+                    <Menu className="h-4 w-4" />
+                  )}
+                </Button>
               </div>
 
-              {account ? (
-                <div className="rounded-[1.25rem] border border-border/70 bg-secondary/60 px-4 py-3">
-                  <p className="text-sm font-semibold text-foreground">{account.fullName}</p>
-                  <p className="mt-1 text-sm text-muted-foreground">{account.email}</p>
-                </div>
-              ) : null}
+              <div
+                className={
+                  mobileNavOpen
+                    ? "space-y-6 lg:block"
+                    : "hidden space-y-6 lg:block"
+                }
+              >
+                {account ? (
+                  <div className="rounded-[1.25rem] border border-border/70 bg-secondary/60 px-4 py-3">
+                    <p className="text-sm font-semibold text-foreground">
+                      {account.fullName}
+                    </p>
+                    <p className="mt-1 text-sm text-muted-foreground">
+                      {account.email}
+                    </p>
+                  </div>
+                ) : null}
 
-              <div className="space-y-5">
-                <div>
-                  <p className="app-kicker px-2">Workspace</p>
-                  <nav className="mt-2 space-y-1">
-                    {primaryNavigation.map((item) => (
-                      <NavItem key={item.href} item={item} />
-                    ))}
-                  </nav>
+                <div className="space-y-5">
+                  <div>
+                    <p className="app-kicker px-2">Workspace</p>
+                    <nav className="mt-2 space-y-1">
+                      {primaryNavigation.map((item) => (
+                        <NavItem key={item.href} item={item} />
+                      ))}
+                    </nav>
+                  </div>
+
+                  <div>
+                    <p className="app-kicker px-2">Admin</p>
+                    <nav className="mt-2 space-y-1">
+                      {secondaryNavigation.map((item) => (
+                        <NavItem key={item.href} item={item} />
+                      ))}
+                    </nav>
+                  </div>
                 </div>
 
-                <div>
-                  <p className="app-kicker px-2">Admin</p>
-                  <nav className="mt-2 space-y-1">
-                    {secondaryNavigation.map((item) => (
-                      <NavItem key={item.href} item={item} />
-                    ))}
-                  </nav>
-                </div>
+                <Button
+                  className="w-full justify-start"
+                  variant="outline"
+                  onClick={handleLogout}
+                >
+                  <LogOut className="mr-2 h-4 w-4" />
+                  Log out
+                </Button>
               </div>
-
-              <Button className="w-full justify-start" variant="outline" onClick={handleLogout}>
-                <LogOut className="mr-2 h-4 w-4" />
-                Log out
-              </Button>
             </div>
           </aside>
 
@@ -185,7 +227,9 @@ export function DashboardLayout() {
                       {initials}
                     </div>
                     <div className="pr-1">
-                      <p className="text-sm font-semibold text-foreground">{account.fullName}</p>
+                      <p className="text-sm font-semibold text-foreground">
+                        {account.fullName}
+                      </p>
                       <div className="mt-1 flex flex-wrap gap-2">
                         {account.roles.slice(0, 2).map((role) => (
                           <StatusBadge key={role} tone="accent">
@@ -206,38 +250,40 @@ export function DashboardLayout() {
         </div>
       </div>
     </div>
-  )
+  );
 }
 
 function NavItem({
   item,
 }: {
   item: {
-    name: string
-    href: string
-    icon: typeof LayoutDashboard
-  }
+    name: string;
+    href: string;
+    icon: typeof LayoutDashboard;
+  };
 }) {
   return (
     <NavLink
-      end={item.href === '/'}
+      end={item.href === "/"}
       to={item.href}
       className={({ isActive }) =>
         [
-          'flex items-center gap-3 rounded-[1rem] px-3 py-3 text-sm font-medium transition-all',
+          "flex items-center gap-3 rounded-[1rem] px-3 py-3 text-sm font-medium transition-all",
           isActive
-            ? 'bg-secondary text-foreground shadow-[inset_3px_0_0_0_hsl(var(--primary))]'
-            : 'text-muted-foreground hover:bg-secondary/70 hover:text-foreground',
-        ].join(' ')
+            ? "bg-secondary text-foreground shadow-[inset_3px_0_0_0_hsl(var(--primary))]"
+            : "text-muted-foreground hover:bg-secondary/70 hover:text-foreground",
+        ].join(" ")
       }
     >
       {({ isActive }) => (
         <>
           <div
             className={[
-              'flex h-8 w-8 items-center justify-center rounded-xl',
-              isActive ? 'bg-primary/12 text-primary' : 'bg-white text-muted-foreground',
-            ].join(' ')}
+              "flex h-8 w-8 items-center justify-center rounded-xl",
+              isActive
+                ? "bg-primary/12 text-primary"
+                : "bg-white text-muted-foreground",
+            ].join(" ")}
           >
             <item.icon className="h-4 w-4" />
           </div>
@@ -245,5 +291,5 @@ function NavItem({
         </>
       )}
     </NavLink>
-  )
+  );
 }

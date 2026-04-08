@@ -141,7 +141,33 @@ export function RecruitmentPage() {
           <CardTitle>Recent Applications</CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="overflow-x-auto">
+          <div className="space-y-3 md:hidden">
+            {recentApplications.map((application) => (
+              <div key={application.id} className="app-muted-surface p-4">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <p className="font-semibold text-foreground">
+                      {application.candidateName}
+                    </p>
+                    <p className="mt-1 text-sm text-muted-foreground">
+                      {application.position}
+                    </p>
+                  </div>
+                  <StatusBadge
+                    tone={getApplicationStatusTone(application.status)}
+                  >
+                    {application.status}
+                  </StatusBadge>
+                </div>
+                <div className="mt-4 grid gap-3 text-sm text-muted-foreground sm:grid-cols-2">
+                  <p>Experience: {application.experience}</p>
+                  <p>Applied: {application.appliedDate}</p>
+                </div>
+              </div>
+            ))}
+          </div>
+
+          <div className="hidden overflow-x-auto md:block">
             <table className="w-full">
               <thead>
                 <tr className="border-b">

@@ -1,15 +1,15 @@
-import { useState } from 'react'
-import { gql, useApolloClient, useQuery } from '@apollo/client'
-import { Download, FileText, Users } from 'lucide-react'
+import { useState } from "react";
+import { gql, useApolloClient, useQuery } from "@apollo/client";
+import { Download, FileText, Users } from "lucide-react";
 
-import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { Input } from '@/components/ui/input'
-import { MetricCard } from '@/components/ui/metric-card'
-import { Notice } from '@/components/ui/notice'
-import { StatusBadge } from '@/components/ui/status-badge'
-import { downloadBase64File } from '@/lib/download-export'
-import { formatCurrency, formatDate } from '@/lib/utils'
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { MetricCard } from "@/components/ui/metric-card";
+import { Notice } from "@/components/ui/notice";
+import { StatusBadge } from "@/components/ui/status-badge";
+import { downloadBase64File } from "@/lib/download-export";
+import { formatCurrency, formatDate } from "@/lib/utils";
 
 const REPORTS_DASHBOARD_QUERY = gql`
   query ReportsDashboard($periodMonth: String) {
@@ -60,7 +60,7 @@ const REPORTS_DASHBOARD_QUERY = gql`
       }
     }
   }
-`
+`;
 
 const EXPORT_REPORTS_PDF_QUERY = gql`
   query ExportReportsPdf($periodMonth: String) {
@@ -70,48 +70,58 @@ const EXPORT_REPORTS_PDF_QUERY = gql`
       contentBase64
     }
   }
-`
+`;
 
 export function ReportsPage() {
-  const apolloClient = useApolloClient()
-  const [periodMonth, setPeriodMonth] = useState(new Date().toISOString().slice(0, 7))
-  const [exporting, setExporting] = useState(false)
-  const [exportError, setExportError] = useState<string | null>(null)
+  const apolloClient = useApolloClient();
+  const [periodMonth, setPeriodMonth] = useState(
+    new Date().toISOString().slice(0, 7),
+  );
+  const [exporting, setExporting] = useState(false);
+  const [exportError, setExportError] = useState<string | null>(null);
   const { data, loading, error } = useQuery(REPORTS_DASHBOARD_QUERY, {
     variables: { periodMonth },
-  })
+  });
 
-  const dashboard = data?.reportsDashboard
+  const dashboard = data?.reportsDashboard;
+  const departmentHeadcount = dashboard?.departmentHeadcount ?? [];
+  const payrollDepartmentCosts = dashboard?.payrollDepartmentCosts ?? [];
+  const recentHires = dashboard?.recentHires ?? [];
+  const attendanceSummary = dashboard?.attendanceSummary ?? [];
+  const pendingLeaveApprovals = dashboard?.pendingLeaveApprovals ?? [];
+  const publishedPolicies = dashboard?.publishedPolicies ?? [];
 
   const handleExportReports = async () => {
-    setExporting(true)
-    setExportError(null)
+    setExporting(true);
+    setExportError(null);
 
     try {
       const { data: exportData } = await apolloClient.query({
         query: EXPORT_REPORTS_PDF_QUERY,
         variables: { periodMonth },
-        fetchPolicy: 'no-cache',
-      })
+        fetchPolicy: "no-cache",
+      });
 
-      const exportPayload = exportData?.exportReportsPdf
+      const exportPayload = exportData?.exportReportsPdf;
       if (!exportPayload) {
-        throw new Error('Report export is unavailable.')
+        throw new Error("Report export is unavailable.");
       }
 
       downloadBase64File(
         exportPayload.fileName,
         exportPayload.mimeType,
-        exportPayload.contentBase64
-      )
+        exportPayload.contentBase64,
+      );
     } catch (queryError) {
       setExportError(
-        queryError instanceof Error ? queryError.message : 'Unable to export the selected report.'
-      )
+        queryError instanceof Error
+          ? queryError.message
+          : "Unable to export the selected report.",
+      );
     } finally {
-      setExporting(false)
+      setExporting(false);
     }
-  }
+  };
 
   return (
     <div className="space-y-4">
@@ -123,14 +133,24 @@ export function ReportsPage() {
               Export the essentials for leadership.
             </h2>
             <p className="mt-2 max-w-2xl text-sm leading-6 text-muted-foreground">
-              Reports stay compact here: scope, people movement, payroll weight, and approval pressure.
+              Reports stay compact here: scope, people movement, payroll weight,
+              and approval pressure.
             </p>
           </div>
           <div className="flex w-full max-w-md gap-3">
-            <Input type="month" value={periodMonth} onChange={(event) => setPeriodMonth(event.target.value)} />
-            <Button type="button" variant="outline" onClick={handleExportReports} disabled={exporting}>
+            <Input
+              type="month"
+              value={periodMonth}
+              onChange={(event) => setPeriodMonth(event.target.value)}
+            />
+            <Button
+              type="button"
+              variant="outline"
+              onClick={handleExportReports}
+              disabled={exporting}
+            >
               <Download className="mr-2 h-4 w-4" />
-              {exporting ? 'Exporting...' : 'Export PDF'}
+              {exporting ? "Exporting..." : "Export PDF"}
             </Button>
           </div>
         </CardContent>
@@ -140,7 +160,9 @@ export function ReportsPage() {
 
       {loading ? (
         <Card>
-          <CardContent className="p-6 text-sm text-muted-foreground">Loading reports...</CardContent>
+          <CardContent className="p-6 text-sm text-muted-foreground">
+            Loading reports...
+          </CardContent>
         </Card>
       ) : error ? (
         <Notice tone="danger">Unable to load reports. {error.message}</Notice>
@@ -148,7 +170,7 @@ export function ReportsPage() {
         <>
           <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
             <MetricCard
-              detail={dashboard?.accessScopeLabel ?? 'Current scope'}
+              detail={dashboard?.accessScopeLabel ?? "Current scope"}
               icon={Users}
               label="Active employees"
               tone="bg-sky-100 text-sky-800"
@@ -171,7 +193,9 @@ export function ReportsPage() {
               detail={`${dashboard?.overview.publishedPolicies ?? 0} published policies`}
               label="Monthly net pay"
               tone="bg-rose-100 text-rose-800"
-              value={formatCurrency(dashboard?.overview.monthlyPayrollNetPay ?? 0)}
+              value={formatCurrency(
+                dashboard?.overview.monthlyPayrollNetPay ?? 0,
+              )}
             />
           </div>
 
@@ -182,14 +206,33 @@ export function ReportsPage() {
                 <CardTitle>Department overview</CardTitle>
               </CardHeader>
               <CardContent className="space-y-3">
-                {dashboard?.departmentHeadcount.map((row: { departmentName: string; employeeCount: number }) => (
-                  <div key={row.departmentName} className="app-muted-surface p-4">
-                    <div className="flex items-center justify-between gap-4">
-                      <p className="font-semibold text-foreground">{row.departmentName}</p>
-                      <StatusBadge tone="neutral">{row.employeeCount} employees</StatusBadge>
-                    </div>
-                  </div>
-                ))}
+                {departmentHeadcount.length === 0 ? (
+                  <p className="text-sm text-muted-foreground">
+                    Department headcount will appear here when employee records
+                    are available.
+                  </p>
+                ) : (
+                  departmentHeadcount.map(
+                    (row: {
+                      departmentName: string;
+                      employeeCount: number;
+                    }) => (
+                      <div
+                        key={row.departmentName}
+                        className="app-muted-surface p-4"
+                      >
+                        <div className="flex items-center justify-between gap-4">
+                          <p className="font-semibold text-foreground">
+                            {row.departmentName}
+                          </p>
+                          <StatusBadge tone="neutral">
+                            {row.employeeCount} employees
+                          </StatusBadge>
+                        </div>
+                      </div>
+                    ),
+                  )
+                )}
               </CardContent>
             </Card>
 
@@ -199,21 +242,37 @@ export function ReportsPage() {
                 <CardTitle>Department cost weight</CardTitle>
               </CardHeader>
               <CardContent className="space-y-3">
-                {dashboard?.payrollDepartmentCosts.map(
-                  (row: { departmentName: string; payslipCount: number; totalNetPay: number }) => (
-                    <div key={row.departmentName} className="app-muted-surface p-4">
-                      <div className="flex items-center justify-between gap-4">
-                        <div>
-                          <p className="font-semibold text-foreground">{row.departmentName}</p>
-                          <p className="mt-1 text-sm text-muted-foreground">
-                            {row.payslipCount} payslips
+                {payrollDepartmentCosts.length === 0 ? (
+                  <p className="text-sm text-muted-foreground">
+                    Department payroll totals will appear once payslips exist
+                    for the selected month.
+                  </p>
+                ) : (
+                  payrollDepartmentCosts.map(
+                    (row: {
+                      departmentName: string;
+                      payslipCount: number;
+                      totalNetPay: number;
+                    }) => (
+                      <div
+                        key={row.departmentName}
+                        className="app-muted-surface p-4"
+                      >
+                        <div className="flex items-center justify-between gap-4">
+                          <div>
+                            <p className="font-semibold text-foreground">
+                              {row.departmentName}
+                            </p>
+                            <p className="mt-1 text-sm text-muted-foreground">
+                              {row.payslipCount} payslips
+                            </p>
+                          </div>
+                          <p className="text-sm font-semibold text-foreground">
+                            {formatCurrency(row.totalNetPay)}
                           </p>
                         </div>
-                        <p className="text-sm font-semibold text-foreground">
-                          {formatCurrency(row.totalNetPay)}
-                        </p>
                       </div>
-                    </div>
+                    ),
                   )
                 )}
               </CardContent>
@@ -227,53 +286,87 @@ export function ReportsPage() {
                 <CardTitle>Recent hires and attendance signal</CardTitle>
               </CardHeader>
               <CardContent className="space-y-4">
-                <div className="space-y-3">
-                  {dashboard?.recentHires.map(
-                    (row: {
-                      employeeNumber: string
-                      fullName: string
-                      departmentName: string
-                      designationTitle: string
-                      joinDate: string
-                    }) => (
-                      <div key={`${row.employeeNumber}-${row.joinDate}`} className="app-muted-surface p-4">
-                        <div className="flex items-start justify-between gap-3">
-                          <div>
-                            <p className="font-semibold text-foreground">{row.fullName}</p>
-                            <p className="mt-1 text-sm text-muted-foreground">
-                              {row.departmentName} · {row.designationTitle}
-                            </p>
-                          </div>
-                          <StatusBadge tone="info">{formatDate(row.joinDate)}</StatusBadge>
-                        </div>
+                {recentHires.length === 0 && attendanceSummary.length === 0 ? (
+                  <p className="text-sm text-muted-foreground">
+                    Recent hires and attendance signals will appear here when
+                    people activity is available.
+                  </p>
+                ) : (
+                  <>
+                    {recentHires.length > 0 ? (
+                      <div className="space-y-3">
+                        {recentHires.map(
+                          (row: {
+                            employeeNumber: string;
+                            fullName: string;
+                            departmentName: string;
+                            designationTitle: string;
+                            joinDate: string;
+                          }) => (
+                            <div
+                              key={`${row.employeeNumber}-${row.joinDate}`}
+                              className="app-muted-surface p-4"
+                            >
+                              <div className="flex items-start justify-between gap-3">
+                                <div>
+                                  <p className="font-semibold text-foreground">
+                                    {row.fullName}
+                                  </p>
+                                  <p className="mt-1 text-sm text-muted-foreground">
+                                    {row.departmentName} ·{" "}
+                                    {row.designationTitle}
+                                  </p>
+                                </div>
+                                <StatusBadge tone="info">
+                                  {formatDate(row.joinDate)}
+                                </StatusBadge>
+                              </div>
+                            </div>
+                          ),
+                        )}
                       </div>
-                    )
-                  )}
-                </div>
+                    ) : (
+                      <p className="text-sm text-muted-foreground">
+                        No recent hires for the selected month.
+                      </p>
+                    )}
 
-                <div className="space-y-3 border-t border-border/70 pt-4">
-                  {dashboard?.attendanceSummary.map(
-                    (row: {
-                      employeeNumber: string
-                      fullName: string
-                      attendanceDays: number
-                      overtimeHours: number
-                    }) => (
-                      <div key={row.employeeNumber} className="app-muted-surface p-4">
-                        <div className="flex items-center justify-between gap-3">
-                          <div>
-                            <p className="font-semibold text-foreground">{row.fullName}</p>
-                            <p className="mt-1 text-sm text-muted-foreground">{row.employeeNumber}</p>
-                          </div>
-                          <StatusBadge tone="accent">{row.attendanceDays} days</StatusBadge>
-                        </div>
-                        <p className="mt-3 text-sm text-muted-foreground">
-                          Overtime: {row.overtimeHours.toFixed(2)} hours
-                        </p>
+                    {attendanceSummary.length > 0 ? (
+                      <div className="space-y-3 border-t border-border/70 pt-4">
+                        {attendanceSummary.map(
+                          (row: {
+                            employeeNumber: string;
+                            fullName: string;
+                            attendanceDays: number;
+                            overtimeHours: number;
+                          }) => (
+                            <div
+                              key={row.employeeNumber}
+                              className="app-muted-surface p-4"
+                            >
+                              <div className="flex items-center justify-between gap-3">
+                                <div>
+                                  <p className="font-semibold text-foreground">
+                                    {row.fullName}
+                                  </p>
+                                  <p className="mt-1 text-sm text-muted-foreground">
+                                    {row.employeeNumber}
+                                  </p>
+                                </div>
+                                <StatusBadge tone="accent">
+                                  {row.attendanceDays} days
+                                </StatusBadge>
+                              </div>
+                              <p className="mt-3 text-sm text-muted-foreground">
+                                Overtime: {row.overtimeHours.toFixed(2)} hours
+                              </p>
+                            </div>
+                          ),
+                        )}
                       </div>
-                    )
-                  )}
-                </div>
+                    ) : null}
+                  </>
+                )}
               </CardContent>
             </Card>
 
@@ -284,61 +377,91 @@ export function ReportsPage() {
               </CardHeader>
               <CardContent className="space-y-4">
                 <div className="space-y-3">
-                  {dashboard?.pendingLeaveApprovals.length === 0 ? (
-                    <p className="text-sm text-muted-foreground">No pending leave approvals.</p>
+                  {pendingLeaveApprovals.length === 0 ? (
+                    <p className="text-sm text-muted-foreground">
+                      No pending leave approvals.
+                    </p>
                   ) : (
-                    dashboard?.pendingLeaveApprovals.map(
+                    pendingLeaveApprovals.map(
                       (row: {
-                        employeeNumber: string
-                        fullName: string
-                        leaveTypeName: string
-                        startDate: string
-                        endDate: string
-                        totalDays: number
+                        employeeNumber: string;
+                        fullName: string;
+                        leaveTypeName: string;
+                        startDate: string;
+                        endDate: string;
+                        totalDays: number;
                       }) => (
-                        <div key={`${row.employeeNumber}-${row.startDate}`} className="app-muted-surface p-4">
+                        <div
+                          key={`${row.employeeNumber}-${row.startDate}`}
+                          className="app-muted-surface p-4"
+                        >
                           <div className="flex items-start justify-between gap-3">
                             <div>
-                              <p className="font-semibold text-foreground">{row.fullName}</p>
+                              <p className="font-semibold text-foreground">
+                                {row.fullName}
+                              </p>
                               <p className="mt-1 text-sm text-muted-foreground">
-                                {row.leaveTypeName} · {formatDate(row.startDate)} to {formatDate(row.endDate)}
+                                {row.leaveTypeName} ·{" "}
+                                {formatDate(row.startDate)} to{" "}
+                                {formatDate(row.endDate)}
                               </p>
                             </div>
-                            <StatusBadge tone="warning">{row.totalDays} days</StatusBadge>
+                            <StatusBadge tone="warning">
+                              {row.totalDays} days
+                            </StatusBadge>
                           </div>
                         </div>
-                      )
+                      ),
                     )
                   )}
                 </div>
 
-                <div className="space-y-3 border-t border-border/70 pt-4">
-                  {dashboard?.publishedPolicies.map(
-                    (row: {
-                      title: string
-                      category: string
-                      version: string
-                      effectiveDate: string
-                    }) => (
-                      <div key={`${row.title}-${row.version}`} className="app-muted-surface p-4">
-                        <div className="flex items-start justify-between gap-3">
-                          <div>
-                            <p className="font-semibold text-foreground">{row.title}</p>
-                            <p className="mt-1 text-sm text-muted-foreground">
-                              {row.category} · Effective {formatDate(row.effectiveDate)}
-                            </p>
+                {publishedPolicies.length > 0 ? (
+                  <div className="space-y-3 border-t border-border/70 pt-4">
+                    {publishedPolicies.map(
+                      (row: {
+                        title: string;
+                        category: string;
+                        version: string;
+                        effectiveDate: string;
+                      }) => (
+                        <div
+                          key={`${row.title}-${row.version}`}
+                          className="app-muted-surface p-4"
+                        >
+                          <div className="flex items-start justify-between gap-3">
+                            <div>
+                              <p className="font-semibold text-foreground">
+                                {row.title}
+                              </p>
+                              <p className="mt-1 text-sm text-muted-foreground">
+                                {row.category} · Effective{" "}
+                                {formatDate(row.effectiveDate)}
+                              </p>
+                            </div>
+                            <StatusBadge tone="neutral">
+                              v{row.version}
+                            </StatusBadge>
                           </div>
-                          <StatusBadge tone="neutral">v{row.version}</StatusBadge>
                         </div>
-                      </div>
-                    )
-                  )}
-                </div>
+                      ),
+                    )}
+                  </div>
+                ) : pendingLeaveApprovals.length > 0 ? (
+                  <p className="border-t border-border/70 pt-4 text-sm text-muted-foreground">
+                    No published policies are available for the selected month.
+                  </p>
+                ) : (
+                  <p className="text-sm text-muted-foreground">
+                    Governance details will appear here when approvals or policy
+                    records are available.
+                  </p>
+                )}
               </CardContent>
             </Card>
           </div>
         </>
       )}
     </div>
-  )
+  );
 }
