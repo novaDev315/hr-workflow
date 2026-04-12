@@ -330,14 +330,14 @@ export function PayrollPage() {
 
   return (
     <div className="space-y-4">
-      <Card>
+      <Card className="app-hero-surface">
         <CardContent className="flex flex-col gap-4 p-5 sm:flex-row sm:items-end sm:justify-between sm:p-6">
           <div>
             <p className="app-kicker">Payroll workspace</p>
-            <h2 className="mt-2 text-2xl font-semibold tracking-[-0.04em] text-foreground">
+            <h2 className="app-section-title mt-2 text-[2.2rem]">
               Keep the monthly cycle clear and low-noise.
             </h2>
-            <p className="mt-2 max-w-2xl text-sm leading-6 text-muted-foreground">
+            <p className="mt-2 max-w-2xl text-sm leading-7 text-muted-foreground">
               Process periods, inspect payslips, and open compensation setup only when changes are needed.
             </p>
           </div>

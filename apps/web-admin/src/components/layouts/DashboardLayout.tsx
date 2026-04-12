@@ -18,68 +18,22 @@ import { useEffect, useState } from "react";
 import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 
 import { Button } from "@/components/ui/button";
-import { StatusBadge } from "@/components/ui/status-badge";
 import { clearAdminSession, useAdminSession } from "@/lib/auth-session";
 import { formatDate } from "@/lib/utils";
 
 const primaryNavigation = [
-  {
-    name: "Home",
-    href: "/",
-    icon: LayoutDashboard,
-    description: "Daily overview.",
-  },
-  {
-    name: "People Directory",
-    href: "/directory",
-    icon: Search,
-    description: "Search people and key employee details.",
-  },
-  {
-    name: "Leaves",
-    href: "/leave",
-    icon: Calendar,
-    description: "Review leave requests and policies.",
-  },
-  {
-    name: "Attendance",
-    href: "/attendance",
-    icon: Briefcase,
-    description: "Track attendance activity and locations.",
-  },
-  {
-    name: "Payroll",
-    href: "/payroll",
-    icon: DollarSign,
-    description: "Run monthly payroll operations.",
-  },
+  { name: "Home", href: "/", icon: LayoutDashboard },
+  { name: "People Directory", href: "/directory", icon: Search },
+  { name: "Leaves", href: "/leave", icon: Calendar },
+  { name: "Attendance", href: "/attendance", icon: Briefcase },
+  { name: "Payroll", href: "/payroll", icon: DollarSign },
 ];
 
 const secondaryNavigation = [
-  {
-    name: "Employees",
-    href: "/employees",
-    icon: Users,
-    description: "Maintain employee records and access.",
-  },
-  {
-    name: "Recruitment",
-    href: "/recruitment",
-    icon: FileText,
-    description: "Live hiring records.",
-  },
-  {
-    name: "Reports",
-    href: "/reports",
-    icon: BarChart3,
-    description: "Exports and monthly reporting.",
-  },
-  {
-    name: "Policies",
-    href: "/policies",
-    icon: BookOpen,
-    description: "Policy documents and publishing.",
-  },
+  { name: "Employees", href: "/employees", icon: Users },
+  { name: "Recruitment", href: "/recruitment", icon: FileText },
+  { name: "Reports", href: "/reports", icon: BarChart3 },
+  { name: "Policies", href: "/policies", icon: BookOpen },
 ];
 
 const navigation = [...primaryNavigation, ...secondaryNavigation];
@@ -122,19 +76,19 @@ export function DashboardLayout() {
     : "RA";
 
   return (
-    <div className="min-h-screen px-3 py-3 sm:px-4 sm:py-4">
-      <div className="mx-auto min-h-[calc(100vh-1.5rem)] max-w-[1500px] overflow-hidden rounded-[2rem] border border-border/70 bg-white/92 shadow-[0_24px_70px_rgba(15,23,42,0.08)] backdrop-blur">
-        <div className="lg:grid lg:min-h-[calc(100vh-1.5rem)] lg:grid-cols-[250px_minmax(0,1fr)]">
-          <aside className="border-b border-border/70 bg-white lg:border-b-0 lg:border-r">
-            <div className="space-y-6 p-4 sm:p-5">
+    <div className="min-h-screen px-2 py-2 sm:px-3 sm:py-3">
+      <div className="app-shell mx-auto min-h-[calc(100vh-1rem)] max-w-[1440px] overflow-hidden">
+        <div className="lg:grid lg:min-h-[calc(100vh-1rem)] lg:grid-cols-[228px_minmax(0,1fr)]">
+          <aside className="app-shell-sidebar border-b border-border/70 lg:border-b-0 lg:border-r">
+            <div className="space-y-5 p-4">
               <div className="flex items-center justify-between gap-3">
                 <div className="flex items-center gap-3">
-                  <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-primary text-primary-foreground">
-                    <ShieldCheck className="h-5 w-5" />
+                  <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary text-primary-foreground">
+                    <ShieldCheck className="h-4.5 w-4.5" />
                   </div>
                   <div>
                     <p className="app-kicker">Rakss HR</p>
-                    <p className="mt-1 text-lg font-semibold tracking-[-0.03em] text-foreground">
+                    <p className="mt-0.5 text-base font-semibold tracking-[-0.03em] text-foreground">
                       Admin workspace
                     </p>
                   </div>
@@ -161,24 +115,13 @@ export function DashboardLayout() {
               <div
                 className={
                   mobileNavOpen
-                    ? "space-y-6 lg:block"
-                    : "hidden space-y-6 lg:block"
+                    ? "space-y-5 lg:block"
+                    : "hidden space-y-5 lg:block"
                 }
               >
-                {account ? (
-                  <div className="rounded-[1.25rem] border border-border/70 bg-secondary/60 px-4 py-3">
-                    <p className="text-sm font-semibold text-foreground">
-                      {account.fullName}
-                    </p>
-                    <p className="mt-1 text-sm text-muted-foreground">
-                      {account.email}
-                    </p>
-                  </div>
-                ) : null}
-
-                <div className="space-y-5">
+                <div className="space-y-4">
                   <div>
-                    <p className="app-kicker px-2">Workspace</p>
+                    <p className="app-kicker px-3">Workspace</p>
                     <nav className="mt-2 space-y-1">
                       {primaryNavigation.map((item) => (
                         <NavItem key={item.href} item={item} />
@@ -187,7 +130,7 @@ export function DashboardLayout() {
                   </div>
 
                   <div>
-                    <p className="app-kicker px-2">Admin</p>
+                    <p className="app-kicker px-3">Admin</p>
                     <nav className="mt-2 space-y-1">
                       {secondaryNavigation.map((item) => (
                         <NavItem key={item.href} item={item} />
@@ -197,8 +140,8 @@ export function DashboardLayout() {
                 </div>
 
                 <Button
-                  className="w-full justify-start"
-                  variant="outline"
+                  className="w-full justify-start px-3"
+                  variant="ghost"
                   onClick={handleLogout}
                 >
                   <LogOut className="mr-2 h-4 w-4" />
@@ -208,42 +151,35 @@ export function DashboardLayout() {
             </div>
           </aside>
 
-          <div className="min-w-0 bg-[linear-gradient(180deg,rgba(245,248,251,0.72),rgba(248,250,252,0.92))]">
-            <div className="border-b border-border/70 bg-white/80 px-4 py-4 backdrop-blur sm:px-6">
-              <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+          <div className="app-shell-main min-w-0">
+            <div className="app-shell-header px-4 py-3.5 sm:px-5">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                 <div className="min-w-0">
                   <p className="app-kicker">{formatDate(new Date())}</p>
-                  <h1 className="mt-2 text-3xl font-semibold tracking-[-0.04em] text-foreground">
+                  <h1 className="app-section-title mt-1.5 text-[2.2rem]">
                     {currentPage.name}
                   </h1>
-                  <p className="mt-1 max-w-2xl text-sm leading-6 text-muted-foreground">
-                    {currentPage.description}
-                  </p>
                 </div>
 
                 {account ? (
-                  <div className="flex items-center gap-3 self-start rounded-full border border-border/70 bg-secondary/70 px-3 py-2 lg:self-auto">
-                    <div className="flex h-10 w-10 items-center justify-center rounded-full bg-primary text-sm font-semibold text-primary-foreground">
+                  <div className="app-shell-account flex items-center gap-3 self-start px-3 py-2 sm:self-auto">
+                    <div className="flex h-9 w-9 items-center justify-center rounded-full bg-primary text-sm font-semibold text-primary-foreground">
                       {initials}
                     </div>
-                    <div className="pr-1">
-                      <p className="text-sm font-semibold text-foreground">
+                    <div className="pr-0.5">
+                      <p className="text-sm font-semibold leading-none text-foreground">
                         {account.fullName}
                       </p>
-                      <div className="mt-1 flex flex-wrap gap-2">
-                        {account.roles.slice(0, 2).map((role) => (
-                          <StatusBadge key={role} tone="accent">
-                            {role}
-                          </StatusBadge>
-                        ))}
-                      </div>
+                      <p className="mt-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+                        {account.roles[0] ?? "Admin"}
+                      </p>
                     </div>
                   </div>
                 ) : null}
               </div>
             </div>
 
-            <main className="space-y-5 px-4 py-4 sm:px-6 sm:py-6">
+            <main className="space-y-4 px-4 py-4 sm:px-5 sm:py-5">
               <Outlet />
             </main>
           </div>
@@ -268,25 +204,21 @@ function NavItem({
       to={item.href}
       className={({ isActive }) =>
         [
-          "flex items-center gap-3 rounded-[1rem] px-3 py-3 text-sm font-medium transition-all",
+          "flex items-center gap-3 rounded-[1rem] px-3 py-2.5 text-sm font-medium transition-colors",
           isActive
-            ? "bg-secondary text-foreground shadow-[inset_3px_0_0_0_hsl(var(--primary))]"
-            : "text-muted-foreground hover:bg-secondary/70 hover:text-foreground",
+            ? "bg-[rgba(255,255,255,0.8)] text-foreground shadow-[inset_3px_0_0_0_hsl(var(--primary)),0_10px_20px_rgba(78,50,23,0.04)]"
+            : "text-muted-foreground hover:bg-[rgba(255,255,255,0.58)] hover:text-foreground",
         ].join(" ")
       }
     >
       {({ isActive }) => (
         <>
-          <div
+          <item.icon
             className={[
-              "flex h-8 w-8 items-center justify-center rounded-xl",
-              isActive
-                ? "bg-primary/12 text-primary"
-                : "bg-white text-muted-foreground",
+              "h-4 w-4 shrink-0",
+              isActive ? "text-primary" : "text-muted-foreground",
             ].join(" ")}
-          >
-            <item.icon className="h-4 w-4" />
-          </div>
+          />
           <span>{item.name}</span>
         </>
       )}

@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Newsreader:opsz,wght@6..72,500;6..72,600;6..72,700&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap');
 
 @tailwind base;
 @tailwind components;
@@ -6,26 +6,29 @@
 
 @layer base {
   :root {
-    --background: 210 29% 97%;
-    --foreground: 214 28% 17%;
-    --card: 0 0% 100%;
-    --card-foreground: 214 28% 17%;
-    --popover: 0 0% 100%;
-    --popover-foreground: 214 28% 17%;
-    --primary: 156 31% 35%;
-    --primary-foreground: 210 40% 98%;
-    --secondary: 210 22% 95%;
-    --secondary-foreground: 214 25% 22%;
-    --muted: 210 19% 93%;
-    --muted-foreground: 215 14% 42%;
-    --accent: 150 28% 92%;
-    --accent-foreground: 156 31% 26%;
+    --background: 42 23% 95%;
+    --foreground: 36 7% 8%;
+    --card: 44 24% 97%;
+    --card-foreground: 36 7% 8%;
+    --popover: 44 24% 97%;
+    --popover-foreground: 36 7% 8%;
+    --primary: 15 54% 52%;
+    --primary-foreground: 44 33% 98%;
+    --secondary: 40 19% 92%;
+    --secondary-foreground: 24 10% 20%;
+    --muted: 38 15% 90%;
+    --muted-foreground: 32 9% 38%;
+    --accent: 95 19% 88%;
+    --accent-foreground: 95 28% 22%;
     --destructive: 2 78% 57%;
     --destructive-foreground: 210 40% 98%;
-    --border: 214 20% 87%;
-    --input: 214 20% 87%;
-    --ring: 156 31% 35%;
-    --radius: 1.4rem;
+    --border: 40 17% 84%;
+    --input: 40 17% 84%;
+    --ring: 15 54% 52%;
+    --radius: 1.45rem;
+    --app-font-sans: 'Plus Jakarta Sans', system-ui, sans-serif;
+    --app-font-editorial: 'Newsreader', 'Iowan Old Style', 'Palatino Linotype', Georgia, serif;
+    --app-font-mono: 'IBM Plex Mono', monospace;
   }
 
   .dark {
@@ -62,12 +65,12 @@
 
   body {
     @apply bg-background text-foreground;
-    font-family: 'Plus Jakarta Sans', system-ui, sans-serif;
+    font-family: var(--app-font-sans);
     min-height: 100vh;
     background-image:
-      radial-gradient(circle at top left, rgba(105, 148, 129, 0.14), transparent 28%),
-      radial-gradient(circle at bottom right, rgba(188, 202, 213, 0.22), transparent 34%),
-      linear-gradient(180deg, #f8fafc 0%, #f3f5f8 50%, #eef2f6 100%);
+      radial-gradient(circle at top left, rgba(201, 100, 66, 0.12), transparent 26%),
+      radial-gradient(circle at top right, rgba(198, 207, 186, 0.16), transparent 22%),
+      linear-gradient(180deg, #f7f5ef 0%, #f1efe7 100%);
     font-feature-settings: 'ss01' 1, 'cv02' 1, 'cv03' 1;
     -webkit-font-smoothing: antialiased;
   }
@@ -77,7 +80,12 @@
   }
 
   h1,
-  h2,
+  h2 {
+    font-family: var(--app-font-editorial);
+    letter-spacing: -0.045em;
+    font-weight: 600;
+  }
+
   h3,
   h4,
   h5,
@@ -87,20 +95,20 @@
 
   code,
   pre {
-    font-family: 'IBM Plex Mono', monospace;
+    font-family: var(--app-font-mono);
   }
 
   ::selection {
-    background: rgba(76, 122, 101, 0.2);
-    color: #12202a;
+    background: rgba(201, 100, 66, 0.18);
+    color: #221611;
   }
 
   select,
   textarea {
     @apply flex w-full border border-input bg-white text-sm text-foreground;
-    min-height: 2.75rem;
-    border-radius: calc(var(--radius) - 0.25rem);
-    padding: 0.7rem 0.95rem;
+    min-height: 2.5rem;
+    border-radius: calc(var(--radius) - 0.15rem);
+    padding: 0.65rem 0.9rem;
     outline: none;
     transition:
       border-color 150ms ease,
@@ -111,7 +119,7 @@
   select:focus,
   textarea:focus {
     border-color: hsl(var(--ring));
-    box-shadow: 0 0 0 3px rgba(77, 124, 102, 0.12);
+    box-shadow: 0 0 0 3px rgba(201, 100, 66, 0.12);
   }
 
   textarea {
@@ -133,20 +141,98 @@
   }
 
   tbody tr:hover {
-    background: rgba(255, 255, 255, 0.72);
+    background: rgba(255, 255, 255, 0.58);
   }
 }
 
 @layer components {
   .app-surface {
-    @apply rounded-[calc(var(--radius)+0.35rem)] border border-border/80 bg-white shadow-[0_18px_40px_rgba(15,23,42,0.06)] backdrop-blur-sm;
+    border-radius: calc(var(--radius) + 0.25rem);
+    border: 1px solid hsl(var(--border) / 0.8);
+    background: rgba(250, 249, 245, 0.94);
+    box-shadow:
+      0 0 0 1px rgba(232, 230, 220, 0.92),
+      0 18px 34px rgba(78, 50, 23, 0.06);
+    backdrop-filter: blur(10px);
   }
 
   .app-muted-surface {
-    @apply rounded-[calc(var(--radius)-0.1rem)] border border-border/70 bg-secondary/75;
+    border-radius: calc(var(--radius) - 0.08rem);
+    border: 1px solid hsl(var(--border) / 0.72);
+    background: rgba(240, 238, 230, 0.9);
+    box-shadow: 0 0 0 1px rgba(238, 235, 227, 0.85);
   }
 
   .app-kicker {
-    @apply text-[11px] font-semibold uppercase tracking-[0.2em] text-muted-foreground;
+    @apply text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground;
+  }
+
+  .app-editorial {
+    font-family: var(--app-font-editorial), serif;
+    letter-spacing: -0.05em;
+    font-weight: 600;
+  }
+
+  .app-shell {
+    border-radius: 1.9rem;
+    border: 1px solid hsl(var(--border) / 0.75);
+    background: rgba(250, 249, 245, 0.92);
+    box-shadow: 0 24px 56px rgba(78, 50, 23, 0.08);
+    backdrop-filter: blur(12px);
+  }
+
+  .app-shell-sidebar {
+    background:
+      linear-gradient(180deg, rgba(240,238,230,0.96), rgba(236,233,223,0.94));
+  }
+
+  .app-shell-main {
+    background:
+      linear-gradient(180deg, rgba(246,243,236,0.5), rgba(248,246,241,0.82));
+  }
+
+  .app-shell-header {
+    border-bottom: 1px solid hsl(var(--border) / 0.75);
+    background: rgba(250, 249, 245, 0.82);
+    backdrop-filter: blur(10px);
+  }
+
+  .app-shell-account {
+    border-radius: 1.3rem;
+    border: 1px solid hsl(var(--border) / 0.75);
+    background: rgba(240, 238, 230, 0.85);
+    box-shadow: 0 10px 20px rgba(78, 50, 23, 0.04);
+  }
+
+  .app-hero-surface {
+    background:
+      radial-gradient(circle at top right, rgba(201, 100, 66, 0.12), transparent 36%),
+      linear-gradient(135deg, rgba(240,230,220,0.92), rgba(228,234,220,0.86));
+    border-radius: calc(var(--radius) + 0.3rem);
+    border: 1px solid hsl(var(--border) / 0.75);
+    box-shadow:
+      0 0 0 1px rgba(232, 230, 220, 0.9),
+      0 20px 38px rgba(78, 50, 23, 0.06);
+  }
+
+  .app-action-tile {
+    border-radius: 1.15rem;
+    border: 1px solid hsl(var(--border) / 0.7);
+    background: rgba(255, 255, 255, 0.62);
+    padding: 0.875rem 1rem;
+    transition: background-color 150ms ease;
+  }
+
+  .app-action-tile:hover {
+    background: rgba(255, 255, 255, 0.82);
+  }
+
+  .app-section-title {
+    font-family: var(--app-font-editorial), serif;
+    font-size: 2.15rem;
+    line-height: 1.02;
+    letter-spacing: -0.055em;
+    font-weight: 600;
+    color: hsl(var(--foreground));
   }
 }

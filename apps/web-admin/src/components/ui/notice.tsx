@@ -5,14 +5,14 @@ import { cva, type VariantProps } from 'class-variance-authority'
 import { cn } from '@/lib/utils'
 
 const noticeVariants = cva(
-  'flex items-start gap-3 rounded-[calc(var(--radius)-0.1rem)] border px-4 py-3 text-sm shadow-[0_10px_24px_rgba(15,23,42,0.04)]',
+  'flex items-start gap-3 rounded-[calc(var(--radius)-0.1rem)] border px-3.5 py-3 text-sm shadow-[0_12px_22px_rgba(78,50,23,0.04)]',
   {
     variants: {
       tone: {
-        info: 'border-slate-200 bg-white text-slate-700',
-        success: 'border-emerald-200 bg-emerald-50 text-emerald-900',
-        warning: 'border-amber-200 bg-amber-50 text-amber-900',
-        danger: 'border-rose-200 bg-rose-50 text-rose-900',
+        info: 'border-border/80 bg-[rgba(250,249,245,0.88)] text-slate-700',
+        success: 'border-emerald-200 bg-[rgba(236,246,237,0.95)] text-emerald-900',
+        warning: 'border-amber-200 bg-[rgba(252,244,224,0.95)] text-amber-900',
+        danger: 'border-rose-200 bg-[rgba(250,236,233,0.96)] text-rose-900',
       },
     },
     defaultVariants: {
