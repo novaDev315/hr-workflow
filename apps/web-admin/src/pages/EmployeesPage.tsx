@@ -4,8 +4,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { Building2, Plus, Search, ShieldCheck, Users } from 'lucide-react'
-import { MetricCard } from '@/components/ui/metric-card'
+import { Plus, Search } from 'lucide-react'
 import { Notice } from '@/components/ui/notice'
 import { StatusBadge } from '@/components/ui/status-badge'
 import { canManageAccounts, readStoredAdminAccount } from '@/lib/auth-session'
@@ -214,12 +213,6 @@ export function EmployeesPage() {
   const departments = data?.departments ?? []
   const designations = data?.designations ?? []
   const employees = data?.employees ?? []
-  const linkedAccountsCount = employees.filter(
-    (employee: { hasLinkedAccount: boolean }) => employee.hasLinkedAccount
-  ).length
-  const activeEmployeesCount = employees.filter(
-    (employee: { status: string }) => employee.status === 'ACTIVE'
-  ).length
 
   const employeeDesignationOptions = employeeForm.departmentId
     ? designations.filter(
@@ -387,16 +380,7 @@ export function EmployeesPage() {
   return (
     <div className="space-y-4">
       <Card>
-        <CardContent className="flex flex-col gap-4 p-5 sm:flex-row sm:items-end sm:justify-between sm:p-6">
-          <div>
-            <p className="app-kicker">Workforce setup</p>
-            <h2 className="mt-2 text-2xl font-semibold tracking-[-0.04em] text-foreground">
-              Keep people records clean and easy to scan.
-            </h2>
-            <p className="mt-2 max-w-2xl text-sm leading-6 text-muted-foreground">
-              Search first, then open setup only when you need to create departments, roles, or accounts.
-            </p>
-          </div>
+        <CardContent className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between sm:p-5">
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
             <div className="relative min-w-[280px]">
               <Search className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
@@ -414,37 +398,6 @@ export function EmployeesPage() {
           </div>
         </CardContent>
       </Card>
-
-      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-        <MetricCard
-          detail="All employee records"
-          icon={Users}
-          label="Employees"
-          tone="bg-sky-100 text-sky-800"
-          value={String(employees.length)}
-        />
-        <MetricCard
-          detail="Ready for daily operations"
-          icon={ShieldCheck}
-          label="Active"
-          tone="bg-emerald-100 text-emerald-800"
-          value={String(activeEmployeesCount)}
-        />
-        <MetricCard
-          detail="Configured teams"
-          icon={Building2}
-          label="Departments"
-          tone="bg-amber-100 text-amber-800"
-          value={String(departments.length)}
-        />
-        <MetricCard
-          detail="Linked mobile/admin access"
-          icon={ShieldCheck}
-          label="Accounts linked"
-          tone="bg-violet-100 text-violet-800"
-          value={String(linkedAccountsCount)}
-        />
-      </div>
 
       {errorMessage ? <Notice tone="danger">{errorMessage}</Notice> : null}
       {statusMessage ? <Notice tone="success">{statusMessage}</Notice> : null}
