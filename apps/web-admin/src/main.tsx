@@ -5,6 +5,7 @@ import { BrowserRouter } from 'react-router-dom'
 import { apolloClient } from './lib/apollo-client'
 import App from './App'
 import './index.css'
+import './demo/demo.css'
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>

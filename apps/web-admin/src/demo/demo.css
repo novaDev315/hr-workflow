@@ -1,0 +1,125 @@
+.demo-gallery {
+  color: #101828;
+}
+
+.demo-gallery article a {
+  text-decoration: none;
+}
+
+:root {
+  --demo-font-sans: Inter, "SF Pro Text", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --demo-font-editorial: "Iowan Old Style", "Palatino Linotype", "Book Antiqua", Georgia, serif;
+  --demo-font-technical: "IBM Plex Sans", "Aptos", "Segoe UI", sans-serif;
+  --demo-font-mono: "IBM Plex Mono", "SFMono-Regular", "SF Mono", ui-monospace, monospace;
+}
+
+.demo-app {
+  --demo-radius: 24px;
+  --demo-radius-sm: 18px;
+  --demo-panel-shadow: 0 18px 42px rgba(15, 23, 42, 0.06);
+  --demo-soft-shadow: 0 10px 24px rgba(15, 23, 42, 0.04);
+}
+
+.demo-surface {
+  border-radius: var(--demo-radius);
+  box-shadow: var(--demo-panel-shadow);
+}
+
+.demo-surface-muted,
+.demo-surface-small {
+  border-radius: var(--demo-radius-sm);
+  box-shadow: var(--demo-soft-shadow);
+}
+
+.demo-app--talent-haven {
+  --demo-radius: 30px;
+  --demo-radius-sm: 24px;
+  --demo-panel-shadow: 0 0 0 1px rgba(209, 207, 197, 0.72), 0 18px 36px rgba(78, 50, 23, 0.06);
+  --demo-soft-shadow: 0 0 0 1px rgba(224, 221, 211, 0.92);
+  font-family: var(--demo-font-sans);
+}
+
+.demo-app--talent-haven h1,
+.demo-app--talent-haven h2,
+.demo-app--talent-haven h3 {
+  font-family: var(--demo-font-editorial);
+  font-weight: 600;
+}
+
+.demo-app--executive-brief {
+  --demo-radius: 20px;
+  --demo-radius-sm: 16px;
+  --demo-panel-shadow: 0 1px 0 rgba(0, 0, 0, 0.08), 0 14px 30px rgba(15, 23, 42, 0.05);
+  --demo-soft-shadow: 0 1px 0 rgba(0, 0, 0, 0.08);
+  font-family: var(--demo-font-sans);
+}
+
+.demo-app--ops-console {
+  --demo-radius: 22px;
+  --demo-radius-sm: 16px;
+  --demo-panel-shadow: 0 0 0 1px rgba(208, 195, 182, 0.82), 0 14px 30px rgba(82, 58, 38, 0.07);
+  --demo-soft-shadow: 0 0 0 1px rgba(226, 214, 203, 0.88), 0 8px 18px rgba(82, 58, 38, 0.05);
+  font-family: var(--demo-font-sans);
+}
+
+.demo-app--people-atlas {
+  --demo-radius: 18px;
+  --demo-radius-sm: 14px;
+  --demo-panel-shadow: 0 14px 32px rgba(15, 23, 42, 0.06);
+  --demo-soft-shadow: 0 8px 18px rgba(15, 23, 42, 0.04);
+  font-family: var(--demo-font-sans);
+}
+
+.demo-app--payroll-ledger {
+  --demo-radius: 26px;
+  --demo-radius-sm: 18px;
+  --demo-panel-shadow: 0 0 0 1px rgba(14, 15, 12, 0.08), 0 18px 32px rgba(22, 51, 0, 0.06);
+  --demo-soft-shadow: 0 0 0 1px rgba(22, 51, 0, 0.08);
+  font-family: var(--demo-font-sans);
+}
+
+.demo-app--candidate-studio {
+  --demo-radius: 28px;
+  --demo-radius-sm: 20px;
+  --demo-panel-shadow: 0 18px 40px rgba(17, 17, 17, 0.08);
+  --demo-soft-shadow: 0 10px 22px rgba(17, 17, 17, 0.05);
+  font-family: var(--demo-font-sans);
+}
+
+.demo-app--policy-journal {
+  --demo-radius: 30px;
+  --demo-radius-sm: 24px;
+  --demo-panel-shadow: 0 0 0 1px rgba(0, 0, 0, 0.06), 0 20px 44px rgba(0, 0, 0, 0.05);
+  --demo-soft-shadow: 0 8px 18px rgba(0, 0, 0, 0.04);
+  font-family: var(--demo-font-sans);
+}
+
+.demo-app--calendar-board {
+  --demo-radius: 14px;
+  --demo-radius-sm: 12px;
+  --demo-panel-shadow: 0 1px 0 rgba(36, 36, 36, 0.06), 0 10px 28px rgba(36, 36, 36, 0.05);
+  --demo-soft-shadow: 0 1px 0 rgba(36, 36, 36, 0.08);
+  font-family: var(--demo-font-sans);
+}
+
+.demo-app--enterprise-compact {
+  --demo-radius: 18px;
+  --demo-radius-sm: 14px;
+  --demo-panel-shadow: 0 0 0 1px rgba(216, 221, 210, 0.78), 0 16px 28px rgba(63, 70, 58, 0.07);
+  --demo-soft-shadow: 0 0 0 1px rgba(222, 227, 217, 0.88), 0 8px 16px rgba(63, 70, 58, 0.04);
+  font-family: var(--demo-font-sans);
+}
+
+.demo-app--premium-suite {
+  --demo-radius: 24px;
+  --demo-radius-sm: 18px;
+  --demo-panel-shadow: 0 0 0 1px rgba(226, 214, 203, 0.86), 0 18px 34px rgba(90, 59, 40, 0.07);
+  --demo-soft-shadow: 0 0 0 1px rgba(236, 227, 219, 0.88), 0 8px 18px rgba(90, 59, 40, 0.05);
+  font-family: var(--demo-font-sans);
+}
+
+.demo-app--ops-console table th,
+.demo-app--ops-console table td,
+.demo-app--payroll-ledger .font-mono {
+  font-family: var(--demo-font-mono);
+}

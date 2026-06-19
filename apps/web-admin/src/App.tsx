@@ -11,6 +11,8 @@ import { PayrollPage } from './pages/PayrollPage'
 import { RecruitmentPage } from './pages/RecruitmentPage'
 import { ReportsPage } from './pages/ReportsPage'
 import { PolicyDocumentsPage } from './pages/PolicyDocumentsPage'
+import { DemoGalleryPage } from './demo/pages/DemoGalleryPage'
+import { DemoWorkspacePage } from './demo/pages/DemoWorkspacePage'
 import {
   clearAdminSession,
   useAdminSession,
@@ -27,6 +29,9 @@ function App() {
 
   return (
     <Routes>
+      <Route path="/demos" element={<DemoGalleryPage />} />
+      <Route path="/demos/:demoId" element={<DemoWorkspacePage />} />
+      <Route path="/demos/:demoId/:pageId" element={<DemoWorkspacePage />} />
       <Route
         path="/login"
         element={
