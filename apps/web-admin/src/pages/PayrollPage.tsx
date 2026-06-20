@@ -187,7 +187,7 @@ export function PayrollPage() {
 
   const employees = data?.employees ?? []
   const compensationProfiles = data?.employeeCompensations ?? []
-  const payrollPeriods = data?.payrollPeriods ?? []
+  const payrollPeriods = useMemo(() => data?.payrollPeriods ?? [], [data?.payrollPeriods])
   const payslips = data?.payslips ?? []
 
   const selectedPeriod = useMemo(
