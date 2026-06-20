@@ -1,5 +1,21 @@
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
-import { chromium } from '@playwright/test';
+import { createRequire } from 'node:module';
+
+let chromium;
+try {
+  ({ chromium } = await import('playwright'));
+} catch {
+  try {
+    ({ chromium } = await import('@playwright/test'));
+  } catch {
+    const playwrightModuleDir = process.env.PLAYWRIGHT_MODULE_DIR;
+    if (!playwrightModuleDir) {
+      throw new Error('Unable to load playwright; set PLAYWRIGHT_MODULE_DIR to a node_modules/playwright directory');
+    }
+    const requireFromPlaywright = createRequire(`${playwrightModuleDir}/package.json`);
+    ({ chromium } = requireFromPlaywright('playwright'));
+  }
+}
 
 const adminEmail = process.env.RAKSS_ADMIN_EMAIL || 'admin@rakss.lab.novadev.tech';
 const adminPassword = process.env.RAKSS_ADMIN_PASSWORD;
