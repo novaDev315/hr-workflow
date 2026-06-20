@@ -4,8 +4,10 @@
   const baseUrl = 'https://admin.rakss.lab.novadev.tech';
   const runId = new Date().toISOString().replace(/[-:.TZ]/g, '').slice(0, 14);
   const today = new Date().toISOString().slice(0, 10);
-  const payrollMonth = `${2300 + Number(runId.slice(8, 10))}-${String((Number(runId.slice(10, 12)) % 12) + 1).padStart(2, '0')}`;
-  const payrollDeleteMonth = `${2400 + Number(runId.slice(8, 10))}-${String((Number(runId.slice(10, 12)) % 12) + 1).padStart(2, '0')}`;
+  const runMinuteIndex = Number(runId.slice(8, 10)) * 60 + Number(runId.slice(10, 12));
+  const runMonth = String((Number(runId.slice(12, 14)) % 12) + 1).padStart(2, '0');
+  const payrollMonth = `${2500 + runMinuteIndex}-${runMonth}`;
+  const payrollDeleteMonth = `${4100 + runMinuteIndex}-${runMonth}`;
   const proof = {
     runId,
     adminEmail,
@@ -319,6 +321,130 @@
   await page.getByText('Policy document archived.').waitFor();
   check('ui archive policy document');
 
+  await page.goto(`${baseUrl}/recruitment`, { waitUntil: 'networkidle' });
+  await page.getByRole('button', { name: 'New requisition' }).click();
+  await page.getByRole('button', { name: 'Create Requisition' }).click();
+  const requisitionTitleValid = await page.locator('#requisition-title').evaluate((element) => element.validity.valid);
+  if (requisitionTitleValid) {
+    throw new Error('Recruitment requisition required title validation did not block submission');
+  }
+  check('recruitment negative required requisition form blocked', {
+    valid: requisitionTitleValid,
+  });
+
+  const requisitionTitle = `UI Recruiter ${runId}`;
+  await page.locator('#requisition-title').fill(requisitionTitle);
+  await page.locator('#requisition-department').selectOption(department.id);
+  await page.locator('#requisition-designation').selectOption(designation.id);
+  await page.locator('#requisition-positions').fill('2');
+  await page.locator('#requisition-employment-type').selectOption('FULL_TIME');
+  await page.locator('#requisition-priority').selectOption('HIGH');
+  await page.locator('#requisition-target-start').fill(futureDate(30));
+  await page.locator('#requisition-salary-min').fill('12000');
+  await page.locator('#requisition-salary-max').fill('18000');
+  await page.locator('#requisition-description').fill('Created by UI lifecycle sweep');
+  await page.locator('#requisition-requirements').fill('Hiring workflow proof');
+  await page.getByRole('button', { name: 'Create Requisition' }).click();
+  await page.getByText('Job requisition created.').waitFor();
+  const requisition = await gql(`
+    query JobRequisitions($filter: JobRequisitionFilterInput) {
+      jobRequisitions(filter: $filter) {
+        id
+        requisitionNumber
+        jobTitle
+        departmentId
+        designationId
+        positionsCount
+        priority
+        status
+        applicationCount
+      }
+    }
+  `, { filter: { search: requisitionTitle } }, token).then((data) => data.jobRequisitions[0]);
+  proof.created.requisition = requisition;
+  check('ui create recruitment requisition');
+
+  await page.locator('.app-muted-surface').filter({ hasText: requisitionTitle }).getByRole('button', { name: 'Edit' }).click();
+  await page.locator('#requisition-positions').fill('3');
+  await page.locator('#requisition-description').fill('Updated by UI lifecycle sweep');
+  await page.getByRole('button', { name: 'Update Requisition' }).click();
+  await page.getByText('Job requisition updated.').waitFor();
+  check('ui update recruitment requisition');
+
+  await page.getByRole('button', { name: 'Add candidate' }).click();
+  await page.locator('#application-requisition').selectOption(requisition.id);
+  await page.locator('#candidate-first-name').fill('Recruitment');
+  await page.locator('#candidate-last-name').fill(`Candidate ${runId}`);
+  const candidateEmail = `candidate.${runId}@rakss.lab.novadev.tech`;
+  await page.locator('#candidate-email').fill(candidateEmail);
+  await page.locator('#candidate-phone').fill('+971500003333');
+  await page.locator('#candidate-source').fill('UI lifecycle');
+  await page.locator('#candidate-experience').fill('5');
+  await page.locator('#candidate-expected-salary').fill('16000');
+  await page.locator('#candidate-resume-url').fill('https://admin.rakss.lab.novadev.tech/health');
+  await page.locator('#candidate-notes').fill('Created by UI lifecycle sweep');
+  await page.locator('form').filter({ has: page.locator('#candidate-email') }).getByRole('button', { name: 'Add Candidate' }).click();
+  await page.getByText('Recruitment application created.').waitFor();
+  const application = await gql(`
+    query RecruitmentApplications($filter: RecruitmentApplicationFilterInput) {
+      recruitmentApplications(filter: $filter) {
+        id
+        applicationNumber
+        requisitionId
+        candidateName
+        email
+        status
+      }
+    }
+  `, { filter: { search: candidateEmail } }, token).then((data) => data.recruitmentApplications[0]);
+  proof.created.recruitmentApplication = application;
+  check('ui create recruitment application');
+
+  const applicationCard = () => page.locator('.app-muted-surface').filter({ hasText: candidateEmail }).first();
+  await applicationCard().getByRole('button', { name: 'Start Screening' }).click();
+  await page.getByText('Recruitment application advanced.').waitFor();
+  await applicationCard().getByRole('button', { name: 'Shortlist' }).click();
+  await page.getByText('Recruitment application advanced.').waitFor();
+  const shortlistedApplication = await gql(`
+    query RecruitmentApplications($filter: RecruitmentApplicationFilterInput) {
+      recruitmentApplications(filter: $filter) { id status }
+    }
+  `, { filter: { search: candidateEmail } }, token).then((data) => data.recruitmentApplications[0]);
+  if (shortlistedApplication.status !== 'SHORTLISTED') {
+    throw new Error(`Expected recruitment application to be SHORTLISTED, got ${shortlistedApplication.status}`);
+  }
+  check('ui advance recruitment application');
+
+  await applicationCard().getByRole('button', { name: 'Reject' }).click();
+  await page.getByText('Recruitment application rejected.').waitFor();
+  check('ui reject recruitment application');
+
+  await page.locator('.app-muted-surface').filter({ hasText: requisitionTitle }).getByRole('button', { name: 'Close' }).click();
+  await page.getByText('Job requisition closed.').waitFor();
+  check('ui close recruitment requisition');
+
+  let closedRequisitionBlockedApplication = false;
+  try {
+    await gql(`
+      mutation CreateRecruitmentApplication($input: CreateRecruitmentApplicationInput!) {
+        createRecruitmentApplication(input: $input) { id }
+      }
+    `, {
+      input: {
+        requisitionId: requisition.id,
+        firstName: 'Blocked',
+        lastName: 'Candidate',
+        email: `blocked.${runId}@rakss.lab.novadev.tech`,
+      },
+    }, token);
+  } catch {
+    closedRequisitionBlockedApplication = true;
+  }
+  if (!closedRequisitionBlockedApplication) {
+    throw new Error('Closed requisition allowed a new application');
+  }
+  check('closed recruitment requisition blocks applications');
+
   await page.goto(`${baseUrl}/employees`, { waitUntil: 'networkidle' });
   await page.getByPlaceholder('Search employees').fill(employeeEmail);
   employeeRow = page.locator('tbody tr').filter({ hasText: employeeEmail }).first();
@@ -338,10 +464,6 @@
   await page.locator('input[type="month"]').fill(payrollMonth);
   await page.getByRole('button', { name: 'Export PDF' }).click();
   check('ui export reports pdf button');
-
-  await page.goto(`${baseUrl}/recruitment`, { waitUntil: 'networkidle' });
-  gap('recruitment', 'CRUD/action workflow', 'Recruitment is currently a routed placeholder with no backend module or controls.');
-  check('recruitment placeholder route renders', { title: await page.title() });
 
   await page.goto(`${baseUrl}/demos`, { waitUntil: 'networkidle' });
   await page.getByText('Talent Haven').first().waitFor();
