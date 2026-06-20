@@ -324,6 +324,54 @@ export class PrismaService implements OnModuleInit, OnModuleDestroy {
         ADD COLUMN IF NOT EXISTS stored_file_name TEXT
       `,
       `
+        CREATE TABLE IF NOT EXISTS job_requisitions (
+          id TEXT PRIMARY KEY,
+          requisition_number TEXT NOT NULL UNIQUE,
+          job_title TEXT NOT NULL,
+          department_id TEXT NOT NULL REFERENCES departments(id) ON DELETE RESTRICT,
+          designation_id TEXT REFERENCES designations(id) ON DELETE SET NULL,
+          positions_count INTEGER NOT NULL DEFAULT 1,
+          employment_type TEXT NOT NULL DEFAULT 'FULL_TIME',
+          priority TEXT NOT NULL DEFAULT 'MEDIUM',
+          status TEXT NOT NULL DEFAULT 'OPEN',
+          target_start_date DATE,
+          salary_min DOUBLE PRECISION,
+          salary_max DOUBLE PRECISION,
+          currency_code TEXT NOT NULL DEFAULT 'AED',
+          description TEXT NOT NULL,
+          requirements TEXT,
+          created_by_user_id TEXT REFERENCES users(id) ON DELETE SET NULL,
+          opened_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          closed_at TIMESTAMPTZ,
+          created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )
+      `,
+      `
+        CREATE TABLE IF NOT EXISTS recruitment_applications (
+          id TEXT PRIMARY KEY,
+          application_number TEXT NOT NULL UNIQUE,
+          requisition_id TEXT NOT NULL REFERENCES job_requisitions(id) ON DELETE CASCADE,
+          first_name TEXT NOT NULL,
+          last_name TEXT NOT NULL,
+          email TEXT NOT NULL,
+          phone TEXT,
+          source TEXT,
+          years_experience DOUBLE PRECISION,
+          expected_salary DOUBLE PRECISION,
+          resume_url TEXT,
+          status TEXT NOT NULL DEFAULT 'RECEIVED',
+          notes TEXT,
+          decision_notes TEXT,
+          applied_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          last_action_by_user_id TEXT REFERENCES users(id) ON DELETE SET NULL,
+          last_action_at TIMESTAMPTZ,
+          created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          UNIQUE(requisition_id, email)
+        )
+      `,
+      `
         CREATE INDEX IF NOT EXISTS idx_user_role_assignments_user_id
         ON user_role_assignments(user_id)
       `,
@@ -409,6 +457,30 @@ export class PrismaService implements OnModuleInit, OnModuleDestroy {
       `
         CREATE INDEX IF NOT EXISTS idx_policy_documents_status
         ON policy_documents(status)
+      `,
+      `
+        CREATE INDEX IF NOT EXISTS idx_job_requisitions_status
+        ON job_requisitions(status)
+      `,
+      `
+        CREATE INDEX IF NOT EXISTS idx_job_requisitions_department_id
+        ON job_requisitions(department_id)
+      `,
+      `
+        CREATE INDEX IF NOT EXISTS idx_job_requisitions_created_at
+        ON job_requisitions(created_at)
+      `,
+      `
+        CREATE INDEX IF NOT EXISTS idx_recruitment_applications_requisition_id
+        ON recruitment_applications(requisition_id)
+      `,
+      `
+        CREATE INDEX IF NOT EXISTS idx_recruitment_applications_status
+        ON recruitment_applications(status)
+      `,
+      `
+        CREATE INDEX IF NOT EXISTS idx_recruitment_applications_email
+        ON recruitment_applications(email)
       `,
       `
         INSERT INTO leave_types (id, code, name, default_days, description, is_active)

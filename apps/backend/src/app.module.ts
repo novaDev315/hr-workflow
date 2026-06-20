@@ -14,6 +14,7 @@ import { LeaveModule } from './leave/leave.module';
 import { PayrollModule } from './payroll/payroll.module';
 import { PolicyModule } from './policy/policy.module';
 import { ReportsModule } from './reports/reports.module';
+import { RecruitmentModule } from './recruitment/recruitment.module';
 
 @Module({
   imports: [
@@ -46,6 +47,7 @@ import { ReportsModule } from './reports/reports.module';
     PayrollModule,
     PolicyModule,
     ReportsModule,
+    RecruitmentModule,
   ],
 })
 export class AppModule {}
