@@ -2,6 +2,9 @@ import { useState } from "react";
 import { gql, useApolloClient, useQuery } from "@apollo/client";
 import { Download, FileText, Users } from "lucide-react";
 
+import { AdminHero } from "@/components/admin/admin-hero";
+import { PageFeedback } from "@/components/admin/page-feedback";
+import { RecordCard } from "@/components/admin/record-card";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -125,18 +128,12 @@ export function ReportsPage() {
 
   return (
     <div className="space-y-4">
-      <Card>
-        <CardContent className="flex flex-col gap-4 p-5 sm:flex-row sm:items-end sm:justify-between sm:p-6">
-          <div>
-            <p className="app-kicker">Monthly reporting</p>
-            <h2 className="mt-2 text-2xl font-semibold tracking-[-0.04em] text-foreground">
-              Export the essentials for leadership.
-            </h2>
-            <p className="mt-2 max-w-2xl text-sm leading-6 text-muted-foreground">
-              Reports stay compact here: scope, people movement, payroll weight,
-              and approval pressure.
-            </p>
-          </div>
+      <AdminHero
+        compact
+        kicker="Monthly reporting"
+        title="Export the essentials for leadership."
+        description="Reports stay compact here: scope, people movement, payroll weight, and approval pressure."
+        actions={
           <div className="flex w-full max-w-md gap-3">
             <Input
               type="month"
@@ -153,10 +150,10 @@ export function ReportsPage() {
               {exporting ? "Exporting..." : "Export PDF"}
             </Button>
           </div>
-        </CardContent>
-      </Card>
+        }
+      />
 
-      {exportError ? <Notice tone="danger">{exportError}</Notice> : null}
+      <PageFeedback errorMessage={exportError} />
 
       {loading ? (
         <Card>
@@ -217,10 +214,7 @@ export function ReportsPage() {
                       departmentName: string;
                       employeeCount: number;
                     }) => (
-                      <div
-                        key={row.departmentName}
-                        className="app-muted-surface p-4"
-                      >
+                      <RecordCard key={row.departmentName}>
                         <div className="flex items-center justify-between gap-4">
                           <p className="font-semibold text-foreground">
                             {row.departmentName}
@@ -229,7 +223,7 @@ export function ReportsPage() {
                             {row.employeeCount} employees
                           </StatusBadge>
                         </div>
-                      </div>
+                      </RecordCard>
                     ),
                   )
                 )}
@@ -254,10 +248,7 @@ export function ReportsPage() {
                       payslipCount: number;
                       totalNetPay: number;
                     }) => (
-                      <div
-                        key={row.departmentName}
-                        className="app-muted-surface p-4"
-                      >
+                      <RecordCard key={row.departmentName}>
                         <div className="flex items-center justify-between gap-4">
                           <div>
                             <p className="font-semibold text-foreground">
@@ -271,7 +262,7 @@ export function ReportsPage() {
                             {formatCurrency(row.totalNetPay)}
                           </p>
                         </div>
-                      </div>
+                      </RecordCard>
                     ),
                   )
                 )}
@@ -303,9 +294,8 @@ export function ReportsPage() {
                             designationTitle: string;
                             joinDate: string;
                           }) => (
-                            <div
+                            <RecordCard
                               key={`${row.employeeNumber}-${row.joinDate}`}
-                              className="app-muted-surface p-4"
                             >
                               <div className="flex items-start justify-between gap-3">
                                 <div>
@@ -321,7 +311,7 @@ export function ReportsPage() {
                                   {formatDate(row.joinDate)}
                                 </StatusBadge>
                               </div>
-                            </div>
+                            </RecordCard>
                           ),
                         )}
                       </div>
@@ -340,10 +330,7 @@ export function ReportsPage() {
                             attendanceDays: number;
                             overtimeHours: number;
                           }) => (
-                            <div
-                              key={row.employeeNumber}
-                              className="app-muted-surface p-4"
-                            >
+                            <RecordCard key={row.employeeNumber}>
                               <div className="flex items-center justify-between gap-3">
                                 <div>
                                   <p className="font-semibold text-foreground">
@@ -360,7 +347,7 @@ export function ReportsPage() {
                               <p className="mt-3 text-sm text-muted-foreground">
                                 Overtime: {row.overtimeHours.toFixed(2)} hours
                               </p>
-                            </div>
+                            </RecordCard>
                           ),
                         )}
                       </div>
@@ -391,9 +378,8 @@ export function ReportsPage() {
                         endDate: string;
                         totalDays: number;
                       }) => (
-                        <div
+                        <RecordCard
                           key={`${row.employeeNumber}-${row.startDate}`}
-                          className="app-muted-surface p-4"
                         >
                           <div className="flex items-start justify-between gap-3">
                             <div>
@@ -410,7 +396,7 @@ export function ReportsPage() {
                               {row.totalDays} days
                             </StatusBadge>
                           </div>
-                        </div>
+                        </RecordCard>
                       ),
                     )
                   )}
@@ -425,10 +411,7 @@ export function ReportsPage() {
                         version: string;
                         effectiveDate: string;
                       }) => (
-                        <div
-                          key={`${row.title}-${row.version}`}
-                          className="app-muted-surface p-4"
-                        >
+                        <RecordCard key={`${row.title}-${row.version}`}>
                           <div className="flex items-start justify-between gap-3">
                             <div>
                               <p className="font-semibold text-foreground">
@@ -443,7 +426,7 @@ export function ReportsPage() {
                               v{row.version}
                             </StatusBadge>
                           </div>
-                        </div>
+                        </RecordCard>
                       ),
                     )}
                   </div>

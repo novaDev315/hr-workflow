@@ -1,7 +1,12 @@
 import { FormEvent, useEffect, useState } from 'react'
 import { gql, useMutation, useQuery } from '@apollo/client'
+import { AdminHero } from '@/components/admin/admin-hero'
+import { AdminTable, AdminTableEmpty, AdminTableRow } from '@/components/admin/admin-table'
+import { PageFeedback } from '@/components/admin/page-feedback'
+import { RecordCard } from '@/components/admin/record-card'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
+import { FormDrawer } from '@/components/ui/form-drawer'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Clock3, MapPin, Pencil, Settings2, XCircle } from 'lucide-react'
@@ -425,23 +430,18 @@ export function AttendancePage() {
 
   return (
     <div className="space-y-4">
-      <Card>
-        <CardContent className="flex flex-col gap-4 p-5 sm:flex-row sm:items-end sm:justify-between sm:p-6">
-          <div>
-            <p className="app-kicker">Attendance workspace</p>
-            <h2 className="mt-2 text-2xl font-semibold tracking-[-0.04em] text-foreground">
-              Keep daily attendance actions front and center.
-            </h2>
-            <p className="mt-2 max-w-2xl text-sm leading-6 text-muted-foreground">
-              Record attendance fast, review current activity, and open setup only when location changes are needed.
-            </p>
-          </div>
-          <Button variant="outline" onClick={() => setShowSetup((current) => !current)}>
+      <AdminHero
+        compact
+        kicker="Attendance workspace"
+        title="Keep daily attendance actions front and center."
+        description="Record attendance fast, review current activity, and open setup only when location changes are needed."
+        actions={
+          <Button variant="outline" onClick={() => setShowSetup(true)}>
             <Settings2 className="mr-2 h-4 w-4" />
-            {showSetup ? 'Hide setup' : 'Open setup'}
+            Open setup
           </Button>
-        </CardContent>
-      </Card>
+        }
+      />
 
       <div className="grid gap-4 md:grid-cols-3">
         <MetricCard
@@ -467,8 +467,7 @@ export function AttendancePage() {
         />
       </div>
 
-      {errorMessage ? <Notice tone="danger">{errorMessage}</Notice> : null}
-      {statusMessage ? <Notice tone="success">{statusMessage}</Notice> : null}
+      <PageFeedback errorMessage={errorMessage} statusMessage={statusMessage} />
 
       <div className="grid gap-4 xl:grid-cols-[0.95fr_1.05fr]">
         <Card>
@@ -645,12 +644,11 @@ export function AttendancePage() {
             ) : error ? (
               <Notice tone="danger">Unable to load attendance data. {error.message}</Notice>
             ) : attendanceRecords.length === 0 ? (
-              <p className="text-sm text-muted-foreground">
+              <AdminTableEmpty>
                 No attendance records yet. Use the action panel to create the first one.
-              </p>
+              </AdminTableEmpty>
             ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full">
+              <AdminTable>
                   <thead>
                     <tr className="border-b">
                       <th className="px-4 py-3 text-left">Date</th>
@@ -674,7 +672,7 @@ export function AttendancePage() {
                         employee: { fullName: string; employeeNumber: string }
                         location: { name: string; code: string }
                       }) => (
-                        <tr key={record.id} className="border-b hover:bg-gray-50">
+                        <AdminTableRow key={record.id}>
                           <td className="px-4 py-3">{record.attendanceDate}</td>
                           <td className="px-4 py-3">
                             <div className="font-medium">{record.employee.fullName}</div>
@@ -701,12 +699,11 @@ export function AttendancePage() {
                           <td className="px-4 py-3">
                             <StatusBadge tone="info">{record.status}</StatusBadge>
                           </td>
-                        </tr>
+                        </AdminTableRow>
                       )
                     )}
                   </tbody>
-                </table>
-              </div>
+              </AdminTable>
             )}
           </CardContent>
         </Card>
@@ -735,7 +732,7 @@ export function AttendancePage() {
                     latitude: number
                     longitude: number
                   }) => (
-                    <div key={location.id} className="app-muted-surface p-4">
+                    <RecordCard key={location.id}>
                       <div className="flex items-center justify-between gap-3">
                         <div>
                           <div className="font-medium">
@@ -776,7 +773,7 @@ export function AttendancePage() {
                           </Button>
                         ) : null}
                       </div>
-                    </div>
+                    </RecordCard>
                   )
                 )}
               </div>
@@ -784,7 +781,21 @@ export function AttendancePage() {
           </CardContent>
         </Card>
 
-        {showSetup ? (
+        <FormDrawer
+          open={showSetup}
+          onOpenChange={(open) => {
+            if (open) {
+              setShowSetup(true)
+            } else {
+              setShowSetup(false)
+              handleCancelLocationEdit()
+            }
+          }}
+          kicker="Attendance setup"
+          title="Locations and assignments"
+          description="Create work locations and assign employees without leaving the attendance workspace."
+          className="sm:w-[min(980px,calc(100vw-2rem))]"
+        >
           <div className="grid gap-4 xl:grid-cols-2">
             <Card>
               <CardHeader>
@@ -1016,10 +1027,7 @@ export function AttendancePage() {
                       assignedDate: string
                       location: { name: string; code: string; geofenceRadius: number }
                     }) => (
-                      <div
-                        key={assignment.id}
-                        className="rounded-lg border border-border bg-muted/40 p-3 text-sm"
-                      >
+                      <RecordCard key={assignment.id} className="p-3 text-sm">
                         <div className="font-medium">
                           {assignment.location.name} ({assignment.location.code})
                         </div>
@@ -1032,7 +1040,7 @@ export function AttendancePage() {
                         <div className="text-muted-foreground">
                           Assigned: {assignment.assignedDate}
                         </div>
-                      </div>
+                      </RecordCard>
                     )
                   )}
                 </div>
@@ -1040,13 +1048,7 @@ export function AttendancePage() {
               </CardContent>
             </Card>
           </div>
-        ) : (
-          <Card className="border-dashed bg-secondary/50">
-            <CardContent className="p-6 text-sm text-muted-foreground">
-              Setup is hidden to keep the page focused. Open setup to create locations or assign staff.
-            </CardContent>
-          </Card>
-        )}
+        </FormDrawer>
       </div>
     </div>
   )

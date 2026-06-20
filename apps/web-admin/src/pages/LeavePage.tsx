@@ -1,12 +1,16 @@
 import { FormEvent, useState } from 'react'
 import { gql, useMutation, useQuery } from '@apollo/client'
+import { AdminHero } from '@/components/admin/admin-hero'
+import { AdminTable, AdminTableEmpty, AdminTableRow } from '@/components/admin/admin-table'
+import { PageFeedback } from '@/components/admin/page-feedback'
+import { RecordCard } from '@/components/admin/record-card'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
+import { FormDrawer } from '@/components/ui/form-drawer'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { CalendarClock, FileCheck2, Pencil, PlaneTakeoff, XCircle } from 'lucide-react'
+import { CalendarClock, FileCheck2, Pencil, PlaneTakeoff, Plus, XCircle } from 'lucide-react'
 import { MetricCard } from '@/components/ui/metric-card'
-import { Notice } from '@/components/ui/notice'
 import { StatusBadge } from '@/components/ui/status-badge'
 import { canManageAccounts, readStoredAdminAccount } from '@/lib/auth-session'
 
@@ -129,6 +133,8 @@ export function LeavePage() {
   const [leaveTypeForm, setLeaveTypeForm] = useState(leaveTypeFormDefaults)
   const [editingLeaveTypeId, setEditingLeaveTypeId] = useState<string | null>(null)
   const [leaveRequestForm, setLeaveRequestForm] = useState(leaveRequestFormDefaults)
+  const [showLeaveTypeForm, setShowLeaveTypeForm] = useState(false)
+  const [showLeaveRequestForm, setShowLeaveRequestForm] = useState(false)
   const [statusMessage, setStatusMessage] = useState<string | null>(null)
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
   const [reviewNotes, setReviewNotes] = useState<Record<string, string>>({})
@@ -191,6 +197,7 @@ export function LeavePage() {
       }
       setLeaveTypeForm(leaveTypeFormDefaults)
       setEditingLeaveTypeId(null)
+      setShowLeaveTypeForm(false)
       setStatusMessage(editingLeaveTypeId ? 'Leave type updated.' : 'Leave type created.')
       await refetch()
     } catch (mutationError) {
@@ -220,6 +227,7 @@ export function LeavePage() {
         },
       })
       setLeaveRequestForm(leaveRequestFormDefaults)
+      setShowLeaveRequestForm(false)
       setStatusMessage('Leave request created.')
       await refetch()
     } catch (mutationError) {
@@ -247,11 +255,13 @@ export function LeavePage() {
     })
     setErrorMessage(null)
     setStatusMessage(null)
+    setShowLeaveTypeForm(true)
   }
 
   const handleCancelLeaveTypeEdit = () => {
     setEditingLeaveTypeId(null)
     setLeaveTypeForm(leaveTypeFormDefaults)
+    setShowLeaveTypeForm(false)
   }
 
   const handleDeactivateLeaveType = async (leaveTypeId: string, name: string) => {
@@ -312,17 +322,34 @@ export function LeavePage() {
 
   return (
     <div className="space-y-4">
-      <Card>
-        <CardContent className="p-5 sm:p-6">
-          <p className="app-kicker">Leave control</p>
-          <h2 className="mt-2 text-2xl font-semibold tracking-[-0.04em] text-foreground">
-            Review requests quickly and keep policy simple.
-          </h2>
-          <p className="mt-2 max-w-2xl text-sm leading-6 text-muted-foreground">
-            Pending decisions stay first, while leave types remain close by without crowding the page.
-          </p>
-        </CardContent>
-      </Card>
+      <AdminHero
+        compact
+        kicker="Leave control"
+        title="Review requests quickly and keep policy simple."
+        description="Pending decisions stay first, while leave types remain close by without crowding the page."
+        actions={
+          <>
+            <Button type="button" onClick={() => setShowLeaveRequestForm(true)}>
+              <Plus className="mr-2 h-4 w-4" />
+              New leave request
+            </Button>
+            {canManageLeavePolicies ? (
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => {
+                  setEditingLeaveTypeId(null)
+                  setLeaveTypeForm(leaveTypeFormDefaults)
+                  setShowLeaveTypeForm(true)
+                }}
+              >
+                <PlaneTakeoff className="mr-2 h-4 w-4" />
+                New leave type
+              </Button>
+            ) : null}
+          </>
+        }
+      />
 
       <div className="grid gap-4 md:grid-cols-3">
         <MetricCard
@@ -348,8 +375,7 @@ export function LeavePage() {
         />
       </div>
 
-      {errorMessage ? <Notice tone="danger">{errorMessage}</Notice> : null}
-      {statusMessage ? <Notice tone="success">{statusMessage}</Notice> : null}
+      <PageFeedback errorMessage={errorMessage} statusMessage={statusMessage} />
 
       <div className="grid gap-4 xl:grid-cols-2">
         <Card>
@@ -379,7 +405,7 @@ export function LeavePage() {
                   employee: { fullName: string; employeeNumber: string }
                   leaveType: { name: string }
                 }) => (
-                  <div key={request.id} className="rounded-lg border p-4">
+                  <RecordCard key={request.id}>
                     <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
                       <div>
                         <p className="font-medium">{request.employee.fullName}</p>
@@ -422,7 +448,7 @@ export function LeavePage() {
                         </Button>
                       </div>
                     </div>
-                  </div>
+                  </RecordCard>
                 )
               )
             )}
@@ -444,7 +470,7 @@ export function LeavePage() {
                   defaultDays: number
                   description?: string | null
                 }) => (
-                  <div key={leaveType.id} className="rounded-lg border p-4">
+                  <RecordCard key={leaveType.id}>
                     <div className="flex items-center justify-between gap-3">
                       <div>
                         <p className="font-medium">{leaveType.name}</p>
@@ -482,147 +508,163 @@ export function LeavePage() {
                         </Button>
                       </div>
                     ) : null}
-                  </div>
+                  </RecordCard>
                 )
               )}
             </div>
-
-            {canManageLeavePolicies && (
-              <form className="space-y-4 border-t pt-4" onSubmit={handleSaveLeaveType}>
-                <div className="grid gap-4 sm:grid-cols-2">
-                  <div className="space-y-2">
-                    <Label htmlFor="leave-type-code">Code</Label>
-                    <Input
-                      id="leave-type-code"
-                      value={leaveTypeForm.code}
-                      onChange={(event) =>
-                        setLeaveTypeForm((current) => ({
-                          ...current,
-                          code: event.target.value.toUpperCase(),
-                        }))
-                      }
-                      placeholder="MATERNITY"
-                      required
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="leave-type-name">Name</Label>
-                    <Input
-                      id="leave-type-name"
-                      value={leaveTypeForm.name}
-                      onChange={(event) =>
-                        setLeaveTypeForm((current) => ({
-                          ...current,
-                          name: event.target.value,
-                        }))
-                      }
-                      placeholder="Maternity Leave"
-                      required
-                    />
-                  </div>
-                </div>
-                <div className="grid gap-4 sm:grid-cols-2">
-                  <div className="space-y-2">
-                    <Label htmlFor="leave-type-days">Default Days</Label>
-                    <Input
-                      id="leave-type-days"
-                      type="number"
-                      min="1"
-                      step="0.5"
-                      value={leaveTypeForm.defaultDays}
-                      onChange={(event) =>
-                        setLeaveTypeForm((current) => ({
-                          ...current,
-                          defaultDays: event.target.value,
-                        }))
-                      }
-                      required
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="leave-type-description">Description</Label>
-                    <Input
-                      id="leave-type-description"
-                      value={leaveTypeForm.description}
-                      onChange={(event) =>
-                        setLeaveTypeForm((current) => ({
-                          ...current,
-                          description: event.target.value,
-                        }))
-                      }
-                      placeholder="Optional"
-                    />
-                  </div>
-                </div>
-                <Button type="submit" disabled={creatingLeaveType || updatingLeaveType}>
-                  {creatingLeaveType || updatingLeaveType
-                    ? 'Saving...'
-                    : editingLeaveTypeId
-                      ? 'Update Leave Type'
-                      : 'Create Leave Type'}
-                </Button>
-                {editingLeaveTypeId ? (
-                  <Button type="button" variant="outline" onClick={handleCancelLeaveTypeEdit}>
-                    Cancel Edit
-                  </Button>
-                ) : null}
-              </form>
-            )}
           </CardContent>
         </Card>
       </div>
 
-      <Card>
-        <CardHeader>
-          <p className="app-kicker">Request</p>
-          <CardTitle>Create Leave Request</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <form className="grid gap-4 lg:grid-cols-5" onSubmit={handleRequestLeave}>
-            <div className="space-y-2 lg:col-span-2">
-              <Label htmlFor="leave-request-employee">Employee</Label>
-              <select
-                id="leave-request-employee"
-                value={leaveRequestForm.employeeId}
-                onChange={(event) =>
-                  setLeaveRequestForm((current) => ({
-                    ...current,
-                    employeeId: event.target.value,
-                  }))
-                }
-                required
-              >
-                <option value="">Select employee</option>
-                {employees.map(
-                  (employee: { id: string; fullName: string; employeeNumber: string }) => (
-                    <option key={employee.id} value={employee.id}>
-                      {employee.fullName} ({employee.employeeNumber})
-                    </option>
-                  )
-                )}
-              </select>
+      {canManageLeavePolicies ? (
+        <FormDrawer
+          open={showLeaveTypeForm}
+          onOpenChange={(open) => {
+            if (open) {
+              setShowLeaveTypeForm(true)
+            } else {
+              handleCancelLeaveTypeEdit()
+            }
+          }}
+          kicker="Leave policy"
+          title={editingLeaveTypeId ? 'Edit leave type' : 'Create leave type'}
+          description="Update leave policy without pushing the request queue down the page."
+        >
+          <form className="space-y-4" onSubmit={handleSaveLeaveType}>
+            <div className="grid gap-4 sm:grid-cols-2">
+              <div className="space-y-2">
+                <Label htmlFor="leave-type-code">Code</Label>
+                <Input
+                  id="leave-type-code"
+                  value={leaveTypeForm.code}
+                  onChange={(event) =>
+                    setLeaveTypeForm((current) => ({
+                      ...current,
+                      code: event.target.value.toUpperCase(),
+                    }))
+                  }
+                  placeholder="MATERNITY"
+                  required
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="leave-type-name">Name</Label>
+                <Input
+                  id="leave-type-name"
+                  value={leaveTypeForm.name}
+                  onChange={(event) =>
+                    setLeaveTypeForm((current) => ({
+                      ...current,
+                      name: event.target.value,
+                    }))
+                  }
+                  placeholder="Maternity Leave"
+                  required
+                />
+              </div>
             </div>
-            <div className="space-y-2">
-              <Label htmlFor="leave-request-type">Leave Type</Label>
-              <select
-                id="leave-request-type"
-                value={leaveRequestForm.leaveTypeId}
-                onChange={(event) =>
-                  setLeaveRequestForm((current) => ({
-                    ...current,
-                    leaveTypeId: event.target.value,
-                  }))
-                }
-                required
-              >
-                <option value="">Select type</option>
-                {leaveTypes.map((leaveType: { id: string; name: string; code: string }) => (
-                  <option key={leaveType.id} value={leaveType.id}>
-                    {leaveType.name} ({leaveType.code})
+            <div className="grid gap-4 sm:grid-cols-2">
+              <div className="space-y-2">
+                <Label htmlFor="leave-type-days">Default Days</Label>
+                <Input
+                  id="leave-type-days"
+                  type="number"
+                  min="1"
+                  step="0.5"
+                  value={leaveTypeForm.defaultDays}
+                  onChange={(event) =>
+                    setLeaveTypeForm((current) => ({
+                      ...current,
+                      defaultDays: event.target.value,
+                    }))
+                  }
+                  required
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="leave-type-description">Description</Label>
+                <Input
+                  id="leave-type-description"
+                  value={leaveTypeForm.description}
+                  onChange={(event) =>
+                    setLeaveTypeForm((current) => ({
+                      ...current,
+                      description: event.target.value,
+                    }))
+                  }
+                  placeholder="Optional"
+                />
+              </div>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <Button type="submit" disabled={creatingLeaveType || updatingLeaveType}>
+                {creatingLeaveType || updatingLeaveType
+                  ? 'Saving...'
+                  : editingLeaveTypeId
+                    ? 'Update Leave Type'
+                    : 'Create Leave Type'}
+              </Button>
+              <Button type="button" variant="outline" onClick={handleCancelLeaveTypeEdit}>
+                Cancel
+              </Button>
+            </div>
+          </form>
+        </FormDrawer>
+      ) : null}
+
+      <FormDrawer
+        open={showLeaveRequestForm}
+        onOpenChange={setShowLeaveRequestForm}
+        kicker="Leave request"
+        title="Create leave request"
+        description="Create a request while keeping approvals and history in the workspace."
+      >
+        <form className="space-y-4" onSubmit={handleRequestLeave}>
+          <div className="space-y-2">
+            <Label htmlFor="leave-request-employee">Employee</Label>
+            <select
+              id="leave-request-employee"
+              value={leaveRequestForm.employeeId}
+              onChange={(event) =>
+                setLeaveRequestForm((current) => ({
+                  ...current,
+                  employeeId: event.target.value,
+                }))
+              }
+              required
+            >
+              <option value="">Select employee</option>
+              {employees.map(
+                (employee: { id: string; fullName: string; employeeNumber: string }) => (
+                  <option key={employee.id} value={employee.id}>
+                    {employee.fullName} ({employee.employeeNumber})
                   </option>
-                ))}
-              </select>
-            </div>
+                )
+              )}
+            </select>
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="leave-request-type">Leave Type</Label>
+            <select
+              id="leave-request-type"
+              value={leaveRequestForm.leaveTypeId}
+              onChange={(event) =>
+                setLeaveRequestForm((current) => ({
+                  ...current,
+                  leaveTypeId: event.target.value,
+                }))
+              }
+              required
+            >
+              <option value="">Select type</option>
+              {leaveTypes.map((leaveType: { id: string; name: string; code: string }) => (
+                <option key={leaveType.id} value={leaveType.id}>
+                  {leaveType.name} ({leaveType.code})
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="grid gap-4 sm:grid-cols-2">
             <div className="space-y-2">
               <Label htmlFor="leave-request-start">Start</Label>
               <Input
@@ -653,32 +695,38 @@ export function LeavePage() {
                 required
               />
             </div>
-            <div className="space-y-2 lg:col-span-4">
-              <Label htmlFor="leave-request-reason">Reason</Label>
-              <Input
-                id="leave-request-reason"
-                value={leaveRequestForm.reason}
-                onChange={(event) =>
-                  setLeaveRequestForm((current) => ({
-                    ...current,
-                    reason: event.target.value,
-                  }))
-                }
-                required
-              />
-            </div>
-            <div className="flex items-end">
-              <Button
-                className="w-full"
-                type="submit"
-                disabled={requestingLeave || employees.length === 0 || leaveTypes.length === 0}
-              >
-                {requestingLeave ? 'Saving...' : 'Create Request'}
-              </Button>
-            </div>
-          </form>
-        </CardContent>
-      </Card>
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="leave-request-reason">Reason</Label>
+            <Input
+              id="leave-request-reason"
+              value={leaveRequestForm.reason}
+              onChange={(event) =>
+                setLeaveRequestForm((current) => ({
+                  ...current,
+                  reason: event.target.value,
+                }))
+              }
+              required
+            />
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <Button
+              type="submit"
+              disabled={requestingLeave || employees.length === 0 || leaveTypes.length === 0}
+            >
+              {requestingLeave ? 'Saving...' : 'Create Request'}
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setShowLeaveRequestForm(false)}
+            >
+              Cancel
+            </Button>
+          </div>
+        </form>
+      </FormDrawer>
 
       <Card>
         <CardHeader>
@@ -689,10 +737,9 @@ export function LeavePage() {
           {loading ? (
             <p className="text-sm text-muted-foreground">Loading request history...</p>
           ) : leaveRequests.length === 0 ? (
-            <p className="text-sm text-muted-foreground">No leave requests found yet.</p>
+            <AdminTableEmpty>No leave requests found yet.</AdminTableEmpty>
           ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full">
+            <AdminTable>
                 <thead>
                   <tr className="border-b">
                     <th className="px-4 py-3 text-left">Employee</th>
@@ -715,7 +762,7 @@ export function LeavePage() {
                       employee: { fullName: string; employeeNumber: string }
                       leaveType: { name: string }
                     }) => (
-                      <tr key={request.id} className="border-b hover:bg-gray-50">
+                      <AdminTableRow key={request.id}>
                         <td className="px-4 py-3">
                           {request.employee.fullName}
                           <div className="text-xs text-muted-foreground">
@@ -741,12 +788,11 @@ export function LeavePage() {
                           </StatusBadge>
                         </td>
                         <td className="px-4 py-3">{request.reviewedByName || '—'}</td>
-                      </tr>
+                      </AdminTableRow>
                     )
                   )}
                 </tbody>
-              </table>
-            </div>
+            </AdminTable>
           )}
         </CardContent>
       </Card>

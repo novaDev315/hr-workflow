@@ -1,7 +1,11 @@
 import { FormEvent, useDeferredValue, useState } from 'react'
 import { gql, useMutation, useQuery } from '@apollo/client'
+import { AdminTable, AdminTableEmpty, AdminTableRow } from '@/components/admin/admin-table'
+import { PageFeedback } from '@/components/admin/page-feedback'
+import { RecordCard } from '@/components/admin/record-card'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
+import { FormDrawer } from '@/components/ui/form-drawer'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Pencil, Plus, Search, UserX } from 'lucide-react'
@@ -669,6 +673,13 @@ export function EmployeesPage() {
     }
   }
 
+  const closeFormsDrawer = () => {
+    setShowForms(false)
+    handleCancelDepartmentEdit()
+    handleCancelDesignationEdit()
+    handleCancelEmployeeEdit()
+  }
+
   return (
     <div className="space-y-4">
       <Card>
@@ -683,18 +694,30 @@ export function EmployeesPage() {
                 className="pl-11"
               />
             </div>
-            <Button onClick={() => setShowForms((current) => !current)}>
+            <Button onClick={() => setShowForms(true)}>
               <Plus className="mr-2 h-4 w-4" />
-              {showForms ? 'Hide setup' : 'Add records'}
+              Add records
             </Button>
           </div>
         </CardContent>
       </Card>
 
-      {errorMessage ? <Notice tone="danger">{errorMessage}</Notice> : null}
-      {statusMessage ? <Notice tone="success">{statusMessage}</Notice> : null}
+      <PageFeedback errorMessage={errorMessage} statusMessage={statusMessage} />
 
-      {showForms && (
+      <FormDrawer
+        open={showForms}
+        onOpenChange={(open) => {
+          if (open) {
+            setShowForms(true)
+          } else {
+            closeFormsDrawer()
+          }
+        }}
+        kicker="People setup"
+        title="Add and manage records"
+        description="Create departments, designations, employees, and access without leaving the roster."
+        className="sm:w-[min(1120px,calc(100vw-2rem))]"
+      >
         <div className="grid gap-4 xl:grid-cols-2">
           <Card>
             <CardHeader>
@@ -777,7 +800,7 @@ export function EmployeesPage() {
                     description?: string | null
                     isActive: boolean
                   }) => (
-                    <div key={department.id} className="rounded-lg border p-3 text-sm">
+                    <RecordCard key={department.id} className="p-3 text-sm">
                       <div className="flex items-center justify-between gap-3">
                         <div>
                           <div className="font-medium">{department.name}</div>
@@ -810,7 +833,7 @@ export function EmployeesPage() {
                           </Button>
                         ) : null}
                       </div>
-                    </div>
+                    </RecordCard>
                   )
                 )}
               </div>
@@ -933,7 +956,7 @@ export function EmployeesPage() {
                     description?: string | null
                     isActive: boolean
                   }) => (
-                    <div key={designation.id} className="rounded-lg border p-3 text-sm">
+                    <RecordCard key={designation.id} className="p-3 text-sm">
                       <div className="flex items-center justify-between gap-3">
                         <div>
                           <div className="font-medium">{designation.title}</div>
@@ -966,7 +989,7 @@ export function EmployeesPage() {
                           </Button>
                         ) : null}
                       </div>
-                    </div>
+                    </RecordCard>
                   )
                 )}
               </div>
@@ -1349,7 +1372,7 @@ export function EmployeesPage() {
             </>
           )}
         </div>
-      )}
+      </FormDrawer>
 
       <Card>
         <CardHeader>
@@ -1362,14 +1385,11 @@ export function EmployeesPage() {
           ) : error ? (
             <Notice tone="danger">Unable to load employee data. {error.message}</Notice>
           ) : employees.length === 0 ? (
-            <div className="py-10 text-center">
-              <p className="text-sm text-muted-foreground">
-                No employees found yet. Use “Add Records” to create the first team.
-              </p>
-            </div>
+            <AdminTableEmpty>
+              No employees found yet. Use “Add Records” to create the first team.
+            </AdminTableEmpty>
           ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full">
+            <AdminTable>
                 <thead>
                   <tr className="border-b">
                     <th className="px-4 py-3 text-left">Employee #</th>
@@ -1407,7 +1427,7 @@ export function EmployeesPage() {
                       department: { name: string }
                       designation: { title: string }
                     }) => (
-                      <tr key={employee.id} className="border-b hover:bg-gray-50">
+                      <AdminTableRow key={employee.id}>
                         <td className="px-4 py-3 font-medium">{employee.employeeNumber}</td>
                         <td className="px-4 py-3">{employee.fullName}</td>
                         <td className="px-4 py-3">{employee.email}</td>
@@ -1466,12 +1486,11 @@ export function EmployeesPage() {
                             </div>
                           </td>
                         ) : null}
-                      </tr>
+                      </AdminTableRow>
                     )
                   )}
                 </tbody>
-              </table>
-            </div>
+            </AdminTable>
           )}
         </CardContent>
       </Card>

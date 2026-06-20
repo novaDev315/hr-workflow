@@ -2,8 +2,11 @@ import { FormEvent, useState } from "react";
 import { gql, useMutation, useQuery } from "@apollo/client";
 import { Archive, ExternalLink, FileText, Pencil, Plus } from "lucide-react";
 
+import { AdminHero } from "@/components/admin/admin-hero";
+import { PageFeedback } from "@/components/admin/page-feedback";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { FormDrawer } from "@/components/ui/form-drawer";
 import { Input } from "@/components/ui/input";
 import { MetricCard } from "@/components/ui/metric-card";
 import { Notice } from "@/components/ui/notice";
@@ -127,11 +130,6 @@ export function PolicyDocumentsPage() {
   ).length;
 
   const handleComposerToggle = () => {
-    if (showComposer) {
-      setShowComposer(false);
-      return;
-    }
-
     setPolicyForm(policyFormDefaults);
     setEditingPolicyId(null);
     setSelectedFile(null);
@@ -291,26 +289,19 @@ export function PolicyDocumentsPage() {
 
   return (
     <div className="space-y-4">
-      <Card className="app-hero-surface">
-        <CardContent className="flex flex-col gap-4 p-5 sm:flex-row sm:items-end sm:justify-between sm:p-6">
-          <div>
-            <p className="app-kicker">Policy library</p>
-            <h2 className="app-section-title mt-2 text-[2.2rem]">
-              Keep policy access simple and current.
-            </h2>
-            <p className="mt-2 max-w-2xl text-sm leading-7 text-muted-foreground">
-              Publish only the documents employees need, with a lightweight
-              editor for drafts and uploads.
-            </p>
-          </div>
-          {canManagePolicies ? (
+      <AdminHero
+        kicker="Policy library"
+        title="Keep policy access simple and current."
+        description="Publish only the documents employees need, with a lightweight editor for drafts and uploads."
+        actions={
+          canManagePolicies ? (
             <Button onClick={handleComposerToggle}>
               <Plus className="mr-2 h-4 w-4" />
-              {showComposer ? "Hide composer" : "New policy"}
+              New policy
             </Button>
-          ) : null}
-        </CardContent>
-      </Card>
+          ) : null
+        }
+      />
 
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
         <MetricCard
@@ -334,18 +325,24 @@ export function PolicyDocumentsPage() {
         />
       </div>
 
-      {errorMessage ? <Notice tone="danger">{errorMessage}</Notice> : null}
-      {statusMessage ? <Notice tone="success">{statusMessage}</Notice> : null}
+      <PageFeedback errorMessage={errorMessage} statusMessage={statusMessage} />
 
-      {canManagePolicies && showComposer ? (
-        <Card>
-          <CardHeader>
-            <p className="app-kicker">Composer</p>
-            <CardTitle>
-              {editingPolicyId ? "Edit policy document" : "Create policy document"}
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
+      <FormDrawer
+        open={canManagePolicies && showComposer}
+        onOpenChange={(open) => {
+          if (open) {
+            setShowComposer(true);
+          } else {
+            setShowComposer(false);
+            setEditingPolicyId(null);
+            setSelectedFile(null);
+            setPolicyForm(policyFormDefaults);
+          }
+        }}
+        kicker="Composer"
+        title={editingPolicyId ? "Edit policy document" : "Create policy document"}
+        description="Draft, upload, or publish a policy without leaving the library."
+      >
             <form className="space-y-4" onSubmit={handleSavePolicy}>
               <div className="grid gap-4 md:grid-cols-2">
                 <Input
@@ -475,15 +472,14 @@ export function PolicyDocumentsPage() {
                     setEditingPolicyId(null);
                     setPolicyForm(policyFormDefaults);
                     setSelectedFile(null);
+                    setShowComposer(false);
                   }}
                 >
                   Cancel edit
                 </Button>
               ) : null}
             </form>
-          </CardContent>
-        </Card>
-      ) : null}
+      </FormDrawer>
 
       {loading ? (
         <Card>

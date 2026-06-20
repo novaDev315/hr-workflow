@@ -2,6 +2,7 @@ import { gql, useQuery } from "@apollo/client";
 import { Calendar, CheckCircle2, FileText, Users } from "lucide-react";
 import { Link } from "react-router-dom";
 
+import { RecordCard } from "@/components/admin/record-card";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { MetricCard } from "@/components/ui/metric-card";
 import { Notice } from "@/components/ui/notice";
@@ -208,9 +209,9 @@ export function DashboardPage() {
               ) : (
                 <div className="space-y-2.5">
                   {pendingLeaveApprovals.slice(0, 4).map((leave) => (
-                    <div
+                    <RecordCard
                       key={`${leave.employeeNumber}-${leave.startDate}`}
-                      className="app-muted-surface flex items-center justify-between gap-4 px-4 py-3"
+                      className="flex items-center justify-between gap-4 px-4 py-3"
                     >
                       <div>
                         <p className="font-semibold text-foreground">
@@ -223,7 +224,7 @@ export function DashboardPage() {
                       <StatusBadge tone="warning">
                         {leave.totalDays} day{leave.totalDays === 1 ? "" : "s"}
                       </StatusBadge>
-                    </div>
+                    </RecordCard>
                   ))}
                 </div>
               )}

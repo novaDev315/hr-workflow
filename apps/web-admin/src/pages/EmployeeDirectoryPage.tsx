@@ -2,10 +2,11 @@ import { useDeferredValue, useState } from 'react'
 import { gql, useQuery } from '@apollo/client'
 import { Building, Mail, Phone, Search, Users } from 'lucide-react'
 
+import { AdminTableEmpty } from '@/components/admin/admin-table'
+import { PageFeedback } from '@/components/admin/page-feedback'
 import { Card, CardContent } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { MetricCard } from '@/components/ui/metric-card'
-import { Notice } from '@/components/ui/notice'
 
 const EMPLOYEE_DIRECTORY_QUERY = gql`
   query EmployeeDirectory($filter: EmployeeFilterInput) {
@@ -72,18 +73,17 @@ export function EmployeeDirectoryPage() {
         />
       </div>
 
-      {error ? <Notice tone="danger">Unable to load the employee directory. {error.message}</Notice> : null}
+      <PageFeedback
+        loadError={error}
+        loadErrorPrefix="Unable to load the employee directory."
+      />
 
       {loading ? (
         <Card>
           <CardContent className="p-6 text-sm text-muted-foreground">Loading directory...</CardContent>
         </Card>
       ) : employees.length === 0 ? (
-        <Card>
-          <CardContent className="p-6 text-sm text-muted-foreground">
-            No employees found for this search.
-          </CardContent>
-        </Card>
+        <AdminTableEmpty>No employees found for this search.</AdminTableEmpty>
       ) : (
         <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
           {employees.map(

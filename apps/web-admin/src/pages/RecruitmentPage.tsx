@@ -1,5 +1,9 @@
 import { FormEvent, useMemo, useState } from 'react'
 import { gql, useMutation, useQuery } from '@apollo/client'
+import { AdminHero } from '@/components/admin/admin-hero'
+import { AdminTableEmpty } from '@/components/admin/admin-table'
+import { PageFeedback } from '@/components/admin/page-feedback'
+import { RecordCard } from '@/components/admin/record-card'
 import {
   Briefcase,
   CheckCircle2,
@@ -12,6 +16,7 @@ import {
 
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { FormDrawer } from '@/components/ui/form-drawer'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { MetricCard } from '@/components/ui/metric-card'
@@ -104,7 +109,9 @@ const UPDATE_JOB_REQUISITION_MUTATION = gql`
 `
 
 const CHANGE_JOB_REQUISITION_STATUS_MUTATION = gql`
-  mutation ChangeJobRequisitionStatus($input: ChangeJobRequisitionStatusInput!) {
+  mutation ChangeJobRequisitionStatus(
+    $input: ChangeJobRequisitionStatusInput!
+  ) {
     changeJobRequisitionStatus(input: $input) {
       id
       status
@@ -113,7 +120,9 @@ const CHANGE_JOB_REQUISITION_STATUS_MUTATION = gql`
 `
 
 const CREATE_RECRUITMENT_APPLICATION_MUTATION = gql`
-  mutation CreateRecruitmentApplication($input: CreateRecruitmentApplicationInput!) {
+  mutation CreateRecruitmentApplication(
+    $input: CreateRecruitmentApplicationInput!
+  ) {
     createRecruitmentApplication(input: $input) {
       id
     }
@@ -121,7 +130,9 @@ const CREATE_RECRUITMENT_APPLICATION_MUTATION = gql`
 `
 
 const UPDATE_RECRUITMENT_APPLICATION_MUTATION = gql`
-  mutation UpdateRecruitmentApplication($input: UpdateRecruitmentApplicationInput!) {
+  mutation UpdateRecruitmentApplication(
+    $input: UpdateRecruitmentApplicationInput!
+  ) {
     updateRecruitmentApplication(input: $input) {
       id
     }
@@ -129,7 +140,9 @@ const UPDATE_RECRUITMENT_APPLICATION_MUTATION = gql`
 `
 
 const ADVANCE_RECRUITMENT_APPLICATION_MUTATION = gql`
-  mutation AdvanceRecruitmentApplication($input: AdvanceRecruitmentApplicationInput!) {
+  mutation AdvanceRecruitmentApplication(
+    $input: AdvanceRecruitmentApplicationInput!
+  ) {
     advanceRecruitmentApplication(input: $input) {
       id
       status
@@ -256,17 +269,27 @@ const selectClassName =
 
 export function RecruitmentPage() {
   const currentAdminAccount = readStoredAdminAccount()
-  const canManageRecruitment = canManageAccounts(currentAdminAccount?.roles ?? [])
+  const canManageRecruitment = canManageAccounts(
+    currentAdminAccount?.roles ?? [],
+  )
   const [searchQuery, setSearchQuery] = useState('')
   const [statusFilter, setStatusFilter] = useState('')
   const [applicationStatusFilter, setApplicationStatusFilter] = useState('')
   const [selectedRequisitionFilter, setSelectedRequisitionFilter] = useState('')
   const [showRequisitionForm, setShowRequisitionForm] = useState(false)
   const [showApplicationForm, setShowApplicationForm] = useState(false)
-  const [editingRequisitionId, setEditingRequisitionId] = useState<string | null>(null)
-  const [editingApplicationId, setEditingApplicationId] = useState<string | null>(null)
-  const [requisitionForm, setRequisitionForm] = useState(requisitionFormDefaults)
-  const [applicationForm, setApplicationForm] = useState(applicationFormDefaults)
+  const [editingRequisitionId, setEditingRequisitionId] = useState<
+    string | null
+  >(null)
+  const [editingApplicationId, setEditingApplicationId] = useState<
+    string | null
+  >(null)
+  const [requisitionForm, setRequisitionForm] = useState(
+    requisitionFormDefaults,
+  )
+  const [applicationForm, setApplicationForm] = useState(
+    applicationFormDefaults,
+  )
   const [statusMessage, setStatusMessage] = useState<string | null>(null)
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
 
@@ -284,7 +307,12 @@ export function RecruitmentPage() {
           : {}),
       },
     }),
-    [applicationStatusFilter, searchQuery, selectedRequisitionFilter, statusFilter],
+    [
+      applicationStatusFilter,
+      searchQuery,
+      selectedRequisitionFilter,
+      statusFilter,
+    ],
   )
 
   const { data, loading, error, refetch } = useQuery(RECRUITMENT_PAGE_QUERY, {
@@ -309,7 +337,8 @@ export function RecruitmentPage() {
   const departments: Department[] = data?.departments ?? []
   const designations: Designation[] = data?.designations ?? []
   const requisitions: JobRequisition[] = data?.jobRequisitions ?? []
-  const applications: RecruitmentApplication[] = data?.recruitmentApplications ?? []
+  const applications: RecruitmentApplication[] =
+    data?.recruitmentApplications ?? []
   const summary = data?.recruitmentSummary ?? {
     openRequisitions: 0,
     activeApplications: 0,
@@ -371,7 +400,9 @@ export function RecruitmentPage() {
       )
       await refetch()
     } catch (mutationError) {
-      setErrorMessage(toErrorMessage(mutationError, 'Unable to save requisition.'))
+      setErrorMessage(
+        toErrorMessage(mutationError, 'Unable to save requisition.'),
+      )
     }
   }
 
@@ -423,7 +454,9 @@ export function RecruitmentPage() {
       )
       await refetch()
     } catch (mutationError) {
-      setErrorMessage(toErrorMessage(mutationError, 'Unable to save application.'))
+      setErrorMessage(
+        toErrorMessage(mutationError, 'Unable to save application.'),
+      )
     }
   }
 
@@ -523,7 +556,9 @@ export function RecruitmentPage() {
           input: {
             id: applicationId,
             status,
-            decisionNotes: terminal ? `${label} from recruitment workspace` : null,
+            decisionNotes: terminal
+              ? `${label} from recruitment workspace`
+              : null,
           },
         },
       })
@@ -540,16 +575,28 @@ export function RecruitmentPage() {
     }
   }
 
-  const resetRequisitionForm = () => {
+  const closeRequisitionForm = () => {
     setEditingRequisitionId(null)
     setRequisitionForm(requisitionFormDefaults)
-    setShowRequisitionForm((current) => !current)
+    setShowRequisitionForm(false)
   }
 
-  const resetApplicationForm = () => {
+  const closeApplicationForm = () => {
     setEditingApplicationId(null)
     setApplicationForm(applicationFormDefaults)
-    setShowApplicationForm((current) => !current)
+    setShowApplicationForm(false)
+  }
+
+  const openRequisitionForm = () => {
+    setEditingRequisitionId(null)
+    setRequisitionForm(requisitionFormDefaults)
+    setShowRequisitionForm(true)
+  }
+
+  const openApplicationForm = () => {
+    setEditingApplicationId(null)
+    setApplicationForm(applicationFormDefaults)
+    setShowApplicationForm(true)
   }
 
   if (!canManageRecruitment) {
@@ -563,34 +610,33 @@ export function RecruitmentPage() {
 
   return (
     <div className="space-y-4">
-      <Card className="app-hero-surface">
-        <CardContent className="flex flex-col gap-4 p-5 sm:flex-row sm:items-end sm:justify-between sm:p-6">
-          <div>
-            <p className="app-kicker">Recruitment</p>
-            <h2 className="app-section-title mt-2 text-[2.2rem]">
-              Manage openings and candidate movement.
-            </h2>
-            <p className="mt-2 max-w-2xl text-sm leading-6 text-muted-foreground">
-              Track live requisitions, add candidates, and move applications
-              through a controlled hiring path.
-            </p>
-          </div>
-          <div className="flex flex-wrap gap-2">
-            <Button type="button" onClick={resetRequisitionForm}>
+      <AdminHero
+        kicker="Recruitment"
+        title="Manage openings and candidate movement."
+        description="Track live requisitions, add candidates, and move applications through a controlled hiring path."
+        actions={
+          <>
+            <Button type="button" onClick={openRequisitionForm}>
               <Plus className="mr-2 h-4 w-4" />
               New requisition
             </Button>
-            <Button type="button" variant="outline" onClick={resetApplicationForm}>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={openApplicationForm}
+            >
               <UserRoundPlus className="mr-2 h-4 w-4" />
               Add candidate
             </Button>
-          </div>
-        </CardContent>
-      </Card>
+          </>
+        }
+      />
 
-      {statusMessage ? <Notice tone="success">{statusMessage}</Notice> : null}
-      {errorMessage ? <Notice tone="danger">{errorMessage}</Notice> : null}
-      {error ? <Notice tone="danger">{error.message}</Notice> : null}
+      <PageFeedback
+        errorMessage={errorMessage}
+        statusMessage={statusMessage}
+        loadError={error}
+      />
 
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
         <MetricCard
@@ -636,7 +682,9 @@ export function RecruitmentPage() {
               />
             </div>
             <div>
-              <Label htmlFor="requisition-status-filter">Requisition status</Label>
+              <Label htmlFor="requisition-status-filter">
+                Requisition status
+              </Label>
               <select
                 id="requisition-status-filter"
                 className={selectClassName}
@@ -651,12 +699,16 @@ export function RecruitmentPage() {
               </select>
             </div>
             <div>
-              <Label htmlFor="application-status-filter">Application status</Label>
+              <Label htmlFor="application-status-filter">
+                Application status
+              </Label>
               <select
                 id="application-status-filter"
                 className={selectClassName}
                 value={applicationStatusFilter}
-                onChange={(event) => setApplicationStatusFilter(event.target.value)}
+                onChange={(event) =>
+                  setApplicationStatusFilter(event.target.value)
+                }
               >
                 <option value="">All applications</option>
                 {applicationStatuses.map((status) => (
@@ -667,12 +719,16 @@ export function RecruitmentPage() {
               </select>
             </div>
             <div>
-              <Label htmlFor="application-requisition-filter">Requisition</Label>
+              <Label htmlFor="application-requisition-filter">
+                Requisition
+              </Label>
               <select
                 id="application-requisition-filter"
                 className={selectClassName}
                 value={selectedRequisitionFilter}
-                onChange={(event) => setSelectedRequisitionFilter(event.target.value)}
+                onChange={(event) =>
+                  setSelectedRequisitionFilter(event.target.value)
+                }
               >
                 <option value="">All roles</option>
                 {requisitions.map((requisition) => (
@@ -686,415 +742,413 @@ export function RecruitmentPage() {
         </CardContent>
       </Card>
 
-      {showRequisitionForm ? (
-        <Card>
-          <CardHeader>
-            <p className="app-kicker">Opening</p>
-            <CardTitle>
-              {editingRequisitionId ? 'Edit requisition' : 'Create requisition'}
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <form className="space-y-4" onSubmit={handleSaveRequisition}>
-              <div className="grid gap-3 lg:grid-cols-3">
-                <div>
-                  <Label htmlFor="requisition-title">Job title</Label>
-                  <Input
-                    id="requisition-title"
-                    required
-                    value={requisitionForm.jobTitle}
-                    onChange={(event) =>
-                      setRequisitionForm((current) => ({
-                        ...current,
-                        jobTitle: event.target.value,
-                      }))
-                    }
-                  />
-                </div>
-                <div>
-                  <Label htmlFor="requisition-department">Department</Label>
-                  <select
-                    id="requisition-department"
-                    required
-                    className={selectClassName}
-                    value={requisitionForm.departmentId}
-                    onChange={(event) =>
-                      setRequisitionForm((current) => ({
-                        ...current,
-                        departmentId: event.target.value,
-                        designationId: '',
-                      }))
-                    }
-                  >
-                    <option value="">Select department</option>
-                    {departments.map((department) => (
-                      <option key={department.id} value={department.id}>
-                        {department.name}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-                <div>
-                  <Label htmlFor="requisition-designation">Designation</Label>
-                  <select
-                    id="requisition-designation"
-                    className={selectClassName}
-                    value={requisitionForm.designationId}
-                    onChange={(event) =>
-                      setRequisitionForm((current) => ({
-                        ...current,
-                        designationId: event.target.value,
-                      }))
-                    }
-                  >
-                    <option value="">Any designation</option>
-                    {filteredDesignations.map((designation) => (
-                      <option key={designation.id} value={designation.id}>
-                        {designation.title}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-                <div>
-                  <Label htmlFor="requisition-positions">Positions</Label>
-                  <Input
-                    id="requisition-positions"
-                    min="1"
-                    required
-                    type="number"
-                    value={requisitionForm.positionsCount}
-                    onChange={(event) =>
-                      setRequisitionForm((current) => ({
-                        ...current,
-                        positionsCount: event.target.value,
-                      }))
-                    }
-                  />
-                </div>
-                <div>
-                  <Label htmlFor="requisition-employment-type">Employment type</Label>
-                  <select
-                    id="requisition-employment-type"
-                    className={selectClassName}
-                    value={requisitionForm.employmentType}
-                    onChange={(event) =>
-                      setRequisitionForm((current) => ({
-                        ...current,
-                        employmentType: event.target.value,
-                      }))
-                    }
-                  >
-                    <option value="FULL_TIME">Full time</option>
-                    <option value="PART_TIME">Part time</option>
-                    <option value="CONTRACT">Contract</option>
-                    <option value="INTERNSHIP">Internship</option>
-                  </select>
-                </div>
-                <div>
-                  <Label htmlFor="requisition-priority">Priority</Label>
-                  <select
-                    id="requisition-priority"
-                    className={selectClassName}
-                    value={requisitionForm.priority}
-                    onChange={(event) =>
-                      setRequisitionForm((current) => ({
-                        ...current,
-                        priority: event.target.value,
-                      }))
-                    }
-                  >
-                    <option value="LOW">Low</option>
-                    <option value="MEDIUM">Medium</option>
-                    <option value="HIGH">High</option>
-                    <option value="URGENT">Urgent</option>
-                  </select>
-                </div>
-                <div>
-                  <Label htmlFor="requisition-target-start">Target start</Label>
-                  <Input
-                    id="requisition-target-start"
-                    type="date"
-                    value={requisitionForm.targetStartDate}
-                    onChange={(event) =>
-                      setRequisitionForm((current) => ({
-                        ...current,
-                        targetStartDate: event.target.value,
-                      }))
-                    }
-                  />
-                </div>
-                <div>
-                  <Label htmlFor="requisition-salary-min">Salary min</Label>
-                  <Input
-                    id="requisition-salary-min"
-                    min="0"
-                    type="number"
-                    value={requisitionForm.salaryMin}
-                    onChange={(event) =>
-                      setRequisitionForm((current) => ({
-                        ...current,
-                        salaryMin: event.target.value,
-                      }))
-                    }
-                  />
-                </div>
-                <div>
-                  <Label htmlFor="requisition-salary-max">Salary max</Label>
-                  <Input
-                    id="requisition-salary-max"
-                    min="0"
-                    type="number"
-                    value={requisitionForm.salaryMax}
-                    onChange={(event) =>
-                      setRequisitionForm((current) => ({
-                        ...current,
-                        salaryMax: event.target.value,
-                      }))
-                    }
-                  />
-                </div>
-              </div>
-              <div className="grid gap-3 lg:grid-cols-2">
-                <div>
-                  <Label htmlFor="requisition-description">Description</Label>
-                  <textarea
-                    id="requisition-description"
-                    required
-                    className={`${selectClassName} min-h-[110px] py-2`}
-                    value={requisitionForm.description}
-                    onChange={(event) =>
-                      setRequisitionForm((current) => ({
-                        ...current,
-                        description: event.target.value,
-                      }))
-                    }
-                  />
-                </div>
-                <div>
-                  <Label htmlFor="requisition-requirements">Requirements</Label>
-                  <textarea
-                    id="requisition-requirements"
-                    className={`${selectClassName} min-h-[110px] py-2`}
-                    value={requisitionForm.requirements}
-                    onChange={(event) =>
-                      setRequisitionForm((current) => ({
-                        ...current,
-                        requirements: event.target.value,
-                      }))
-                    }
-                  />
-                </div>
-              </div>
-              <div className="flex flex-wrap gap-2">
-                <Button
-                  type="submit"
-                  disabled={creatingRequisition || updatingRequisition}
-                >
-                  {editingRequisitionId
-                    ? 'Update Requisition'
-                    : 'Create Requisition'}
-                </Button>
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={() => {
-                    setEditingRequisitionId(null)
-                    setRequisitionForm(requisitionFormDefaults)
-                    setShowRequisitionForm(false)
-                  }}
-                >
-                  Cancel
-                </Button>
-              </div>
-            </form>
-          </CardContent>
-        </Card>
-      ) : null}
+      <FormDrawer
+        open={showRequisitionForm}
+        onOpenChange={(open) => {
+          if (open) {
+            setShowRequisitionForm(true)
+          } else {
+            closeRequisitionForm()
+          }
+        }}
+        kicker="Opening"
+        title={editingRequisitionId ? 'Edit requisition' : 'Create requisition'}
+        description="Keep the hiring list in view while you add or update the role details."
+      >
+        <form className="space-y-4" onSubmit={handleSaveRequisition}>
+          <div className="grid gap-3 lg:grid-cols-3">
+            <div>
+              <Label htmlFor="requisition-title">Job title</Label>
+              <Input
+                id="requisition-title"
+                required
+                value={requisitionForm.jobTitle}
+                onChange={(event) =>
+                  setRequisitionForm((current) => ({
+                    ...current,
+                    jobTitle: event.target.value,
+                  }))
+                }
+              />
+            </div>
+            <div>
+              <Label htmlFor="requisition-department">Department</Label>
+              <select
+                id="requisition-department"
+                required
+                className={selectClassName}
+                value={requisitionForm.departmentId}
+                onChange={(event) =>
+                  setRequisitionForm((current) => ({
+                    ...current,
+                    departmentId: event.target.value,
+                    designationId: '',
+                  }))
+                }
+              >
+                <option value="">Select department</option>
+                {departments.map((department) => (
+                  <option key={department.id} value={department.id}>
+                    {department.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <Label htmlFor="requisition-designation">Designation</Label>
+              <select
+                id="requisition-designation"
+                className={selectClassName}
+                value={requisitionForm.designationId}
+                onChange={(event) =>
+                  setRequisitionForm((current) => ({
+                    ...current,
+                    designationId: event.target.value,
+                  }))
+                }
+              >
+                <option value="">Any designation</option>
+                {filteredDesignations.map((designation) => (
+                  <option key={designation.id} value={designation.id}>
+                    {designation.title}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <Label htmlFor="requisition-positions">Positions</Label>
+              <Input
+                id="requisition-positions"
+                min="1"
+                required
+                type="number"
+                value={requisitionForm.positionsCount}
+                onChange={(event) =>
+                  setRequisitionForm((current) => ({
+                    ...current,
+                    positionsCount: event.target.value,
+                  }))
+                }
+              />
+            </div>
+            <div>
+              <Label htmlFor="requisition-employment-type">
+                Employment type
+              </Label>
+              <select
+                id="requisition-employment-type"
+                className={selectClassName}
+                value={requisitionForm.employmentType}
+                onChange={(event) =>
+                  setRequisitionForm((current) => ({
+                    ...current,
+                    employmentType: event.target.value,
+                  }))
+                }
+              >
+                <option value="FULL_TIME">Full time</option>
+                <option value="PART_TIME">Part time</option>
+                <option value="CONTRACT">Contract</option>
+                <option value="INTERNSHIP">Internship</option>
+              </select>
+            </div>
+            <div>
+              <Label htmlFor="requisition-priority">Priority</Label>
+              <select
+                id="requisition-priority"
+                className={selectClassName}
+                value={requisitionForm.priority}
+                onChange={(event) =>
+                  setRequisitionForm((current) => ({
+                    ...current,
+                    priority: event.target.value,
+                  }))
+                }
+              >
+                <option value="LOW">Low</option>
+                <option value="MEDIUM">Medium</option>
+                <option value="HIGH">High</option>
+                <option value="URGENT">Urgent</option>
+              </select>
+            </div>
+            <div>
+              <Label htmlFor="requisition-target-start">Target start</Label>
+              <Input
+                id="requisition-target-start"
+                type="date"
+                value={requisitionForm.targetStartDate}
+                onChange={(event) =>
+                  setRequisitionForm((current) => ({
+                    ...current,
+                    targetStartDate: event.target.value,
+                  }))
+                }
+              />
+            </div>
+            <div>
+              <Label htmlFor="requisition-salary-min">Salary min</Label>
+              <Input
+                id="requisition-salary-min"
+                min="0"
+                type="number"
+                value={requisitionForm.salaryMin}
+                onChange={(event) =>
+                  setRequisitionForm((current) => ({
+                    ...current,
+                    salaryMin: event.target.value,
+                  }))
+                }
+              />
+            </div>
+            <div>
+              <Label htmlFor="requisition-salary-max">Salary max</Label>
+              <Input
+                id="requisition-salary-max"
+                min="0"
+                type="number"
+                value={requisitionForm.salaryMax}
+                onChange={(event) =>
+                  setRequisitionForm((current) => ({
+                    ...current,
+                    salaryMax: event.target.value,
+                  }))
+                }
+              />
+            </div>
+          </div>
+          <div className="grid gap-3 lg:grid-cols-2">
+            <div>
+              <Label htmlFor="requisition-description">Description</Label>
+              <textarea
+                id="requisition-description"
+                required
+                className={`${selectClassName} min-h-[110px] py-2`}
+                value={requisitionForm.description}
+                onChange={(event) =>
+                  setRequisitionForm((current) => ({
+                    ...current,
+                    description: event.target.value,
+                  }))
+                }
+              />
+            </div>
+            <div>
+              <Label htmlFor="requisition-requirements">Requirements</Label>
+              <textarea
+                id="requisition-requirements"
+                className={`${selectClassName} min-h-[110px] py-2`}
+                value={requisitionForm.requirements}
+                onChange={(event) =>
+                  setRequisitionForm((current) => ({
+                    ...current,
+                    requirements: event.target.value,
+                  }))
+                }
+              />
+            </div>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <Button
+              type="submit"
+              disabled={creatingRequisition || updatingRequisition}
+            >
+              {editingRequisitionId
+                ? 'Update Requisition'
+                : 'Create Requisition'}
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={closeRequisitionForm}
+            >
+              Cancel
+            </Button>
+          </div>
+        </form>
+      </FormDrawer>
 
-      {showApplicationForm ? (
-        <Card>
-          <CardHeader>
-            <p className="app-kicker">Candidate</p>
-            <CardTitle>
-              {editingApplicationId ? 'Edit application' : 'Add candidate'}
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <form className="space-y-4" onSubmit={handleSaveApplication}>
-              <div className="grid gap-3 lg:grid-cols-3">
-                <div>
-                  <Label htmlFor="application-requisition">Requisition</Label>
-                  <select
-                    id="application-requisition"
-                    required
-                    className={selectClassName}
-                    value={applicationForm.requisitionId}
-                    onChange={(event) =>
-                      setApplicationForm((current) => ({
-                        ...current,
-                        requisitionId: event.target.value,
-                      }))
-                    }
-                  >
-                    <option value="">Select requisition</option>
-                    {openRequisitions.map((requisition) => (
-                      <option key={requisition.id} value={requisition.id}>
-                        {requisition.jobTitle}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-                <div>
-                  <Label htmlFor="candidate-first-name">First name</Label>
-                  <Input
-                    id="candidate-first-name"
-                    required
-                    value={applicationForm.firstName}
-                    onChange={(event) =>
-                      setApplicationForm((current) => ({
-                        ...current,
-                        firstName: event.target.value,
-                      }))
-                    }
-                  />
-                </div>
-                <div>
-                  <Label htmlFor="candidate-last-name">Last name</Label>
-                  <Input
-                    id="candidate-last-name"
-                    required
-                    value={applicationForm.lastName}
-                    onChange={(event) =>
-                      setApplicationForm((current) => ({
-                        ...current,
-                        lastName: event.target.value,
-                      }))
-                    }
-                  />
-                </div>
-                <div>
-                  <Label htmlFor="candidate-email">Email</Label>
-                  <Input
-                    id="candidate-email"
-                    required
-                    type="email"
-                    value={applicationForm.email}
-                    onChange={(event) =>
-                      setApplicationForm((current) => ({
-                        ...current,
-                        email: event.target.value,
-                      }))
-                    }
-                  />
-                </div>
-                <div>
-                  <Label htmlFor="candidate-phone">Phone</Label>
-                  <Input
-                    id="candidate-phone"
-                    value={applicationForm.phone}
-                    onChange={(event) =>
-                      setApplicationForm((current) => ({
-                        ...current,
-                        phone: event.target.value,
-                      }))
-                    }
-                  />
-                </div>
-                <div>
-                  <Label htmlFor="candidate-source">Source</Label>
-                  <Input
-                    id="candidate-source"
-                    value={applicationForm.source}
-                    onChange={(event) =>
-                      setApplicationForm((current) => ({
-                        ...current,
-                        source: event.target.value,
-                      }))
-                    }
-                  />
-                </div>
-                <div>
-                  <Label htmlFor="candidate-experience">Years experience</Label>
-                  <Input
-                    id="candidate-experience"
-                    min="0"
-                    step="0.5"
-                    type="number"
-                    value={applicationForm.yearsExperience}
-                    onChange={(event) =>
-                      setApplicationForm((current) => ({
-                        ...current,
-                        yearsExperience: event.target.value,
-                      }))
-                    }
-                  />
-                </div>
-                <div>
-                  <Label htmlFor="candidate-expected-salary">Expected salary</Label>
-                  <Input
-                    id="candidate-expected-salary"
-                    min="0"
-                    type="number"
-                    value={applicationForm.expectedSalary}
-                    onChange={(event) =>
-                      setApplicationForm((current) => ({
-                        ...current,
-                        expectedSalary: event.target.value,
-                      }))
-                    }
-                  />
-                </div>
-                <div>
-                  <Label htmlFor="candidate-resume-url">Resume URL</Label>
-                  <Input
-                    id="candidate-resume-url"
-                    value={applicationForm.resumeUrl}
-                    onChange={(event) =>
-                      setApplicationForm((current) => ({
-                        ...current,
-                        resumeUrl: event.target.value,
-                      }))
-                    }
-                  />
-                </div>
-              </div>
-              <div>
-                <Label htmlFor="candidate-notes">Notes</Label>
-                <textarea
-                  id="candidate-notes"
-                  className={`${selectClassName} min-h-[100px] py-2`}
-                  value={applicationForm.notes}
-                  onChange={(event) =>
-                    setApplicationForm((current) => ({
-                      ...current,
-                      notes: event.target.value,
-                    }))
-                  }
-                />
-              </div>
-              <div className="flex flex-wrap gap-2">
-                <Button
-                  type="submit"
-                  disabled={creatingApplication || updatingApplication}
-                >
-                  {editingApplicationId ? 'Update Candidate' : 'Add Candidate'}
-                </Button>
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={() => {
-                    setEditingApplicationId(null)
-                    setApplicationForm(applicationFormDefaults)
-                    setShowApplicationForm(false)
-                  }}
-                >
-                  Cancel
-                </Button>
-              </div>
-            </form>
-          </CardContent>
-        </Card>
-      ) : null}
+      <FormDrawer
+        open={showApplicationForm}
+        onOpenChange={(open) => {
+          if (open) {
+            setShowApplicationForm(true)
+          } else {
+            closeApplicationForm()
+          }
+        }}
+        kicker="Candidate"
+        title={editingApplicationId ? 'Edit application' : 'Add candidate'}
+        description="Capture the candidate without leaving the recruitment workflow."
+      >
+        <form className="space-y-4" onSubmit={handleSaveApplication}>
+          <div className="grid gap-3 lg:grid-cols-3">
+            <div>
+              <Label htmlFor="application-requisition">Requisition</Label>
+              <select
+                id="application-requisition"
+                required
+                className={selectClassName}
+                value={applicationForm.requisitionId}
+                onChange={(event) =>
+                  setApplicationForm((current) => ({
+                    ...current,
+                    requisitionId: event.target.value,
+                  }))
+                }
+              >
+                <option value="">Select requisition</option>
+                {openRequisitions.map((requisition) => (
+                  <option key={requisition.id} value={requisition.id}>
+                    {requisition.jobTitle}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <Label htmlFor="candidate-first-name">First name</Label>
+              <Input
+                id="candidate-first-name"
+                required
+                value={applicationForm.firstName}
+                onChange={(event) =>
+                  setApplicationForm((current) => ({
+                    ...current,
+                    firstName: event.target.value,
+                  }))
+                }
+              />
+            </div>
+            <div>
+              <Label htmlFor="candidate-last-name">Last name</Label>
+              <Input
+                id="candidate-last-name"
+                required
+                value={applicationForm.lastName}
+                onChange={(event) =>
+                  setApplicationForm((current) => ({
+                    ...current,
+                    lastName: event.target.value,
+                  }))
+                }
+              />
+            </div>
+            <div>
+              <Label htmlFor="candidate-email">Email</Label>
+              <Input
+                id="candidate-email"
+                required
+                type="email"
+                value={applicationForm.email}
+                onChange={(event) =>
+                  setApplicationForm((current) => ({
+                    ...current,
+                    email: event.target.value,
+                  }))
+                }
+              />
+            </div>
+            <div>
+              <Label htmlFor="candidate-phone">Phone</Label>
+              <Input
+                id="candidate-phone"
+                value={applicationForm.phone}
+                onChange={(event) =>
+                  setApplicationForm((current) => ({
+                    ...current,
+                    phone: event.target.value,
+                  }))
+                }
+              />
+            </div>
+            <div>
+              <Label htmlFor="candidate-source">Source</Label>
+              <Input
+                id="candidate-source"
+                value={applicationForm.source}
+                onChange={(event) =>
+                  setApplicationForm((current) => ({
+                    ...current,
+                    source: event.target.value,
+                  }))
+                }
+              />
+            </div>
+            <div>
+              <Label htmlFor="candidate-experience">Years experience</Label>
+              <Input
+                id="candidate-experience"
+                min="0"
+                step="0.5"
+                type="number"
+                value={applicationForm.yearsExperience}
+                onChange={(event) =>
+                  setApplicationForm((current) => ({
+                    ...current,
+                    yearsExperience: event.target.value,
+                  }))
+                }
+              />
+            </div>
+            <div>
+              <Label htmlFor="candidate-expected-salary">Expected salary</Label>
+              <Input
+                id="candidate-expected-salary"
+                min="0"
+                type="number"
+                value={applicationForm.expectedSalary}
+                onChange={(event) =>
+                  setApplicationForm((current) => ({
+                    ...current,
+                    expectedSalary: event.target.value,
+                  }))
+                }
+              />
+            </div>
+            <div>
+              <Label htmlFor="candidate-resume-url">Resume URL</Label>
+              <Input
+                id="candidate-resume-url"
+                value={applicationForm.resumeUrl}
+                onChange={(event) =>
+                  setApplicationForm((current) => ({
+                    ...current,
+                    resumeUrl: event.target.value,
+                  }))
+                }
+              />
+            </div>
+          </div>
+          <div>
+            <Label htmlFor="candidate-notes">Notes</Label>
+            <textarea
+              id="candidate-notes"
+              className={`${selectClassName} min-h-[100px] py-2`}
+              value={applicationForm.notes}
+              onChange={(event) =>
+                setApplicationForm((current) => ({
+                  ...current,
+                  notes: event.target.value,
+                }))
+              }
+            />
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <Button
+              type="submit"
+              disabled={creatingApplication || updatingApplication}
+            >
+              {editingApplicationId ? 'Update Candidate' : 'Add Candidate'}
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={closeApplicationForm}
+            >
+              Cancel
+            </Button>
+          </div>
+        </form>
+      </FormDrawer>
 
       <div className="grid gap-4 xl:grid-cols-[minmax(0,0.95fr)_minmax(0,1.05fr)]">
         <Card>
@@ -1104,15 +1158,17 @@ export function RecruitmentPage() {
           </CardHeader>
           <CardContent>
             {loading ? (
-              <p className="text-sm text-muted-foreground">Loading requisitions...</p>
+              <p className="text-sm text-muted-foreground">
+                Loading requisitions...
+              </p>
             ) : requisitions.length === 0 ? (
-              <div className="app-muted-surface p-4 text-sm text-muted-foreground">
+              <AdminTableEmpty>
                 No requisitions match the current filters.
-              </div>
+              </AdminTableEmpty>
             ) : (
               <div className="space-y-3">
                 {requisitions.map((requisition) => (
-                  <div key={requisition.id} className="app-muted-surface p-4">
+                  <RecordCard key={requisition.id}>
                     <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                       <div className="min-w-0">
                         <div className="flex flex-wrap items-center gap-2">
@@ -1122,12 +1178,15 @@ export function RecruitmentPage() {
                           <StatusBadge tone={statusTone(requisition.status)}>
                             {formatStatus(requisition.status)}
                           </StatusBadge>
-                          <StatusBadge tone={priorityTone(requisition.priority)}>
+                          <StatusBadge
+                            tone={priorityTone(requisition.priority)}
+                          >
                             {formatStatus(requisition.priority)}
                           </StatusBadge>
                         </div>
                         <p className="mt-1 text-xs font-semibold uppercase tracking-[0.12em] text-muted-foreground">
-                          {requisition.requisitionNumber} · {requisition.departmentName}
+                          {requisition.requisitionNumber} ·{' '}
+                          {requisition.departmentName}
                         </p>
                         <p className="mt-2 text-sm leading-6 text-muted-foreground">
                           {requisition.description}
@@ -1219,7 +1278,7 @@ export function RecruitmentPage() {
                         ) : null}
                       </div>
                     </div>
-                  </div>
+                  </RecordCard>
                 ))}
               </div>
             )}
@@ -1233,17 +1292,19 @@ export function RecruitmentPage() {
           </CardHeader>
           <CardContent>
             {loading ? (
-              <p className="text-sm text-muted-foreground">Loading applications...</p>
+              <p className="text-sm text-muted-foreground">
+                Loading applications...
+              </p>
             ) : applications.length === 0 ? (
-              <div className="app-muted-surface p-4 text-sm text-muted-foreground">
+              <AdminTableEmpty>
                 No applications match the current filters.
-              </div>
+              </AdminTableEmpty>
             ) : (
               <div className="space-y-3">
                 {applications.map((application) => {
                   const nextAction = nextApplicationAction(application.status)
                   return (
-                    <div key={application.id} className="app-muted-surface p-4">
+                    <RecordCard key={application.id}>
                       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                         <div className="min-w-0">
                           <div className="flex flex-wrap items-center gap-2">
@@ -1255,12 +1316,15 @@ export function RecruitmentPage() {
                             </StatusBadge>
                           </div>
                           <p className="mt-1 text-xs font-semibold uppercase tracking-[0.12em] text-muted-foreground">
-                            {application.applicationNumber} · {application.jobTitle}
+                            {application.applicationNumber} ·{' '}
+                            {application.jobTitle}
                           </p>
                           <p className="mt-2 text-sm leading-6 text-muted-foreground">
                             {application.email}
                             {application.phone ? ` · ${application.phone}` : ''}
-                            {application.source ? ` · ${application.source}` : ''}
+                            {application.source
+                              ? ` · ${application.source}`
+                              : ''}
                           </p>
                           {application.notes ? (
                             <p className="mt-2 text-sm text-muted-foreground">
@@ -1336,7 +1400,7 @@ export function RecruitmentPage() {
                           ) : null}
                         </div>
                       </div>
-                    </div>
+                    </RecordCard>
                   )
                 })}
               </div>
@@ -1380,7 +1444,11 @@ function statusTone(status: string) {
   if (['OPEN', 'HIRED', 'SELECTED', 'OFFER_EXTENDED'].includes(status)) {
     return 'success'
   }
-  if (['SCREENING', 'SHORTLISTED', 'INTERVIEW_SCHEDULED', 'INTERVIEWED'].includes(status)) {
+  if (
+    ['SCREENING', 'SHORTLISTED', 'INTERVIEW_SCHEDULED', 'INTERVIEWED'].includes(
+      status,
+    )
+  ) {
     return 'info'
   }
   if (['ON_HOLD', 'RECEIVED'].includes(status)) {

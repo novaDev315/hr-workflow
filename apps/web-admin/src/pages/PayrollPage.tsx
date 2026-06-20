@@ -1,12 +1,16 @@
 import { FormEvent, useMemo, useState } from 'react'
 import { gql, useApolloClient, useMutation, useQuery } from '@apollo/client'
+import { AdminHero } from '@/components/admin/admin-hero'
+import { AdminTable, AdminTableEmpty, AdminTableRow } from '@/components/admin/admin-table'
+import { PageFeedback } from '@/components/admin/page-feedback'
+import { RecordCard } from '@/components/admin/record-card'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
+import { FormDrawer } from '@/components/ui/form-drawer'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { CreditCard, Receipt, Trash2, Wallet } from 'lucide-react'
 import { MetricCard } from '@/components/ui/metric-card'
-import { Notice } from '@/components/ui/notice'
 import { StatusBadge } from '@/components/ui/status-badge'
 import { canManageAccounts, readStoredAdminAccount } from '@/lib/auth-session'
 import { downloadBase64File } from '@/lib/download-export'
@@ -369,22 +373,16 @@ export function PayrollPage() {
 
   return (
     <div className="space-y-4">
-      <Card className="app-hero-surface">
-        <CardContent className="flex flex-col gap-4 p-5 sm:flex-row sm:items-end sm:justify-between sm:p-6">
-          <div>
-            <p className="app-kicker">Payroll workspace</p>
-            <h2 className="app-section-title mt-2 text-[2.2rem]">
-              Keep the monthly cycle clear and low-noise.
-            </h2>
-            <p className="mt-2 max-w-2xl text-sm leading-7 text-muted-foreground">
-              Process periods, inspect payslips, and open compensation setup only when changes are needed.
-            </p>
-          </div>
-          <Button variant="outline" onClick={() => setShowSetup((current) => !current)}>
-            {showSetup ? 'Hide compensation setup' : 'Open compensation setup'}
+      <AdminHero
+        kicker="Payroll workspace"
+        title="Keep the monthly cycle clear and low-noise."
+        description="Process periods, inspect payslips, and open compensation setup only when changes are needed."
+        actions={
+          <Button variant="outline" onClick={() => setShowSetup(true)}>
+            Open compensation setup
           </Button>
-        </CardContent>
-      </Card>
+        }
+      />
 
       <div className="grid gap-4 md:grid-cols-3">
         <MetricCard
@@ -410,11 +408,16 @@ export function PayrollPage() {
         />
       </div>
 
-      {errorMessage ? <Notice tone="danger">{errorMessage}</Notice> : null}
-      {statusMessage ? <Notice tone="success">{statusMessage}</Notice> : null}
+      <PageFeedback errorMessage={errorMessage} statusMessage={statusMessage} />
 
       <div className="grid gap-4 xl:grid-cols-2">
-        {showSetup ? (
+        <FormDrawer
+          open={showSetup}
+          onOpenChange={setShowSetup}
+          kicker="Payroll setup"
+          title="Compensation setup"
+          description="Update compensation profiles without leaving the payroll cycle."
+        >
           <Card>
             <CardHeader>
               <p className="app-kicker">Setup</p>
@@ -538,13 +541,7 @@ export function PayrollPage() {
             </form>
             </CardContent>
           </Card>
-        ) : (
-          <Card className="border-dashed bg-secondary/50">
-            <CardContent className="p-6 text-sm text-muted-foreground">
-              Compensation setup is hidden to keep the page focused on periods and payslips.
-            </CardContent>
-          </Card>
-        )}
+        </FormDrawer>
 
         <Card>
           <CardHeader>
@@ -587,11 +584,13 @@ export function PayrollPage() {
                     payslipCount: number
                     totalNetPay: number
                   }) => (
-                    <div
+                    <RecordCard
                       key={period.id}
-                      className={`rounded-lg border p-4 ${
-                        selectedPeriodId === period.id ? 'border-blue-300 bg-blue-50' : ''
-                      }`}
+                      className={
+                        selectedPeriodId === period.id
+                          ? 'border-primary/45 bg-primary/10'
+                          : undefined
+                      }
                     >
                       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                         <div>
@@ -641,7 +640,7 @@ export function PayrollPage() {
                           )}
                         </div>
                       </div>
-                    </div>
+                    </RecordCard>
                   )
                 )}
               </div>
@@ -657,12 +656,11 @@ export function PayrollPage() {
         </CardHeader>
         <CardContent>
           {compensationProfiles.length === 0 ? (
-            <p className="text-sm text-muted-foreground">
+            <AdminTableEmpty>
               No compensation profiles configured yet.
-            </p>
+            </AdminTableEmpty>
           ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full">
+            <AdminTable>
                 <thead>
                   <tr className="border-b">
                     <th className="px-4 py-3 text-left">Employee</th>
@@ -683,7 +681,7 @@ export function PayrollPage() {
                       currencyCode: string
                       employee: { employeeNumber: string; fullName: string }
                     }) => (
-                      <tr key={profile.id} className="border-b hover:bg-gray-50">
+                      <AdminTableRow key={profile.id}>
                         <td className="px-4 py-3">
                           {profile.employee.fullName}
                           <div className="text-xs text-muted-foreground">
@@ -700,12 +698,11 @@ export function PayrollPage() {
                           {profile.currencyCode} {profile.deductionAmount.toFixed(2)}
                         </td>
                         <td className="px-4 py-3">{profile.effectiveFrom}</td>
-                      </tr>
+                      </AdminTableRow>
                     )
                   )}
                 </tbody>
-              </table>
-            </div>
+            </AdminTable>
           )}
         </CardContent>
       </Card>
@@ -719,12 +716,11 @@ export function PayrollPage() {
         </CardHeader>
         <CardContent>
           {payslips.length === 0 ? (
-            <p className="text-sm text-muted-foreground">
+            <AdminTableEmpty>
               No payslips generated for the selected payroll period yet.
-            </p>
+            </AdminTableEmpty>
           ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full">
+            <AdminTable>
                 <thead>
                   <tr className="border-b">
                     <th className="px-4 py-3 text-left">Employee</th>
@@ -749,7 +745,7 @@ export function PayrollPage() {
                       status: string
                       employee: { employeeNumber: string; fullName: string }
                     }) => (
-                      <tr key={payslip.id} className="border-b hover:bg-gray-50">
+                      <AdminTableRow key={payslip.id}>
                         <td className="px-4 py-3">
                           {payslip.employee.fullName}
                           <div className="text-xs text-muted-foreground">
@@ -790,12 +786,11 @@ export function PayrollPage() {
                             Download PDF
                           </Button>
                         </td>
-                      </tr>
+                      </AdminTableRow>
                     )
                   )}
                 </tbody>
-              </table>
-            </div>
+            </AdminTable>
           )}
         </CardContent>
       </Card>
