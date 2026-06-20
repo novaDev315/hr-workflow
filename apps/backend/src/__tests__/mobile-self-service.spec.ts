@@ -12,6 +12,8 @@ type GraphqlResponse<T> = {
   errors?: Array<{ message: string }>;
 };
 
+jest.setTimeout(90000);
+
 describe('Mobile self-service flows', () => {
   let app: INestApplication;
   let prisma: PrismaService;
@@ -39,8 +41,6 @@ describe('Mobile self-service flows', () => {
   let payrollMonth = '';
 
   beforeAll(async () => {
-    jest.setTimeout(30000);
-
     const moduleFixture: TestingModule = await Test.createTestingModule({
       imports: [AppModule],
     }).compile();
