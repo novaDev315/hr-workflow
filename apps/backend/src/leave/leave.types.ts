@@ -6,6 +6,7 @@ import {
   ObjectType,
 } from '@nestjs/graphql';
 import {
+  IsNumber,
   IsOptional,
   IsString,
   MaxLength,
@@ -24,6 +25,7 @@ export class LeaveTypeType {
   name: string;
 
   @Field(() => Float)
+  @IsNumber()
   defaultDays: number;
 
   @Field({ nullable: true })
@@ -121,6 +123,7 @@ export class CreateLeaveTypeInput {
   name: string;
 
   @Field(() => Float)
+  @IsNumber()
   defaultDays: number;
 
   @Field({ nullable: true })
