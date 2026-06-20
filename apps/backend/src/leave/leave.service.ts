@@ -20,9 +20,11 @@ import {
 } from '../common/access-control';
 import {
   CreateLeaveTypeInput,
+  DeactivateLeaveTypeInput,
   LeaveRequestFilterInput,
   RequestLeaveInput,
   ReviewLeaveRequestInput,
+  UpdateLeaveTypeInput,
 } from './leave.types';
 
 interface LeaveTypeRow {
@@ -132,6 +134,78 @@ export class LeaveService {
     );
 
     return this.findLeaveType(created!.id);
+  }
+
+  async updateLeaveType(
+    currentUser: AuthenticatedUser,
+    input: UpdateLeaveTypeInput,
+  ) {
+    this.assertCanManageLeavePolicies(currentUser.roles);
+    const existing = await this.findLeaveType(input.id);
+    const code = input.code?.trim().toUpperCase() ?? existing.code;
+    const name = input.name?.trim() ?? existing.name;
+    const defaultDays =
+      input.defaultDays !== undefined ? Number(input.defaultDays) : existing.defaultDays;
+
+    if (!Number.isFinite(defaultDays) || defaultDays <= 0) {
+      throw new BadRequestException('Default days must be greater than zero');
+    }
+
+    const duplicate = await this.prisma.one<{ id: string }>(
+      `
+        SELECT id
+        FROM leave_types
+        WHERE (code = $1 OR LOWER(name) = LOWER($2)) AND id <> $3
+      `,
+      [code, name, input.id],
+    );
+
+    if (duplicate) {
+      throw new ConflictException('A leave type with this code or name already exists');
+    }
+
+    await this.prisma.query(
+      `
+        UPDATE leave_types
+        SET
+          code = $2,
+          name = $3,
+          default_days = $4,
+          description = $5,
+          updated_at = NOW()
+        WHERE id = $1
+      `,
+      [
+        input.id,
+        code,
+        name,
+        defaultDays,
+        input.description !== undefined
+          ? input.description?.trim() || null
+          : existing.description,
+      ],
+    );
+
+    return this.findLeaveType(input.id);
+  }
+
+  async deactivateLeaveType(
+    currentUser: AuthenticatedUser,
+    input: DeactivateLeaveTypeInput,
+  ) {
+    this.assertCanManageLeavePolicies(currentUser.roles);
+    await this.findLeaveType(input.id);
+
+    await this.prisma.query(
+      `
+        UPDATE leave_types
+        SET is_active = FALSE, updated_at = NOW()
+        WHERE id = $1
+      `,
+      [input.id],
+    );
+
+    return this.findLeaveType(input.id);
   }
 
   async requestLeave(currentUser: AuthenticatedUser, input: RequestLeaveInput) {

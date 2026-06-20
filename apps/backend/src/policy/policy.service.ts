@@ -13,8 +13,10 @@ import { AuthenticatedUser } from '../common/current-user.decorator';
 import { ACCOUNT_MANAGER_ROLE_KEYS } from '../common/system-roles';
 import { hasAdminPanelAccess } from '../common/access-control';
 import {
+  ArchivePolicyDocumentInput,
   CreatePolicyDocumentInput,
   PublishPolicyDocumentInput,
+  UpdatePolicyDocumentInput,
   UploadPolicyDocumentFileInput,
 } from './policy.types';
 
@@ -126,6 +128,73 @@ export class PolicyService {
     return this.findPolicyDocument(created!.id);
   }
 
+  async updatePolicyDocument(
+    currentUser: AuthenticatedUser,
+    input: UpdatePolicyDocumentInput,
+  ) {
+    this.assertCanManagePolicies(currentUser.roles);
+    const existing = await this.getRawPolicyDocument(input.id);
+    const title = input.title?.trim() ?? existing.title;
+    const version = input.version?.trim() ?? existing.version;
+    const status = input.status?.trim().toUpperCase() ?? existing.status;
+
+    if (!['DRAFT', 'PUBLISHED', 'ARCHIVED'].includes(status)) {
+      throw new BadRequestException('Policy status must be DRAFT, PUBLISHED, or ARCHIVED');
+    }
+
+    const duplicate = await this.prisma.one<{ id: string }>(
+      `
+        SELECT id
+        FROM policy_documents
+        WHERE LOWER(title) = LOWER($1) AND LOWER(version) = LOWER($2) AND id <> $3
+      `,
+      [title, version, input.id],
+    );
+
+    if (duplicate) {
+      throw new ConflictException('This policy title and version already exist');
+    }
+
+    await this.prisma.query(
+      `
+        UPDATE policy_documents
+        SET
+          title = $2,
+          category = $3,
+          version = $4,
+          effective_date = $5,
+          description = $6,
+          status = $7,
+          document_url = $8,
+          content = $9,
+          published_at = CASE
+            WHEN $7 = 'PUBLISHED' AND published_at IS NULL THEN NOW()
+            WHEN $7 <> 'PUBLISHED' THEN NULL
+            ELSE published_at
+          END,
+          updated_at = NOW()
+        WHERE id = $1
+      `,
+      [
+        input.id,
+        title,
+        input.category?.trim() ?? existing.category,
+        version,
+        input.effectiveDate?.trim() ?? existing.effectiveDate,
+        input.description !== undefined
+          ? input.description?.trim() || existing.description
+          : existing.description,
+        status,
+        input.documentUrl !== undefined
+          ? input.documentUrl?.trim() || null
+          : existing.documentUrl,
+        input.content !== undefined ? input.content?.trim() || null : existing.content,
+      ],
+    );
+
+    return this.findPolicyDocument(input.id);
+  }
+
   async publishPolicyDocument(
     currentUser: AuthenticatedUser,
     input: PublishPolicyDocumentInput,
@@ -151,6 +220,28 @@ export class PolicyService {
         SET
           status = 'PUBLISHED',
           published_at = NOW(),
+          updated_at = NOW()
+        WHERE id = $1
+      `,
+      [input.policyDocumentId],
+    );
+
+    return this.findPolicyDocument(input.policyDocumentId);
+  }
+
+  async archivePolicyDocument(
+    currentUser: AuthenticatedUser,
+    input: ArchivePolicyDocumentInput,
+  ) {
+    this.assertCanManagePolicies(currentUser.roles);
+    await this.getRawPolicyDocument(input.policyDocumentId);
+
+    await this.prisma.query(
+      `
+        UPDATE policy_documents
+        SET
+          status = 'ARCHIVED',
+          published_at = NULL,
           updated_at = NOW()
         WHERE id = $1
       `,
@@ -261,6 +352,12 @@ export class PolicyService {
   }
 
   private async findPolicyDocument(id: string) {
+    const row = await this.getRawPolicyDocument(id);
+
+    return this.mapPolicyDocument(row);
+  }
+
+  private async getRawPolicyDocument(id: string) {
     const row = await this.prisma.one<PolicyDocumentRow>(
       `
         SELECT
@@ -288,7 +385,7 @@ export class PolicyService {
       throw new NotFoundException('Policy document not found');
     }
 
-    return this.mapPolicyDocument(row);
+    return row;
   }
 
   private mapPolicyDocument(row: PolicyDocumentRow) {

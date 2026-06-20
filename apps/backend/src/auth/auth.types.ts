@@ -225,6 +225,37 @@ export class CreateDepartmentInput {
 }
 
 @InputType()
+export class UpdateDepartmentInput {
+  @Field(() => ID)
+  @IsString()
+  id: string;
+
+  @Field({ nullable: true })
+  @IsOptional()
+  @IsString()
+  @MaxLength(120)
+  name?: string;
+
+  @Field({ nullable: true })
+  @IsOptional()
+  @Matches(/^[A-Z0-9_]+$/)
+  code?: string;
+
+  @Field({ nullable: true })
+  @IsOptional()
+  @IsString()
+  @MaxLength(255)
+  description?: string;
+}
+
+@InputType()
+export class DeactivateDepartmentInput {
+  @Field(() => ID)
+  @IsString()
+  id: string;
+}
+
+@InputType()
 export class CreateDesignationInput {
   @Field()
   @IsString()
@@ -248,6 +279,46 @@ export class CreateDesignationInput {
   @IsString()
   @MaxLength(255)
   description?: string;
+}
+
+@InputType()
+export class UpdateDesignationInput {
+  @Field(() => ID)
+  @IsString()
+  id: string;
+
+  @Field({ nullable: true })
+  @IsOptional()
+  @IsString()
+  @MaxLength(120)
+  title?: string;
+
+  @Field({ nullable: true })
+  @IsOptional()
+  @Matches(/^[A-Z0-9_]+$/)
+  code?: string;
+
+  @Field({ nullable: true })
+  @IsOptional()
+  @IsString()
+  departmentId?: string;
+
+  @Field(() => Int, { nullable: true })
+  @IsOptional()
+  level?: number;
+
+  @Field({ nullable: true })
+  @IsOptional()
+  @IsString()
+  @MaxLength(255)
+  description?: string;
+}
+
+@InputType()
+export class DeactivateDesignationInput {
+  @Field(() => ID)
+  @IsString()
+  id: string;
 }
 
 @InputType()

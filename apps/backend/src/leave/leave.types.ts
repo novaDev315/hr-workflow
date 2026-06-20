@@ -134,6 +134,43 @@ export class CreateLeaveTypeInput {
 }
 
 @InputType()
+export class UpdateLeaveTypeInput {
+  @Field(() => ID)
+  @IsString()
+  id: string;
+
+  @Field({ nullable: true })
+  @IsOptional()
+  @IsString()
+  @MaxLength(20)
+  code?: string;
+
+  @Field({ nullable: true })
+  @IsOptional()
+  @IsString()
+  @MaxLength(120)
+  name?: string;
+
+  @Field(() => Float, { nullable: true })
+  @IsOptional()
+  @IsNumber()
+  defaultDays?: number;
+
+  @Field({ nullable: true })
+  @IsOptional()
+  @IsString()
+  @MaxLength(255)
+  description?: string;
+}
+
+@InputType()
+export class DeactivateLeaveTypeInput {
+  @Field(() => ID)
+  @IsString()
+  id: string;
+}
+
+@InputType()
 export class RequestLeaveInput {
   @Field()
   @IsString()

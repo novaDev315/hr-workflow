@@ -13,6 +13,7 @@ import {
 } from '../common/system-roles';
 import {
   CreatePayrollPeriodInput,
+  DeletePayrollPeriodInput,
   MarkPayrollPeriodPaidInput,
   PayslipFilterInput,
   ProcessPayrollPeriodInput,
@@ -449,6 +450,33 @@ export class PayrollService {
     });
 
     return this.findPayrollPeriod(period.id);
+  }
+
+  async deletePayrollPeriod(
+    currentUser: AuthenticatedUser,
+    input: DeletePayrollPeriodInput,
+  ) {
+    this.assertCanManagePayroll(currentUser.roles);
+    const period = await this.getRawPayrollPeriod(input.payrollPeriodId);
+
+    if (period.status === 'PAID') {
+      throw new BadRequestException('Paid payroll periods cannot be deleted');
+    }
+
+    await this.prisma.transaction(async (tx) => {
+      await this.prisma.query(
+        `DELETE FROM payslips WHERE payroll_period_id = $1`,
+        [period.id],
+        tx,
+      );
+      await this.prisma.query(
+        `DELETE FROM payroll_periods WHERE id = $1`,
+        [period.id],
+        tx,
+      );
+    });
+
+    return true;
   }
 
   async payslips(currentUser: AuthenticatedUser, filter?: PayslipFilterInput) {

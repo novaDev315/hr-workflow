@@ -1,6 +1,11 @@
 import { UseGuards } from '@nestjs/common';
 import { Args, Mutation, Query, Resolver } from '@nestjs/graphql';
-import { CreateDesignationInput, DesignationType } from '../auth/auth.types';
+import {
+  CreateDesignationInput,
+  DeactivateDesignationInput,
+  DesignationType,
+  UpdateDesignationInput,
+} from '../auth/auth.types';
 import { DesignationService } from './designation.service';
 import { GqlAuthGuard } from '../auth/gql-auth.guard';
 import { CurrentUser, AuthenticatedUser } from '../common/current-user.decorator';
@@ -35,5 +40,23 @@ export class DesignationResolver {
   ) {
     assertAccountManagerAccess(currentUser.roles);
     return this.designationService.create(input);
+  }
+
+  @Mutation(() => DesignationType, { name: 'updateDesignation' })
+  async updateDesignation(
+    @CurrentUser() currentUser: AuthenticatedUser,
+    @Args('input') input: UpdateDesignationInput,
+  ) {
+    assertAccountManagerAccess(currentUser.roles);
+    return this.designationService.update(input);
+  }
+
+  @Mutation(() => DesignationType, { name: 'deactivateDesignation' })
+  async deactivateDesignation(
+    @CurrentUser() currentUser: AuthenticatedUser,
+    @Args('input') input: DeactivateDesignationInput,
+  ) {
+    assertAccountManagerAccess(currentUser.roles);
+    return this.designationService.deactivate(input);
   }
 }

@@ -1,6 +1,6 @@
 import { FormEvent, useState } from "react";
 import { gql, useMutation, useQuery } from "@apollo/client";
-import { ExternalLink, FileText, Plus } from "lucide-react";
+import { Archive, ExternalLink, FileText, Pencil, Plus } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -40,9 +40,26 @@ const CREATE_POLICY_DOCUMENT_MUTATION = gql`
   }
 `;
 
+const UPDATE_POLICY_DOCUMENT_MUTATION = gql`
+  mutation UpdatePolicyDocument($input: UpdatePolicyDocumentInput!) {
+    updatePolicyDocument(input: $input) {
+      id
+    }
+  }
+`;
+
 const PUBLISH_POLICY_DOCUMENT_MUTATION = gql`
   mutation PublishPolicyDocument($input: PublishPolicyDocumentInput!) {
     publishPolicyDocument(input: $input) {
+      id
+      status
+    }
+  }
+`;
+
+const ARCHIVE_POLICY_DOCUMENT_MUTATION = gql`
+  mutation ArchivePolicyDocument($input: ArchivePolicyDocumentInput!) {
+    archivePolicyDocument(input: $input) {
       id
       status
     }
@@ -86,6 +103,7 @@ export function PolicyDocumentsPage() {
   const currentAdminAccount = readStoredAdminAccount();
   const canManagePolicies = canManageAccounts(currentAdminAccount?.roles ?? []);
   const [policyForm, setPolicyForm] = useState(policyFormDefaults);
+  const [editingPolicyId, setEditingPolicyId] = useState<string | null>(null);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -94,10 +112,14 @@ export function PolicyDocumentsPage() {
   const { data, loading, error, refetch } = useQuery(POLICY_DOCUMENTS_QUERY);
   const [createPolicyDocument, { loading: creatingPolicyDocument }] =
     useMutation(CREATE_POLICY_DOCUMENT_MUTATION);
+  const [updatePolicyDocument, { loading: updatingPolicyDocument }] =
+    useMutation(UPDATE_POLICY_DOCUMENT_MUTATION);
   const [uploadPolicyDocumentFile, { loading: uploadingPolicyFile }] =
     useMutation(UPLOAD_POLICY_DOCUMENT_FILE_MUTATION);
   const [publishPolicyDocument, { loading: publishingPolicyDocument }] =
     useMutation(PUBLISH_POLICY_DOCUMENT_MUTATION);
+  const [archivePolicyDocument, { loading: archivingPolicyDocument }] =
+    useMutation(ARCHIVE_POLICY_DOCUMENT_MUTATION);
 
   const policies = data?.policyDocuments ?? [];
   const publishedCount = policies.filter(
@@ -111,42 +133,53 @@ export function PolicyDocumentsPage() {
     }
 
     setPolicyForm(policyFormDefaults);
+    setEditingPolicyId(null);
     setSelectedFile(null);
     setErrorMessage(null);
     setStatusMessage(null);
     setShowComposer(true);
   };
 
-  const handleCreatePolicy = async (event: FormEvent<HTMLFormElement>) => {
+  const handleSavePolicy = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setErrorMessage(null);
     setStatusMessage(null);
 
     try {
-      const created = await createPolicyDocument({
-        variables: {
-          input: {
-            title: policyForm.title,
-            category: policyForm.category,
-            version: policyForm.version,
-            effectiveDate: policyForm.effectiveDate,
-            description: policyForm.description,
-            documentUrl: policyForm.documentUrl || null,
-            content: policyForm.content || null,
-            status: policyForm.status,
-          },
-        },
-      });
+      const input = {
+        title: policyForm.title,
+        category: policyForm.category,
+        version: policyForm.version,
+        effectiveDate: policyForm.effectiveDate,
+        description: policyForm.description,
+        documentUrl: policyForm.documentUrl || null,
+        content: policyForm.content || null,
+        status: policyForm.status,
+      };
+      const saved = editingPolicyId
+        ? await updatePolicyDocument({
+            variables: {
+              input: {
+                id: editingPolicyId,
+                ...input,
+              },
+            },
+          })
+        : await createPolicyDocument({
+            variables: {
+              input,
+            },
+          });
 
-      const createdPolicyId = created.data?.createPolicyDocument?.id as
-        | string
-        | undefined;
-      if (selectedFile && createdPolicyId) {
+      const savedPolicyId = editingPolicyId
+        ? editingPolicyId
+        : (saved.data?.createPolicyDocument?.id as string | undefined);
+      if (selectedFile && savedPolicyId) {
         const contentBase64 = await readFileAsBase64(selectedFile);
         await uploadPolicyDocumentFile({
           variables: {
             input: {
-              policyDocumentId: createdPolicyId,
+              policyDocumentId: savedPolicyId,
               fileName: selectedFile.name,
               mimeType: selectedFile.type || "application/octet-stream",
               contentBase64,
@@ -156,19 +189,79 @@ export function PolicyDocumentsPage() {
       }
 
       setPolicyForm(policyFormDefaults);
+      setEditingPolicyId(null);
       setSelectedFile(null);
       setShowComposer(false);
       setStatusMessage(
         selectedFile
-          ? "Policy document created and file uploaded."
-          : "Policy document created.",
+          ? editingPolicyId
+            ? "Policy document updated and file uploaded."
+            : "Policy document created and file uploaded."
+          : editingPolicyId
+            ? "Policy document updated."
+            : "Policy document created.",
       );
       await refetch();
     } catch (mutationError) {
       setErrorMessage(
         mutationError instanceof Error
           ? mutationError.message
-          : "Unable to create policy document.",
+          : "Unable to save policy document.",
+      );
+    }
+  };
+
+  const handleEditPolicy = (policy: {
+    id: string;
+    title: string;
+    category: string;
+    version: string;
+    effectiveDate: string;
+    description: string;
+    documentUrl?: string | null;
+    content?: string | null;
+    status: string;
+  }) => {
+    setEditingPolicyId(policy.id);
+    setPolicyForm({
+      title: policy.title,
+      category: policy.category,
+      version: policy.version,
+      effectiveDate: policy.effectiveDate,
+      description: policy.description,
+      documentUrl: policy.documentUrl ?? "",
+      content: policy.content ?? "",
+      status: policy.status,
+    });
+    setSelectedFile(null);
+    setErrorMessage(null);
+    setStatusMessage(null);
+    setShowComposer(true);
+  };
+
+  const handleArchivePolicy = async (policyDocumentId: string, title: string) => {
+    if (!window.confirm(`Archive ${title}? Employees will no longer see it.`)) {
+      return;
+    }
+
+    setErrorMessage(null);
+    setStatusMessage(null);
+
+    try {
+      await archivePolicyDocument({
+        variables: {
+          input: {
+            policyDocumentId,
+          },
+        },
+      });
+      setStatusMessage("Policy document archived.");
+      await refetch();
+    } catch (mutationError) {
+      setErrorMessage(
+        mutationError instanceof Error
+          ? mutationError.message
+          : "Unable to archive policy document.",
       );
     }
   };
@@ -248,10 +341,12 @@ export function PolicyDocumentsPage() {
         <Card>
           <CardHeader>
             <p className="app-kicker">Composer</p>
-            <CardTitle>Create policy document</CardTitle>
+            <CardTitle>
+              {editingPolicyId ? "Edit policy document" : "Create policy document"}
+            </CardTitle>
           </CardHeader>
           <CardContent>
-            <form className="space-y-4" onSubmit={handleCreatePolicy}>
+            <form className="space-y-4" onSubmit={handleSavePolicy}>
               <div className="grid gap-4 md:grid-cols-2">
                 <Input
                   value={policyForm.title}
@@ -358,12 +453,33 @@ export function PolicyDocumentsPage() {
               />
               <Button
                 type="submit"
-                disabled={creatingPolicyDocument || uploadingPolicyFile}
+                disabled={
+                  creatingPolicyDocument ||
+                  updatingPolicyDocument ||
+                  uploadingPolicyFile
+                }
               >
-                {creatingPolicyDocument || uploadingPolicyFile
+                {creatingPolicyDocument ||
+                updatingPolicyDocument ||
+                uploadingPolicyFile
                   ? "Saving..."
-                  : "Save policy"}
+                  : editingPolicyId
+                    ? "Update policy"
+                    : "Save policy"}
               </Button>
+              {editingPolicyId ? (
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => {
+                    setEditingPolicyId(null);
+                    setPolicyForm(policyFormDefaults);
+                    setSelectedFile(null);
+                  }}
+                >
+                  Cancel edit
+                </Button>
+              ) : null}
             </form>
           </CardContent>
         </Card>
@@ -476,6 +592,27 @@ export function PolicyDocumentsPage() {
                         onClick={() => handlePublishPolicy(policy.id)}
                       >
                         {publishingPolicyDocument ? "Publishing..." : "Publish"}
+                      </Button>
+                    ) : null}
+                    {canManagePolicies ? (
+                      <Button
+                        type="button"
+                        variant="outline"
+                        onClick={() => handleEditPolicy(policy)}
+                      >
+                        <Pencil className="mr-2 h-4 w-4" />
+                        Edit
+                      </Button>
+                    ) : null}
+                    {canManagePolicies && policy.status !== "ARCHIVED" ? (
+                      <Button
+                        type="button"
+                        variant="outline"
+                        disabled={archivingPolicyDocument}
+                        onClick={() => handleArchivePolicy(policy.id, policy.title)}
+                      >
+                        <Archive className="mr-2 h-4 w-4" />
+                        Archive
                       </Button>
                     ) : null}
                   </div>

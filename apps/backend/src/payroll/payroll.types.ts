@@ -207,6 +207,13 @@ export class MarkPayrollPeriodPaidInput {
 }
 
 @InputType()
+export class DeletePayrollPeriodInput {
+  @Field()
+  @IsString()
+  payrollPeriodId: string;
+}
+
+@InputType()
 export class PayslipFilterInput {
   @Field({ nullable: true })
   @IsOptional()

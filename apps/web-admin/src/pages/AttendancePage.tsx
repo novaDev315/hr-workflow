@@ -4,7 +4,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { Clock3, MapPin, Settings2 } from 'lucide-react'
+import { Clock3, MapPin, Pencil, Settings2, XCircle } from 'lucide-react'
 import { MetricCard } from '@/components/ui/metric-card'
 import { Notice } from '@/components/ui/notice'
 import { StatusBadge } from '@/components/ui/status-badge'
@@ -74,6 +74,23 @@ const CREATE_LOCATION_MUTATION = gql`
   mutation CreateLocation($input: CreateLocationInput!) {
     createLocation(input: $input) {
       id
+    }
+  }
+`
+
+const UPDATE_LOCATION_MUTATION = gql`
+  mutation UpdateLocation($input: UpdateLocationInput!) {
+    updateLocation(input: $input) {
+      id
+    }
+  }
+`
+
+const DEACTIVATE_LOCATION_MUTATION = gql`
+  mutation DeactivateLocation($input: DeactivateLocationInput!) {
+    deactivateLocation(input: $input) {
+      id
+      isActive
     }
   }
 `
@@ -152,6 +169,7 @@ const attendanceActionDefaults: AttendanceActionFormState = {
 
 export function AttendancePage() {
   const [locationForm, setLocationForm] = useState(locationFormDefaults)
+  const [editingLocationId, setEditingLocationId] = useState<string | null>(null)
   const [assignmentForm, setAssignmentForm] = useState(assignmentFormDefaults)
   const [attendanceForm, setAttendanceForm] = useState(attendanceActionDefaults)
   const [attendanceFilterEmployeeId, setAttendanceFilterEmployeeId] = useState('')
@@ -187,6 +205,12 @@ export function AttendancePage() {
   const [createLocation, { loading: creatingLocation }] = useMutation(
     CREATE_LOCATION_MUTATION
   )
+  const [updateLocation, { loading: updatingLocation }] = useMutation(
+    UPDATE_LOCATION_MUTATION
+  )
+  const [deactivateLocation, { loading: deactivatingLocation }] = useMutation(
+    DEACTIVATE_LOCATION_MUTATION
+  )
   const [assignEmployeeLocation, { loading: assigningLocation }] = useMutation(
     ASSIGN_EMPLOYEE_LOCATION_MUTATION
   )
@@ -217,33 +241,104 @@ export function AttendancePage() {
     }))
   }, [selectedAttendanceLocation])
 
-  const handleCreateLocation = async (event: FormEvent<HTMLFormElement>) => {
+  const handleSaveLocation = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
     setErrorMessage(null)
     setStatusMessage(null)
 
     try {
-      await createLocation({
-        variables: {
-          input: {
-            name: locationForm.name,
-            code: locationForm.code,
-            address: locationForm.address,
-            city: locationForm.city || null,
-            latitude: Number.parseFloat(locationForm.latitude),
-            longitude: Number.parseFloat(locationForm.longitude),
-            geofenceRadius: Number.parseInt(locationForm.geofenceRadius || '100', 10),
+      const input = {
+        name: locationForm.name,
+        code: locationForm.code,
+        address: locationForm.address,
+        city: locationForm.city || null,
+        latitude: Number.parseFloat(locationForm.latitude),
+        longitude: Number.parseFloat(locationForm.longitude),
+        geofenceRadius: Number.parseInt(locationForm.geofenceRadius || '100', 10),
+      }
+
+      if (editingLocationId) {
+        await updateLocation({
+          variables: {
+            input: {
+              id: editingLocationId,
+              ...input,
+            },
           },
-        },
-      })
+        })
+      } else {
+        await createLocation({
+          variables: {
+            input,
+          },
+        })
+      }
       setLocationForm(locationFormDefaults)
-      setStatusMessage('Location created.')
+      setEditingLocationId(null)
+      setStatusMessage(editingLocationId ? 'Location updated.' : 'Location created.')
       await refetch()
     } catch (mutationError) {
       setErrorMessage(
         mutationError instanceof Error
           ? mutationError.message
-          : 'Unable to create location.'
+          : 'Unable to save location.'
+      )
+    }
+  }
+
+  const handleEditLocation = (location: {
+    id: string
+    name: string
+    code: string
+    address: string
+    city?: string | null
+    latitude: number
+    longitude: number
+    geofenceRadius: number
+  }) => {
+    setShowSetup(true)
+    setEditingLocationId(location.id)
+    setLocationForm({
+      name: location.name,
+      code: location.code,
+      address: location.address,
+      city: location.city ?? '',
+      latitude: String(location.latitude),
+      longitude: String(location.longitude),
+      geofenceRadius: String(location.geofenceRadius),
+    })
+    setErrorMessage(null)
+    setStatusMessage(null)
+  }
+
+  const handleCancelLocationEdit = () => {
+    setEditingLocationId(null)
+    setLocationForm(locationFormDefaults)
+  }
+
+  const handleDeactivateLocation = async (locationId: string, name: string) => {
+    if (!window.confirm(`Deactivate ${name}? Attendance actions will stop using it.`)) {
+      return
+    }
+
+    setErrorMessage(null)
+    setStatusMessage(null)
+
+    try {
+      await deactivateLocation({
+        variables: {
+          input: {
+            id: locationId,
+          },
+        },
+      })
+      setStatusMessage('Location deactivated.')
+      await refetch()
+    } catch (mutationError) {
+      setErrorMessage(
+        mutationError instanceof Error
+          ? mutationError.message
+          : 'Unable to deactivate location.'
       )
     }
   }
@@ -637,6 +732,8 @@ export function AttendancePage() {
                     address: string
                     geofenceRadius: number
                     isActive: boolean
+                    latitude: number
+                    longitude: number
                   }) => (
                     <div key={location.id} className="app-muted-surface p-4">
                       <div className="flex items-center justify-between gap-3">
@@ -656,6 +753,29 @@ export function AttendancePage() {
                       <div className="mt-2 text-sm text-muted-foreground">
                         Geofence radius: {location.geofenceRadius}m
                       </div>
+                      <div className="mt-3 flex flex-wrap gap-2">
+                        <Button
+                          type="button"
+                          variant="outline"
+                          onClick={() => handleEditLocation(location)}
+                        >
+                          <Pencil className="mr-2 h-4 w-4" />
+                          Edit
+                        </Button>
+                        {location.isActive ? (
+                          <Button
+                            type="button"
+                            variant="outline"
+                            disabled={deactivatingLocation}
+                            onClick={() =>
+                              handleDeactivateLocation(location.id, location.name)
+                            }
+                          >
+                            <XCircle className="mr-2 h-4 w-4" />
+                            Deactivate
+                          </Button>
+                        ) : null}
+                      </div>
                     </div>
                   )
                 )}
@@ -669,10 +789,10 @@ export function AttendancePage() {
             <Card>
               <CardHeader>
                 <p className="app-kicker">Setup</p>
-                <CardTitle>Create Location</CardTitle>
+                <CardTitle>{editingLocationId ? 'Edit Location' : 'Create Location'}</CardTitle>
               </CardHeader>
               <CardContent>
-                <form className="space-y-4" onSubmit={handleCreateLocation}>
+                <form className="space-y-4" onSubmit={handleSaveLocation}>
               <div className="space-y-2">
                 <Label htmlFor="location-name">Location Name</Label>
                 <Input
@@ -778,9 +898,27 @@ export function AttendancePage() {
                   }
                 />
               </div>
-              <Button className="w-full" type="submit" disabled={creatingLocation}>
-                {creatingLocation ? 'Saving...' : 'Create Location'}
+              <Button
+                className="w-full"
+                type="submit"
+                disabled={creatingLocation || updatingLocation}
+              >
+                {creatingLocation || updatingLocation
+                  ? 'Saving...'
+                  : editingLocationId
+                    ? 'Update Location'
+                    : 'Create Location'}
               </Button>
+              {editingLocationId ? (
+                <Button
+                  className="w-full"
+                  type="button"
+                  variant="outline"
+                  onClick={handleCancelLocationEdit}
+                >
+                  Cancel Edit
+                </Button>
+              ) : null}
             </form>
               </CardContent>
             </Card>

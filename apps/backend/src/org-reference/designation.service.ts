@@ -4,7 +4,11 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
-import { CreateDesignationInput } from '../auth/auth.types';
+import {
+  CreateDesignationInput,
+  DeactivateDesignationInput,
+  UpdateDesignationInput,
+} from '../auth/auth.types';
 import { randomUUID } from 'crypto';
 
 @Injectable()
@@ -105,6 +109,77 @@ export class DesignationService {
     );
 
     return this.findById(created!.id);
+  }
+
+  async update(input: UpdateDesignationInput) {
+    const existing = await this.findById(input.id);
+    const departmentId = input.departmentId ?? existing.departmentId;
+    const title = input.title?.trim() ?? existing.title;
+    const code = input.code?.trim().toUpperCase() ?? existing.code;
+
+    const department = await this.prisma.one<{ id: string }>(
+      `SELECT id FROM departments WHERE id = $1 AND is_active = TRUE`,
+      [departmentId],
+    );
+
+    if (!department) {
+      throw new NotFoundException('Department not found or inactive');
+    }
+
+    const duplicate = await this.prisma.one<{ id: string }>(
+      `
+        SELECT id
+        FROM designations
+        WHERE (code = $1 OR (department_id = $2 AND title = $3)) AND id <> $4
+      `,
+      [code, departmentId, title, input.id],
+    );
+
+    if (duplicate) {
+      throw new ConflictException(
+        'Designation with this code or title already exists in the department',
+      );
+    }
+
+    await this.prisma.query(
+      `
+        UPDATE designations
+        SET
+          title = $2,
+          code = $3,
+          department_id = $4,
+          level = $5,
+          description = $6,
+          updated_at = NOW()
+        WHERE id = $1
+      `,
+      [
+        input.id,
+        title,
+        code,
+        departmentId,
+        input.level ?? existing.level,
+        input.description !== undefined
+          ? input.description?.trim() || null
+          : existing.description,
+      ],
+    );
+
+    return this.findById(input.id);
+  }
+
+  async deactivate(input: DeactivateDesignationInput) {
+    await this.findById(input.id);
+    await this.prisma.query(
+      `
+        UPDATE designations
+        SET is_active = FALSE, updated_at = NOW()
+        WHERE id = $1
+      `,
+      [input.id],
+    );
+
+    return this.findById(input.id);
   }
 
   private async findById(id: string) {

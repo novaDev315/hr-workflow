@@ -1,6 +1,11 @@
 import { UseGuards } from '@nestjs/common';
 import { Args, Mutation, Query, Resolver } from '@nestjs/graphql';
-import { CreateDepartmentInput, DepartmentType } from '../auth/auth.types';
+import {
+  CreateDepartmentInput,
+  DeactivateDepartmentInput,
+  DepartmentType,
+  UpdateDepartmentInput,
+} from '../auth/auth.types';
 import { DepartmentService } from './department.service';
 import { GqlAuthGuard } from '../auth/gql-auth.guard';
 import { CurrentUser, AuthenticatedUser } from '../common/current-user.decorator';
@@ -31,5 +36,23 @@ export class DepartmentResolver {
   ) {
     assertAccountManagerAccess(currentUser.roles);
     return this.departmentService.create(input);
+  }
+
+  @Mutation(() => DepartmentType, { name: 'updateDepartment' })
+  async updateDepartment(
+    @CurrentUser() currentUser: AuthenticatedUser,
+    @Args('input') input: UpdateDepartmentInput,
+  ) {
+    assertAccountManagerAccess(currentUser.roles);
+    return this.departmentService.update(input);
+  }
+
+  @Mutation(() => DepartmentType, { name: 'deactivateDepartment' })
+  async deactivateDepartment(
+    @CurrentUser() currentUser: AuthenticatedUser,
+    @Args('input') input: DeactivateDepartmentInput,
+  ) {
+    assertAccountManagerAccess(currentUser.roles);
+    return this.departmentService.deactivate(input);
   }
 }

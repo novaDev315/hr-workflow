@@ -15,7 +15,12 @@ import {
   resolveEmployeeVisibilityScope,
 } from '../common/access-control';
 import { PrismaService } from '../prisma/prisma.service';
-import { CreateEmployeeInput, EmployeeFilterInput } from './employee.types';
+import {
+  CreateEmployeeInput,
+  DeactivateEmployeeInput,
+  EmployeeFilterInput,
+  UpdateEmployeeInput,
+} from './employee.types';
 
 interface EmployeeRow {
   id: string;
@@ -298,6 +303,190 @@ export class EmployeeService {
     );
 
     return this.findOne(currentUser, created!.id);
+  }
+
+  async update(currentUser: AuthenticatedUser, input: UpdateEmployeeInput) {
+    assertAccountManagerAccess(currentUser.roles);
+    const existing = await this.findRawEmployee(input.id);
+    const normalizedEmail =
+      input.email !== undefined ? input.email.trim().toLowerCase() : existing.email;
+    const departmentId = input.departmentId ?? existing.departmentId;
+    const designationId = input.designationId ?? existing.designationId;
+
+    if (normalizedEmail !== existing.email) {
+      const duplicate = await this.prisma.one<{ id: string }>(
+        `SELECT id FROM employees WHERE email = $1 AND id <> $2`,
+        [normalizedEmail, input.id],
+      );
+
+      if (duplicate) {
+        throw new ConflictException('Employee with this email already exists');
+      }
+    }
+
+    await this.assertDepartmentAndDesignation(departmentId, designationId);
+    await this.assertSupervisor(input.supervisorId ?? existing.supervisorId, input.id);
+
+    await this.prisma.query(
+      `
+        UPDATE employees
+        SET
+          first_name = $2,
+          last_name = $3,
+          email = $4,
+          phone = $5,
+          department_id = $6,
+          designation_id = $7,
+          supervisor_id = $8,
+          employment_type = $9,
+          join_date = $10,
+          status = $11,
+          is_active = CASE WHEN $11 = 'INACTIVE' THEN FALSE ELSE is_active END,
+          updated_at = NOW()
+        WHERE id = $1
+      `,
+      [
+        input.id,
+        input.firstName?.trim() ?? existing.firstName,
+        input.lastName?.trim() ?? existing.lastName,
+        normalizedEmail,
+        input.phone !== undefined ? input.phone?.trim() || null : existing.phone,
+        departmentId,
+        designationId,
+        input.supervisorId !== undefined ? input.supervisorId || null : existing.supervisorId,
+        input.employmentType?.trim().toUpperCase() ?? existing.employmentType,
+        input.joinDate?.trim() ?? existing.joinDate,
+        input.status?.trim().toUpperCase() ?? existing.status,
+      ],
+    );
+
+    return this.findOne(currentUser, input.id);
+  }
+
+  async deactivate(currentUser: AuthenticatedUser, input: DeactivateEmployeeInput) {
+    assertAccountManagerAccess(currentUser.roles);
+    await this.findRawEmployee(input.id);
+    const exitDate = input.exitDate?.trim() || new Date().toISOString().slice(0, 10);
+
+    await this.prisma.transaction(async (client) => {
+      await this.prisma.query(
+        `
+          UPDATE employees
+          SET
+            status = 'INACTIVE',
+            is_active = FALSE,
+            exit_date = $2,
+            updated_at = NOW()
+          WHERE id = $1
+        `,
+        [input.id, exitDate],
+        client,
+      );
+
+      await this.prisma.query(
+        `
+          UPDATE users
+          SET is_active = FALSE, updated_at = NOW()
+          WHERE employee_id = $1
+        `,
+        [input.id],
+        client,
+      );
+    });
+
+    return this.findOne(currentUser, input.id);
+  }
+
+  private async findRawEmployee(id: string) {
+    const employee = await this.prisma.one<{
+      id: string;
+      firstName: string;
+      lastName: string;
+      email: string;
+      phone: string | null;
+      departmentId: string;
+      designationId: string;
+      supervisorId: string | null;
+      employmentType: string;
+      joinDate: string;
+      status: string;
+    }>(
+      `
+        SELECT
+          id,
+          first_name AS "firstName",
+          last_name AS "lastName",
+          email,
+          phone,
+          department_id AS "departmentId",
+          designation_id AS "designationId",
+          supervisor_id AS "supervisorId",
+          employment_type AS "employmentType",
+          join_date::text AS "joinDate",
+          status
+        FROM employees
+        WHERE id = $1
+      `,
+      [id],
+    );
+
+    if (!employee) {
+      throw new NotFoundException(`Employee with ID ${id} not found`);
+    }
+
+    return employee;
+  }
+
+  private async assertDepartmentAndDesignation(
+    departmentId: string,
+    designationId: string,
+  ) {
+    const department = await this.prisma.one<{ id: string }>(
+      `SELECT id FROM departments WHERE id = $1 AND is_active = TRUE`,
+      [departmentId],
+    );
+
+    if (!department) {
+      throw new BadRequestException('Department not found or inactive');
+    }
+
+    const designation = await this.prisma.one<{ id: string; departmentId: string }>(
+      `
+        SELECT id, department_id AS "departmentId"
+        FROM designations
+        WHERE id = $1 AND is_active = TRUE
+      `,
+      [designationId],
+    );
+
+    if (!designation) {
+      throw new BadRequestException('Designation not found or inactive');
+    }
+
+    if (designation.departmentId !== departmentId) {
+      throw new BadRequestException(
+        'Designation must belong to the selected department',
+      );
+    }
+  }
+
+  private async assertSupervisor(supervisorId: string | null | undefined, employeeId: string) {
+    if (!supervisorId) {
+      return;
+    }
+
+    if (supervisorId === employeeId) {
+      throw new BadRequestException('Employee cannot supervise themselves');
+    }
+
+    const supervisor = await this.prisma.one<{ id: string }>(
+      `SELECT id FROM employees WHERE id = $1 AND is_active = TRUE`,
+      [supervisorId],
+    );
+
+    if (!supervisor) {
+      throw new BadRequestException('Supervisor not found or inactive');
+    }
   }
 
   private async generateEmployeeNumber() {

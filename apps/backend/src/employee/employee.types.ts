@@ -149,3 +149,76 @@ export class CreateEmployeeInput {
   @IsString()
   status?: string;
 }
+
+@InputType()
+export class UpdateEmployeeInput {
+  @Field(() => ID)
+  @IsString()
+  id: string;
+
+  @Field({ nullable: true })
+  @IsOptional()
+  @IsString()
+  @MaxLength(80)
+  firstName?: string;
+
+  @Field({ nullable: true })
+  @IsOptional()
+  @IsString()
+  @MaxLength(80)
+  lastName?: string;
+
+  @Field({ nullable: true })
+  @IsOptional()
+  @IsEmail()
+  email?: string;
+
+  @Field({ nullable: true })
+  @IsOptional()
+  @IsString()
+  @MaxLength(30)
+  phone?: string;
+
+  @Field({ nullable: true })
+  @IsOptional()
+  @IsString()
+  departmentId?: string;
+
+  @Field({ nullable: true })
+  @IsOptional()
+  @IsString()
+  designationId?: string;
+
+  @Field({ nullable: true })
+  @IsOptional()
+  @IsString()
+  supervisorId?: string;
+
+  @Field({ nullable: true })
+  @IsOptional()
+  @IsString()
+  @MinLength(4)
+  employmentType?: string;
+
+  @Field({ nullable: true })
+  @IsOptional()
+  @IsString()
+  joinDate?: string;
+
+  @Field({ nullable: true })
+  @IsOptional()
+  @IsString()
+  status?: string;
+}
+
+@InputType()
+export class DeactivateEmployeeInput {
+  @Field(() => ID)
+  @IsString()
+  id: string;
+
+  @Field({ nullable: true })
+  @IsOptional()
+  @IsString()
+  exitDate?: string;
+}

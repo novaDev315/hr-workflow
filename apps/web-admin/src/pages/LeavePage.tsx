@@ -4,7 +4,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { CalendarClock, FileCheck2, PlaneTakeoff } from 'lucide-react'
+import { CalendarClock, FileCheck2, Pencil, PlaneTakeoff, XCircle } from 'lucide-react'
 import { MetricCard } from '@/components/ui/metric-card'
 import { Notice } from '@/components/ui/notice'
 import { StatusBadge } from '@/components/ui/status-badge'
@@ -12,6 +12,11 @@ import { canManageAccounts, readStoredAdminAccount } from '@/lib/auth-session'
 
 const LEAVE_PAGE_QUERY = gql`
   query LeavePageData {
+    employees {
+      id
+      employeeNumber
+      fullName
+    }
     leaveTypes {
       id
       code
@@ -53,6 +58,32 @@ const CREATE_LEAVE_TYPE_MUTATION = gql`
   }
 `
 
+const UPDATE_LEAVE_TYPE_MUTATION = gql`
+  mutation UpdateLeaveType($input: UpdateLeaveTypeInput!) {
+    updateLeaveType(input: $input) {
+      id
+    }
+  }
+`
+
+const DEACTIVATE_LEAVE_TYPE_MUTATION = gql`
+  mutation DeactivateLeaveType($input: DeactivateLeaveTypeInput!) {
+    deactivateLeaveType(input: $input) {
+      id
+      isActive
+    }
+  }
+`
+
+const REQUEST_LEAVE_MUTATION = gql`
+  mutation RequestLeave($input: RequestLeaveInput!) {
+    requestLeave(input: $input) {
+      id
+      status
+    }
+  }
+`
+
 const REVIEW_LEAVE_REQUEST_MUTATION = gql`
   mutation ReviewLeaveRequest($input: ReviewLeaveRequestInput!) {
     reviewLeaveRequest(input: $input) {
@@ -69,6 +100,14 @@ type LeaveTypeFormState = {
   description: string
 }
 
+type LeaveRequestFormState = {
+  employeeId: string
+  leaveTypeId: string
+  startDate: string
+  endDate: string
+  reason: string
+}
+
 const leaveTypeFormDefaults: LeaveTypeFormState = {
   code: '',
   name: '',
@@ -76,10 +115,20 @@ const leaveTypeFormDefaults: LeaveTypeFormState = {
   description: '',
 }
 
+const leaveRequestFormDefaults: LeaveRequestFormState = {
+  employeeId: '',
+  leaveTypeId: '',
+  startDate: new Date().toISOString().slice(0, 10),
+  endDate: new Date().toISOString().slice(0, 10),
+  reason: '',
+}
+
 export function LeavePage() {
   const currentAdminAccount = readStoredAdminAccount()
   const canManageLeavePolicies = canManageAccounts(currentAdminAccount?.roles ?? [])
   const [leaveTypeForm, setLeaveTypeForm] = useState(leaveTypeFormDefaults)
+  const [editingLeaveTypeId, setEditingLeaveTypeId] = useState<string | null>(null)
+  const [leaveRequestForm, setLeaveRequestForm] = useState(leaveRequestFormDefaults)
   const [statusMessage, setStatusMessage] = useState<string | null>(null)
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
   const [reviewNotes, setReviewNotes] = useState<Record<string, string>>({})
@@ -88,11 +137,21 @@ export function LeavePage() {
   const [createLeaveType, { loading: creatingLeaveType }] = useMutation(
     CREATE_LEAVE_TYPE_MUTATION
   )
+  const [updateLeaveType, { loading: updatingLeaveType }] = useMutation(
+    UPDATE_LEAVE_TYPE_MUTATION
+  )
+  const [deactivateLeaveType, { loading: deactivatingLeaveType }] = useMutation(
+    DEACTIVATE_LEAVE_TYPE_MUTATION
+  )
+  const [requestLeave, { loading: requestingLeave }] = useMutation(
+    REQUEST_LEAVE_MUTATION
+  )
   const [reviewLeaveRequest, { loading: reviewingLeaveRequest }] = useMutation(
     REVIEW_LEAVE_REQUEST_MUTATION
   )
 
   const leaveTypes = data?.leaveTypes ?? []
+  const employees = data?.employees ?? []
   const leaveRequests = data?.leaveRequests ?? []
   const pendingRequests = leaveRequests.filter(
     (request: { status: string }) => request.status === 'PENDING'
@@ -101,30 +160,123 @@ export function LeavePage() {
     (request: { status: string }) => request.status === 'APPROVED'
   ).length
 
-  const handleCreateLeaveType = async (event: FormEvent<HTMLFormElement>) => {
+  const handleSaveLeaveType = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
     setErrorMessage(null)
     setStatusMessage(null)
 
     try {
-      await createLeaveType({
-        variables: {
-          input: {
-            code: leaveTypeForm.code,
-            name: leaveTypeForm.name,
-            defaultDays: Number.parseFloat(leaveTypeForm.defaultDays),
-            description: leaveTypeForm.description || null,
+      const input = {
+        code: leaveTypeForm.code,
+        name: leaveTypeForm.name,
+        defaultDays: Number.parseFloat(leaveTypeForm.defaultDays),
+        description: leaveTypeForm.description || null,
+      }
+
+      if (editingLeaveTypeId) {
+        await updateLeaveType({
+          variables: {
+            input: {
+              id: editingLeaveTypeId,
+              ...input,
+            },
           },
-        },
-      })
+        })
+      } else {
+        await createLeaveType({
+          variables: {
+            input,
+          },
+        })
+      }
       setLeaveTypeForm(leaveTypeFormDefaults)
-      setStatusMessage('Leave type created.')
+      setEditingLeaveTypeId(null)
+      setStatusMessage(editingLeaveTypeId ? 'Leave type updated.' : 'Leave type created.')
       await refetch()
     } catch (mutationError) {
       setErrorMessage(
         mutationError instanceof Error
           ? mutationError.message
-          : 'Unable to create leave type.'
+          : 'Unable to save leave type.'
+      )
+    }
+  }
+
+  const handleRequestLeave = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    setErrorMessage(null)
+    setStatusMessage(null)
+
+    try {
+      await requestLeave({
+        variables: {
+          input: {
+            employeeId: leaveRequestForm.employeeId,
+            leaveTypeId: leaveRequestForm.leaveTypeId,
+            startDate: leaveRequestForm.startDate,
+            endDate: leaveRequestForm.endDate,
+            reason: leaveRequestForm.reason,
+          },
+        },
+      })
+      setLeaveRequestForm(leaveRequestFormDefaults)
+      setStatusMessage('Leave request created.')
+      await refetch()
+    } catch (mutationError) {
+      setErrorMessage(
+        mutationError instanceof Error
+          ? mutationError.message
+          : 'Unable to request leave.'
+      )
+    }
+  }
+
+  const handleEditLeaveType = (leaveType: {
+    id: string
+    code: string
+    name: string
+    defaultDays: number
+    description?: string | null
+  }) => {
+    setEditingLeaveTypeId(leaveType.id)
+    setLeaveTypeForm({
+      code: leaveType.code,
+      name: leaveType.name,
+      defaultDays: String(leaveType.defaultDays),
+      description: leaveType.description ?? '',
+    })
+    setErrorMessage(null)
+    setStatusMessage(null)
+  }
+
+  const handleCancelLeaveTypeEdit = () => {
+    setEditingLeaveTypeId(null)
+    setLeaveTypeForm(leaveTypeFormDefaults)
+  }
+
+  const handleDeactivateLeaveType = async (leaveTypeId: string, name: string) => {
+    if (!window.confirm(`Deactivate ${name}? New requests will stop using it.`)) {
+      return
+    }
+
+    setErrorMessage(null)
+    setStatusMessage(null)
+
+    try {
+      await deactivateLeaveType({
+        variables: {
+          input: {
+            id: leaveTypeId,
+          },
+        },
+      })
+      setStatusMessage('Leave type deactivated.')
+      await refetch()
+    } catch (mutationError) {
+      setErrorMessage(
+        mutationError instanceof Error
+          ? mutationError.message
+          : 'Unable to deactivate leave type.'
       )
     }
   }
@@ -307,13 +459,36 @@ export function LeavePage() {
                         {leaveType.description}
                       </p>
                     )}
+                    {canManageLeavePolicies ? (
+                      <div className="mt-3 flex flex-wrap gap-2">
+                        <Button
+                          type="button"
+                          variant="outline"
+                          onClick={() => handleEditLeaveType(leaveType)}
+                        >
+                          <Pencil className="mr-2 h-4 w-4" />
+                          Edit
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          disabled={deactivatingLeaveType}
+                          onClick={() =>
+                            handleDeactivateLeaveType(leaveType.id, leaveType.name)
+                          }
+                        >
+                          <XCircle className="mr-2 h-4 w-4" />
+                          Deactivate
+                        </Button>
+                      </div>
+                    ) : null}
                   </div>
                 )
               )}
             </div>
 
             {canManageLeavePolicies && (
-              <form className="space-y-4 border-t pt-4" onSubmit={handleCreateLeaveType}>
+              <form className="space-y-4 border-t pt-4" onSubmit={handleSaveLeaveType}>
                 <div className="grid gap-4 sm:grid-cols-2">
                   <div className="space-y-2">
                     <Label htmlFor="leave-type-code">Code</Label>
@@ -379,14 +554,131 @@ export function LeavePage() {
                     />
                   </div>
                 </div>
-                <Button type="submit" disabled={creatingLeaveType}>
-                  {creatingLeaveType ? 'Saving...' : 'Create Leave Type'}
+                <Button type="submit" disabled={creatingLeaveType || updatingLeaveType}>
+                  {creatingLeaveType || updatingLeaveType
+                    ? 'Saving...'
+                    : editingLeaveTypeId
+                      ? 'Update Leave Type'
+                      : 'Create Leave Type'}
                 </Button>
+                {editingLeaveTypeId ? (
+                  <Button type="button" variant="outline" onClick={handleCancelLeaveTypeEdit}>
+                    Cancel Edit
+                  </Button>
+                ) : null}
               </form>
             )}
           </CardContent>
         </Card>
       </div>
+
+      <Card>
+        <CardHeader>
+          <p className="app-kicker">Request</p>
+          <CardTitle>Create Leave Request</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <form className="grid gap-4 lg:grid-cols-5" onSubmit={handleRequestLeave}>
+            <div className="space-y-2 lg:col-span-2">
+              <Label htmlFor="leave-request-employee">Employee</Label>
+              <select
+                id="leave-request-employee"
+                value={leaveRequestForm.employeeId}
+                onChange={(event) =>
+                  setLeaveRequestForm((current) => ({
+                    ...current,
+                    employeeId: event.target.value,
+                  }))
+                }
+                required
+              >
+                <option value="">Select employee</option>
+                {employees.map(
+                  (employee: { id: string; fullName: string; employeeNumber: string }) => (
+                    <option key={employee.id} value={employee.id}>
+                      {employee.fullName} ({employee.employeeNumber})
+                    </option>
+                  )
+                )}
+              </select>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="leave-request-type">Leave Type</Label>
+              <select
+                id="leave-request-type"
+                value={leaveRequestForm.leaveTypeId}
+                onChange={(event) =>
+                  setLeaveRequestForm((current) => ({
+                    ...current,
+                    leaveTypeId: event.target.value,
+                  }))
+                }
+                required
+              >
+                <option value="">Select type</option>
+                {leaveTypes.map((leaveType: { id: string; name: string; code: string }) => (
+                  <option key={leaveType.id} value={leaveType.id}>
+                    {leaveType.name} ({leaveType.code})
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="leave-request-start">Start</Label>
+              <Input
+                id="leave-request-start"
+                type="date"
+                value={leaveRequestForm.startDate}
+                onChange={(event) =>
+                  setLeaveRequestForm((current) => ({
+                    ...current,
+                    startDate: event.target.value,
+                  }))
+                }
+                required
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="leave-request-end">End</Label>
+              <Input
+                id="leave-request-end"
+                type="date"
+                value={leaveRequestForm.endDate}
+                onChange={(event) =>
+                  setLeaveRequestForm((current) => ({
+                    ...current,
+                    endDate: event.target.value,
+                  }))
+                }
+                required
+              />
+            </div>
+            <div className="space-y-2 lg:col-span-4">
+              <Label htmlFor="leave-request-reason">Reason</Label>
+              <Input
+                id="leave-request-reason"
+                value={leaveRequestForm.reason}
+                onChange={(event) =>
+                  setLeaveRequestForm((current) => ({
+                    ...current,
+                    reason: event.target.value,
+                  }))
+                }
+                required
+              />
+            </div>
+            <div className="flex items-end">
+              <Button
+                className="w-full"
+                type="submit"
+                disabled={requestingLeave || employees.length === 0 || leaveTypes.length === 0}
+              >
+                {requestingLeave ? 'Saving...' : 'Create Request'}
+              </Button>
+            </div>
+          </form>
+        </CardContent>
+      </Card>
 
       <Card>
         <CardHeader>

@@ -39,3 +39,7 @@ logs/
 coverage/
 .coverage
 htmlcov/
+
+# Local verification artifacts
+.playwright-cli/
+output/playwright/

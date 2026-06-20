@@ -666,7 +666,7 @@ describe('Mobile self-service flows', () => {
         }
       `,
       {
-        payslipId: (await getPayslipIds(payrollPeriodId))[0],
+        payslipId: (await getPayslipIds(payrollPeriodId, employeeId))[0],
       },
       employeeToken,
     );
@@ -788,10 +788,17 @@ describe('Mobile self-service flows', () => {
     return rows.map((row) => row.id);
   }
 
-  async function getPayslipIds(periodId: string) {
+  async function getPayslipIds(periodId: string, employeeRecordId?: string) {
+    const values = employeeRecordId ? [periodId, employeeRecordId] : [periodId];
     const rows = await prisma.many<{ id: string }>(
-      `SELECT id FROM payslips WHERE payroll_period_id = $1`,
-      [periodId],
+      `
+        SELECT id
+        FROM payslips
+        WHERE payroll_period_id = $1
+          ${employeeRecordId ? 'AND employee_id = $2' : ''}
+        ORDER BY id ASC
+      `,
+      values,
     );
 
     return rows.map((row) => row.id);

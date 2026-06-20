@@ -20,6 +20,8 @@ import { PrismaService } from '../prisma/prisma.service';
 import {
   AssignEmployeeLocationInput,
   CreateLocationInput,
+  DeactivateLocationInput,
+  UpdateLocationInput,
 } from './location.types';
 import { GeofenceService } from './geofence.service';
 
@@ -192,6 +194,77 @@ export class LocationService {
     );
 
     return this.findOne(currentUser, created!.id);
+  }
+
+  async update(currentUser: AuthenticatedUser, input: UpdateLocationInput) {
+    assertAccountManagerAccess(currentUser.roles);
+    const existing = await this.findLocationById(input.id);
+    const code = input.code?.trim().toUpperCase() ?? existing.code;
+
+    if (code !== existing.code) {
+      const duplicate = await this.prisma.one<{ id: string }>(
+        `SELECT id FROM locations WHERE code = $1 AND id <> $2`,
+        [code, input.id],
+      );
+
+      if (duplicate) {
+        throw new ConflictException('Location with this code already exists');
+      }
+    }
+
+    await this.prisma.query(
+      `
+        UPDATE locations
+        SET
+          code = $2,
+          name = $3,
+          latitude = $4,
+          longitude = $5,
+          geofence_radius = $6,
+          address = $7,
+          city = $8,
+          state = $9,
+          country = $10,
+          postal_code = $11,
+          landmark = $12,
+          updated_at = NOW()
+        WHERE id = $1
+      `,
+      [
+        input.id,
+        code,
+        input.name?.trim() ?? existing.name,
+        input.latitude ?? existing.latitude,
+        input.longitude ?? existing.longitude,
+        input.geofenceRadius ?? existing.geofenceRadius,
+        input.address?.trim() ?? existing.address,
+        input.city !== undefined ? input.city?.trim() || null : existing.city,
+        input.state !== undefined ? input.state?.trim() || null : existing.state,
+        input.country?.trim().toUpperCase() ?? existing.country,
+        input.postalCode !== undefined
+          ? input.postalCode?.trim() || null
+          : existing.postalCode,
+        input.landmark !== undefined ? input.landmark?.trim() || null : existing.landmark,
+      ],
+    );
+
+    return this.findOne(currentUser, input.id);
+  }
+
+  async deactivate(currentUser: AuthenticatedUser, input: DeactivateLocationInput) {
+    assertAccountManagerAccess(currentUser.roles);
+    await this.findLocationById(input.id);
+
+    await this.prisma.query(
+      `
+        UPDATE locations
+        SET is_active = FALSE, updated_at = NOW()
+        WHERE id = $1
+      `,
+      [input.id],
+    );
+
+    return this.findOne(currentUser, input.id);
   }
 
   async assignEmployee(

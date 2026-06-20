@@ -4,24 +4,28 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { Plus, Search } from 'lucide-react'
+import { Pencil, Plus, Search, UserX } from 'lucide-react'
 import { Notice } from '@/components/ui/notice'
 import { StatusBadge } from '@/components/ui/status-badge'
 import { canManageAccounts, readStoredAdminAccount } from '@/lib/auth-session'
 
 const EMPLOYEE_PAGE_QUERY = gql`
   query EmployeePageData($filter: EmployeeFilterInput) {
-    departments {
+    departments(includeInactive: true) {
       id
       name
       code
+      description
+      isActive
     }
-    designations {
+    designations(includeInactive: true) {
       id
       title
       code
       departmentId
       level
+      description
+      isActive
       department {
         id
         name
@@ -37,7 +41,10 @@ const EMPLOYEE_PAGE_QUERY = gql`
       phone
       employmentType
       joinDate
+      exitDate
       status
+      isActive
+      supervisorId
       hasLinkedAccount
       linkedAccountEmail
       linkedAccountRoles
@@ -63,6 +70,23 @@ const CREATE_DEPARTMENT_MUTATION = gql`
   }
 `
 
+const UPDATE_DEPARTMENT_MUTATION = gql`
+  mutation UpdateDepartment($input: UpdateDepartmentInput!) {
+    updateDepartment(input: $input) {
+      id
+    }
+  }
+`
+
+const DEACTIVATE_DEPARTMENT_MUTATION = gql`
+  mutation DeactivateDepartment($input: DeactivateDepartmentInput!) {
+    deactivateDepartment(input: $input) {
+      id
+      isActive
+    }
+  }
+`
+
 const CREATE_DESIGNATION_MUTATION = gql`
   mutation CreateDesignation($input: CreateDesignationInput!) {
     createDesignation(input: $input) {
@@ -71,10 +95,45 @@ const CREATE_DESIGNATION_MUTATION = gql`
   }
 `
 
+const UPDATE_DESIGNATION_MUTATION = gql`
+  mutation UpdateDesignation($input: UpdateDesignationInput!) {
+    updateDesignation(input: $input) {
+      id
+    }
+  }
+`
+
+const DEACTIVATE_DESIGNATION_MUTATION = gql`
+  mutation DeactivateDesignation($input: DeactivateDesignationInput!) {
+    deactivateDesignation(input: $input) {
+      id
+      isActive
+    }
+  }
+`
+
 const CREATE_EMPLOYEE_MUTATION = gql`
   mutation CreateEmployee($input: CreateEmployeeInput!) {
     createEmployee(input: $input) {
       id
+    }
+  }
+`
+
+const UPDATE_EMPLOYEE_MUTATION = gql`
+  mutation UpdateEmployee($input: UpdateEmployeeInput!) {
+    updateEmployee(input: $input) {
+      id
+    }
+  }
+`
+
+const DEACTIVATE_EMPLOYEE_MUTATION = gql`
+  mutation DeactivateEmployee($input: DeactivateEmployeeInput!) {
+    deactivateEmployee(input: $input) {
+      id
+      status
+      isActive
     }
   }
 `
@@ -121,6 +180,7 @@ type EmployeeFormState = {
   designationId: string
   employmentType: string
   joinDate: string
+  status: string
 }
 
 type EmployeeAccountFormState = {
@@ -157,6 +217,7 @@ const employeeFormDefaults: EmployeeFormState = {
   designationId: '',
   employmentType: 'FULL_TIME',
   joinDate: new Date().toISOString().slice(0, 10),
+  status: 'ACTIVE',
 }
 
 const employeeAccountFormDefaults: EmployeeAccountFormState = {
@@ -179,8 +240,11 @@ export function EmployeesPage() {
   const [statusMessage, setStatusMessage] = useState<string | null>(null)
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
   const [departmentForm, setDepartmentForm] = useState(departmentFormDefaults)
+  const [editingDepartmentId, setEditingDepartmentId] = useState<string | null>(null)
   const [designationForm, setDesignationForm] = useState(designationFormDefaults)
+  const [editingDesignationId, setEditingDesignationId] = useState<string | null>(null)
   const [employeeForm, setEmployeeForm] = useState(employeeFormDefaults)
+  const [editingEmployeeId, setEditingEmployeeId] = useState<string | null>(null)
   const [employeeAccountForm, setEmployeeAccountForm] = useState(employeeAccountFormDefaults)
   const [staffAccessForm, setStaffAccessForm] = useState(staffAccessFormDefaults)
 
@@ -197,11 +261,29 @@ export function EmployeesPage() {
   const [createDepartment, { loading: creatingDepartment }] = useMutation(
     CREATE_DEPARTMENT_MUTATION
   )
+  const [updateDepartment, { loading: updatingDepartment }] = useMutation(
+    UPDATE_DEPARTMENT_MUTATION
+  )
+  const [deactivateDepartment, { loading: deactivatingDepartment }] = useMutation(
+    DEACTIVATE_DEPARTMENT_MUTATION
+  )
   const [createDesignation, { loading: creatingDesignation }] = useMutation(
     CREATE_DESIGNATION_MUTATION
   )
+  const [updateDesignation, { loading: updatingDesignation }] = useMutation(
+    UPDATE_DESIGNATION_MUTATION
+  )
+  const [deactivateDesignation, { loading: deactivatingDesignation }] = useMutation(
+    DEACTIVATE_DESIGNATION_MUTATION
+  )
   const [createEmployee, { loading: creatingEmployee }] = useMutation(
     CREATE_EMPLOYEE_MUTATION
+  )
+  const [updateEmployee, { loading: updatingEmployee }] = useMutation(
+    UPDATE_EMPLOYEE_MUTATION
+  )
+  const [deactivateEmployee, { loading: deactivatingEmployee }] = useMutation(
+    DEACTIVATE_EMPLOYEE_MUTATION
   )
   const [createEmployeeAccount, { loading: creatingEmployeeAccount }] = useMutation(
     CREATE_EMPLOYEE_ACCOUNT_MUTATION
@@ -213,13 +295,19 @@ export function EmployeesPage() {
   const departments = data?.departments ?? []
   const designations = data?.designations ?? []
   const employees = data?.employees ?? []
+  const activeDepartments = departments.filter(
+    (department: { isActive: boolean }) => department.isActive
+  )
+  const activeDesignations = designations.filter(
+    (designation: { isActive: boolean }) => designation.isActive
+  )
 
   const employeeDesignationOptions = employeeForm.departmentId
-    ? designations.filter(
+    ? activeDesignations.filter(
         (designation: { departmentId: string }) =>
           designation.departmentId === employeeForm.departmentId
       )
-    : designations
+    : activeDesignations
 
   const selectedEmployeeForAccount = employees.find(
     (employee: { id: string }) => employee.id === employeeAccountForm.employeeId
@@ -231,93 +319,297 @@ export function EmployeesPage() {
     selectedEmployeeForStaffAccess?.hasLinkedAccount
   )
 
-  const handleCreateDepartment = async (event: FormEvent<HTMLFormElement>) => {
+  const handleSaveDepartment = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
     setErrorMessage(null)
     setStatusMessage(null)
 
     try {
-      await createDepartment({
-        variables: {
-          input: {
-            name: departmentForm.name,
-            code: departmentForm.code,
-            description: departmentForm.description || null,
+      const input = {
+        name: departmentForm.name,
+        code: departmentForm.code,
+        description: departmentForm.description || null,
+      }
+
+      if (editingDepartmentId) {
+        await updateDepartment({
+          variables: {
+            input: {
+              id: editingDepartmentId,
+              ...input,
+            },
           },
-        },
-      })
+        })
+      } else {
+        await createDepartment({
+          variables: {
+            input,
+          },
+        })
+      }
       setDepartmentForm(departmentFormDefaults)
-      setStatusMessage('Department created.')
+      setEditingDepartmentId(null)
+      setStatusMessage(editingDepartmentId ? 'Department updated.' : 'Department created.')
       await refetch()
     } catch (mutationError) {
       setErrorMessage(
         mutationError instanceof Error
           ? mutationError.message
-          : 'Unable to create department.'
+          : 'Unable to save department.'
       )
     }
   }
 
-  const handleCreateDesignation = async (event: FormEvent<HTMLFormElement>) => {
+  const handleEditDepartment = (department: {
+    id: string
+    name: string
+    code: string
+    description?: string | null
+  }) => {
+    setEditingDepartmentId(department.id)
+    setDepartmentForm({
+      name: department.name,
+      code: department.code,
+      description: department.description ?? '',
+    })
+    setErrorMessage(null)
+    setStatusMessage(null)
+  }
+
+  const handleCancelDepartmentEdit = () => {
+    setEditingDepartmentId(null)
+    setDepartmentForm(departmentFormDefaults)
+  }
+
+  const handleDeactivateDepartment = async (departmentId: string, name: string) => {
+    if (!window.confirm(`Deactivate ${name}? New employees cannot use it.`)) {
+      return
+    }
+
+    setErrorMessage(null)
+    setStatusMessage(null)
+
+    try {
+      await deactivateDepartment({
+        variables: {
+          input: {
+            id: departmentId,
+          },
+        },
+      })
+      setStatusMessage('Department deactivated.')
+      await refetch()
+    } catch (mutationError) {
+      setErrorMessage(
+        mutationError instanceof Error
+          ? mutationError.message
+          : 'Unable to deactivate department.'
+      )
+    }
+  }
+
+  const handleSaveDesignation = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
     setErrorMessage(null)
     setStatusMessage(null)
 
     try {
-      await createDesignation({
-        variables: {
-          input: {
-            title: designationForm.title,
-            code: designationForm.code,
-            departmentId: designationForm.departmentId,
-            level: Number.parseInt(designationForm.level || '1', 10),
-            description: designationForm.description || null,
+      const input = {
+        title: designationForm.title,
+        code: designationForm.code,
+        departmentId: designationForm.departmentId,
+        level: Number.parseInt(designationForm.level || '1', 10),
+        description: designationForm.description || null,
+      }
+
+      if (editingDesignationId) {
+        await updateDesignation({
+          variables: {
+            input: {
+              id: editingDesignationId,
+              ...input,
+            },
           },
-        },
-      })
+        })
+      } else {
+        await createDesignation({
+          variables: {
+            input,
+          },
+        })
+      }
       setDesignationForm((current) => ({
         ...designationFormDefaults,
         departmentId: current.departmentId,
       }))
-      setStatusMessage('Designation created.')
+      setEditingDesignationId(null)
+      setStatusMessage(editingDesignationId ? 'Designation updated.' : 'Designation created.')
       await refetch()
     } catch (mutationError) {
       setErrorMessage(
         mutationError instanceof Error
           ? mutationError.message
-          : 'Unable to create designation.'
+          : 'Unable to save designation.'
       )
     }
   }
 
-  const handleCreateEmployee = async (event: FormEvent<HTMLFormElement>) => {
+  const handleEditDesignation = (designation: {
+    id: string
+    title: string
+    code: string
+    departmentId: string
+    level: number
+    description?: string | null
+  }) => {
+    setEditingDesignationId(designation.id)
+    setDesignationForm({
+      title: designation.title,
+      code: designation.code,
+      departmentId: designation.departmentId,
+      level: String(designation.level),
+      description: designation.description ?? '',
+    })
+    setErrorMessage(null)
+    setStatusMessage(null)
+  }
+
+  const handleCancelDesignationEdit = () => {
+    setEditingDesignationId(null)
+    setDesignationForm(designationFormDefaults)
+  }
+
+  const handleDeactivateDesignation = async (designationId: string, title: string) => {
+    if (!window.confirm(`Deactivate ${title}? New employees cannot use it.`)) {
+      return
+    }
+
+    setErrorMessage(null)
+    setStatusMessage(null)
+
+    try {
+      await deactivateDesignation({
+        variables: {
+          input: {
+            id: designationId,
+          },
+        },
+      })
+      setStatusMessage('Designation deactivated.')
+      await refetch()
+    } catch (mutationError) {
+      setErrorMessage(
+        mutationError instanceof Error
+          ? mutationError.message
+          : 'Unable to deactivate designation.'
+      )
+    }
+  }
+
+  const handleSaveEmployee = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
     setErrorMessage(null)
     setStatusMessage(null)
 
     try {
-      await createEmployee({
-        variables: {
-          input: {
-            firstName: employeeForm.firstName,
-            lastName: employeeForm.lastName,
-            email: employeeForm.email,
-            phone: employeeForm.phone || null,
-            departmentId: employeeForm.departmentId,
-            designationId: employeeForm.designationId,
-            employmentType: employeeForm.employmentType,
-            joinDate: employeeForm.joinDate,
+      const input = {
+        firstName: employeeForm.firstName,
+        lastName: employeeForm.lastName,
+        email: employeeForm.email,
+        phone: employeeForm.phone || null,
+        departmentId: employeeForm.departmentId,
+        designationId: employeeForm.designationId,
+        employmentType: employeeForm.employmentType,
+        joinDate: employeeForm.joinDate,
+        status: employeeForm.status,
+      }
+
+      if (editingEmployeeId) {
+        await updateEmployee({
+          variables: {
+            input: {
+              id: editingEmployeeId,
+              ...input,
+            },
           },
-        },
-      })
+        })
+      } else {
+        await createEmployee({
+          variables: {
+            input,
+          },
+        })
+      }
       setEmployeeForm(employeeFormDefaults)
-      setStatusMessage('Employee created.')
+      setEditingEmployeeId(null)
+      setStatusMessage(editingEmployeeId ? 'Employee updated.' : 'Employee created.')
       await refetch()
     } catch (mutationError) {
       setErrorMessage(
         mutationError instanceof Error
           ? mutationError.message
-          : 'Unable to create employee.'
+          : 'Unable to save employee.'
+      )
+    }
+  }
+
+  const handleEditEmployee = (employee: {
+    id: string
+    firstName: string
+    lastName: string
+    email: string
+    phone?: string | null
+    departmentId: string
+    designationId: string
+    employmentType: string
+    joinDate: string
+    status: string
+  }) => {
+    setShowForms(true)
+    setEditingEmployeeId(employee.id)
+    setEmployeeForm({
+      firstName: employee.firstName,
+      lastName: employee.lastName,
+      email: employee.email,
+      phone: employee.phone ?? '',
+      departmentId: employee.departmentId,
+      designationId: employee.designationId,
+      employmentType: employee.employmentType,
+      joinDate: employee.joinDate,
+      status: employee.status,
+    })
+    setErrorMessage(null)
+    setStatusMessage(null)
+  }
+
+  const handleCancelEmployeeEdit = () => {
+    setEditingEmployeeId(null)
+    setEmployeeForm(employeeFormDefaults)
+  }
+
+  const handleDeactivateEmployee = async (employeeId: string, fullName: string) => {
+    if (!window.confirm(`Deactivate ${fullName}? Linked login access will also be disabled.`)) {
+      return
+    }
+
+    setErrorMessage(null)
+    setStatusMessage(null)
+
+    try {
+      await deactivateEmployee({
+        variables: {
+          input: {
+            id: employeeId,
+          },
+        },
+      })
+      setStatusMessage('Employee deactivated.')
+      await refetch()
+    } catch (mutationError) {
+      setErrorMessage(
+        mutationError instanceof Error
+          ? mutationError.message
+          : 'Unable to deactivate employee.'
       )
     }
   }
@@ -406,10 +698,10 @@ export function EmployeesPage() {
         <div className="grid gap-4 xl:grid-cols-2">
           <Card>
             <CardHeader>
-              <CardTitle>Department Setup</CardTitle>
+              <CardTitle>{editingDepartmentId ? 'Edit Department' : 'Department Setup'}</CardTitle>
             </CardHeader>
             <CardContent>
-              <form className="space-y-4" onSubmit={handleCreateDepartment}>
+              <form className="space-y-4" onSubmit={handleSaveDepartment}>
                 <div className="space-y-2">
                   <Label htmlFor="department-name">Department Name</Label>
                   <Input
@@ -454,19 +746,83 @@ export function EmployeesPage() {
                     placeholder="Optional"
                   />
                 </div>
-                <Button className="w-full" type="submit" disabled={creatingDepartment}>
-                  {creatingDepartment ? 'Saving...' : 'Create Department'}
+                <Button
+                  className="w-full"
+                  type="submit"
+                  disabled={creatingDepartment || updatingDepartment}
+                >
+                  {creatingDepartment || updatingDepartment
+                    ? 'Saving...'
+                    : editingDepartmentId
+                      ? 'Update Department'
+                      : 'Create Department'}
                 </Button>
+                {editingDepartmentId ? (
+                  <Button
+                    className="w-full"
+                    type="button"
+                    variant="outline"
+                    onClick={handleCancelDepartmentEdit}
+                  >
+                    Cancel Edit
+                  </Button>
+                ) : null}
               </form>
+              <div className="mt-5 space-y-2">
+                {departments.map(
+                  (department: {
+                    id: string
+                    name: string
+                    code: string
+                    description?: string | null
+                    isActive: boolean
+                  }) => (
+                    <div key={department.id} className="rounded-lg border p-3 text-sm">
+                      <div className="flex items-center justify-between gap-3">
+                        <div>
+                          <div className="font-medium">{department.name}</div>
+                          <div className="text-muted-foreground">{department.code}</div>
+                        </div>
+                        <StatusBadge tone={department.isActive ? 'success' : 'neutral'}>
+                          {department.isActive ? 'ACTIVE' : 'INACTIVE'}
+                        </StatusBadge>
+                      </div>
+                      <div className="mt-3 flex flex-wrap gap-2">
+                        <Button
+                          type="button"
+                          variant="outline"
+                          onClick={() => handleEditDepartment(department)}
+                        >
+                          <Pencil className="mr-2 h-4 w-4" />
+                          Edit
+                        </Button>
+                        {department.isActive ? (
+                          <Button
+                            type="button"
+                            variant="outline"
+                            disabled={deactivatingDepartment}
+                            onClick={() =>
+                              handleDeactivateDepartment(department.id, department.name)
+                            }
+                          >
+                            <UserX className="mr-2 h-4 w-4" />
+                            Deactivate
+                          </Button>
+                        ) : null}
+                      </div>
+                    </div>
+                  )
+                )}
+              </div>
             </CardContent>
           </Card>
 
           <Card>
             <CardHeader>
-              <CardTitle>Designation Setup</CardTitle>
+              <CardTitle>{editingDesignationId ? 'Edit Designation' : 'Designation Setup'}</CardTitle>
             </CardHeader>
             <CardContent>
-              <form className="space-y-4" onSubmit={handleCreateDesignation}>
+              <form className="space-y-4" onSubmit={handleSaveDesignation}>
                 <div className="space-y-2">
                   <Label htmlFor="designation-title">Designation Title</Label>
                   <Input
@@ -512,7 +868,7 @@ export function EmployeesPage() {
                     required
                   >
                     <option value="">Select department</option>
-                    {departments.map((department: { id: string; name: string }) => (
+                    {activeDepartments.map((department: { id: string; name: string }) => (
                       <option key={department.id} value={department.id}>
                         {department.name}
                       </option>
@@ -538,25 +894,91 @@ export function EmployeesPage() {
                 <Button
                   className="w-full"
                   type="submit"
-                  disabled={creatingDesignation || departments.length === 0}
+                  disabled={
+                    creatingDesignation ||
+                    updatingDesignation ||
+                    activeDepartments.length === 0
+                  }
                 >
-                  {creatingDesignation ? 'Saving...' : 'Create Designation'}
+                  {creatingDesignation || updatingDesignation
+                    ? 'Saving...'
+                    : editingDesignationId
+                      ? 'Update Designation'
+                      : 'Create Designation'}
                 </Button>
-                {departments.length === 0 && (
+                {editingDesignationId ? (
+                  <Button
+                    className="w-full"
+                    type="button"
+                    variant="outline"
+                    onClick={handleCancelDesignationEdit}
+                  >
+                    Cancel Edit
+                  </Button>
+                ) : null}
+                {activeDepartments.length === 0 && (
                   <p className="text-xs text-muted-foreground">
                     Create at least one department before adding designations.
                   </p>
                 )}
               </form>
+              <div className="mt-5 space-y-2">
+                {designations.map(
+                  (designation: {
+                    id: string
+                    title: string
+                    code: string
+                    departmentId: string
+                    level: number
+                    description?: string | null
+                    isActive: boolean
+                  }) => (
+                    <div key={designation.id} className="rounded-lg border p-3 text-sm">
+                      <div className="flex items-center justify-between gap-3">
+                        <div>
+                          <div className="font-medium">{designation.title}</div>
+                          <div className="text-muted-foreground">{designation.code}</div>
+                        </div>
+                        <StatusBadge tone={designation.isActive ? 'success' : 'neutral'}>
+                          {designation.isActive ? 'ACTIVE' : 'INACTIVE'}
+                        </StatusBadge>
+                      </div>
+                      <div className="mt-3 flex flex-wrap gap-2">
+                        <Button
+                          type="button"
+                          variant="outline"
+                          onClick={() => handleEditDesignation(designation)}
+                        >
+                          <Pencil className="mr-2 h-4 w-4" />
+                          Edit
+                        </Button>
+                        {designation.isActive ? (
+                          <Button
+                            type="button"
+                            variant="outline"
+                            disabled={deactivatingDesignation}
+                            onClick={() =>
+                              handleDeactivateDesignation(designation.id, designation.title)
+                            }
+                          >
+                            <UserX className="mr-2 h-4 w-4" />
+                            Deactivate
+                          </Button>
+                        ) : null}
+                      </div>
+                    </div>
+                  )
+                )}
+              </div>
             </CardContent>
           </Card>
 
           <Card>
             <CardHeader>
-              <CardTitle>Create Employee</CardTitle>
+              <CardTitle>{editingEmployeeId ? 'Edit Employee' : 'Create Employee'}</CardTitle>
             </CardHeader>
             <CardContent>
-              <form className="space-y-4" onSubmit={handleCreateEmployee}>
+              <form className="space-y-4" onSubmit={handleSaveEmployee}>
                 <div className="grid gap-4 sm:grid-cols-2">
                   <div className="space-y-2">
                     <Label htmlFor="employee-first-name">First Name</Label>
@@ -632,7 +1054,7 @@ export function EmployeesPage() {
                       required
                     >
                       <option value="">Select department</option>
-                      {departments.map((department: { id: string; name: string }) => (
+                      {activeDepartments.map((department: { id: string; name: string }) => (
                         <option key={department.id} value={department.id}>
                           {department.name}
                         </option>
@@ -700,18 +1122,51 @@ export function EmployeesPage() {
                     />
                   </div>
                 </div>
+                <div className="space-y-2">
+                  <Label htmlFor="employee-status">Status</Label>
+                  <select
+                    id="employee-status"
+                    value={employeeForm.status}
+                    onChange={(event) =>
+                      setEmployeeForm((current) => ({
+                        ...current,
+                        status: event.target.value,
+                      }))
+                    }
+                    className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                  >
+                    <option value="ACTIVE">Active</option>
+                    <option value="ON_LEAVE">On Leave</option>
+                    <option value="INACTIVE">Inactive</option>
+                  </select>
+                </div>
                 <Button
                   className="w-full"
                   type="submit"
                   disabled={
                     creatingEmployee ||
-                    departments.length === 0 ||
-                    designations.length === 0
+                    updatingEmployee ||
+                    activeDepartments.length === 0 ||
+                    activeDesignations.length === 0
                   }
                 >
-                  {creatingEmployee ? 'Saving...' : 'Create Employee'}
+                  {creatingEmployee || updatingEmployee
+                    ? 'Saving...'
+                    : editingEmployeeId
+                      ? 'Update Employee'
+                      : 'Create Employee'}
                 </Button>
-                {(departments.length === 0 || designations.length === 0) && (
+                {editingEmployeeId ? (
+                  <Button
+                    className="w-full"
+                    type="button"
+                    variant="outline"
+                    onClick={handleCancelEmployeeEdit}
+                  >
+                    Cancel Edit
+                  </Button>
+                ) : null}
+                {(activeDepartments.length === 0 || activeDesignations.length === 0) && (
                   <p className="text-xs text-muted-foreground">
                     Add at least one department and designation before creating employees.
                   </p>
@@ -925,6 +1380,9 @@ export function EmployeesPage() {
                     <th className="px-4 py-3 text-left">Login</th>
                     <th className="px-4 py-3 text-left">Join Date</th>
                     <th className="px-4 py-3 text-left">Status</th>
+                    {accountManagerAccess ? (
+                      <th className="px-4 py-3 text-left">Actions</th>
+                    ) : null}
                   </tr>
                 </thead>
                 <tbody>
@@ -934,11 +1392,18 @@ export function EmployeesPage() {
                       employeeNumber: string
                       fullName: string
                       email: string
+                      phone?: string | null
+                      firstName: string
+                      lastName: string
+                      departmentId: string
+                      designationId: string
+                      employmentType: string
                       hasLinkedAccount: boolean
                       linkedAccountEmail?: string | null
                       linkedAccountRoles: string[]
                       joinDate: string
                       status: string
+                      isActive: boolean
                       department: { name: string }
                       designation: { title: string }
                     }) => (
@@ -970,10 +1435,37 @@ export function EmployeesPage() {
                         </td>
                         <td className="px-4 py-3">{employee.joinDate}</td>
                         <td className="px-4 py-3">
-                          <StatusBadge tone="success">
+                          <StatusBadge tone={employee.isActive ? 'success' : 'neutral'}>
                             {employee.status}
                           </StatusBadge>
                         </td>
+                        {accountManagerAccess ? (
+                          <td className="px-4 py-3">
+                            <div className="flex flex-wrap gap-2">
+                              <Button
+                                type="button"
+                                variant="outline"
+                                onClick={() => handleEditEmployee(employee)}
+                              >
+                                <Pencil className="mr-2 h-4 w-4" />
+                                Edit
+                              </Button>
+                              {employee.isActive ? (
+                                <Button
+                                  type="button"
+                                  variant="outline"
+                                  disabled={deactivatingEmployee}
+                                  onClick={() =>
+                                    handleDeactivateEmployee(employee.id, employee.fullName)
+                                  }
+                                >
+                                  <UserX className="mr-2 h-4 w-4" />
+                                  Deactivate
+                                </Button>
+                              ) : null}
+                            </div>
+                          </td>
+                        ) : null}
                       </tr>
                     )
                   )}

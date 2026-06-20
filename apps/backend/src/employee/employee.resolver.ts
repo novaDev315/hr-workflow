@@ -5,8 +5,10 @@ import { CurrentUser, AuthenticatedUser } from '../common/current-user.decorator
 import { EmployeeService } from './employee.service';
 import {
   CreateEmployeeInput,
+  DeactivateEmployeeInput,
   EmployeeFilterInput,
   EmployeeType,
+  UpdateEmployeeInput,
 } from './employee.types';
 
 @UseGuards(GqlAuthGuard)
@@ -36,5 +38,21 @@ export class EmployeeResolver {
     @Args('input') input: CreateEmployeeInput,
   ) {
     return this.employeeService.create(currentUser, input);
+  }
+
+  @Mutation(() => EmployeeType, { name: 'updateEmployee' })
+  async updateEmployee(
+    @CurrentUser() currentUser: AuthenticatedUser,
+    @Args('input') input: UpdateEmployeeInput,
+  ) {
+    return this.employeeService.update(currentUser, input);
+  }
+
+  @Mutation(() => EmployeeType, { name: 'deactivateEmployee' })
+  async deactivateEmployee(
+    @CurrentUser() currentUser: AuthenticatedUser,
+    @Args('input') input: DeactivateEmployeeInput,
+  ) {
+    return this.employeeService.deactivate(currentUser, input);
   }
 }

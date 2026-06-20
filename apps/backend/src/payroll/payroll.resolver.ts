@@ -5,6 +5,7 @@ import { CurrentUser, AuthenticatedUser } from '../common/current-user.decorator
 import { DocumentExportType } from '../common/document-export.types';
 import {
   CreatePayrollPeriodInput,
+  DeletePayrollPeriodInput,
   EmployeeCompensationType,
   MarkPayrollPeriodPaidInput,
   PayslipFilterInput,
@@ -76,5 +77,13 @@ export class PayrollResolver {
     @Args('input') input: MarkPayrollPeriodPaidInput,
   ) {
     return this.payrollService.markPayrollPeriodPaid(currentUser, input);
+  }
+
+  @Mutation(() => Boolean, { name: 'deletePayrollPeriod' })
+  async deletePayrollPeriod(
+    @CurrentUser() currentUser: AuthenticatedUser,
+    @Args('input') input: DeletePayrollPeriodInput,
+  ) {
+    return this.payrollService.deletePayrollPeriod(currentUser, input);
   }
 }

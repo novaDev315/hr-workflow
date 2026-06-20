@@ -6,8 +6,10 @@ import { LocationService } from './location.service';
 import {
   AssignEmployeeLocationInput,
   CreateLocationInput,
+  DeactivateLocationInput,
   EmployeeLocationAssignmentType,
   LocationType,
+  UpdateLocationInput,
 } from './location.types';
 
 @UseGuards(GqlAuthGuard)
@@ -38,6 +40,22 @@ export class LocationResolver {
     @Args('input') input: CreateLocationInput,
   ) {
     return this.locationService.create(currentUser, input);
+  }
+
+  @Mutation(() => LocationType, { name: 'updateLocation' })
+  async updateLocation(
+    @CurrentUser() currentUser: AuthenticatedUser,
+    @Args('input') input: UpdateLocationInput,
+  ) {
+    return this.locationService.update(currentUser, input);
+  }
+
+  @Mutation(() => LocationType, { name: 'deactivateLocation' })
+  async deactivateLocation(
+    @CurrentUser() currentUser: AuthenticatedUser,
+    @Args('input') input: DeactivateLocationInput,
+  ) {
+    return this.locationService.deactivate(currentUser, input);
   }
 
   @Mutation(() => EmployeeLocationAssignmentType, {

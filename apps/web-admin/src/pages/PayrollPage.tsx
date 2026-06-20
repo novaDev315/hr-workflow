@@ -4,7 +4,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { CreditCard, Receipt, Wallet } from 'lucide-react'
+import { CreditCard, Receipt, Trash2, Wallet } from 'lucide-react'
 import { MetricCard } from '@/components/ui/metric-card'
 import { Notice } from '@/components/ui/notice'
 import { StatusBadge } from '@/components/ui/status-badge'
@@ -109,6 +109,12 @@ const MARK_PAYROLL_PERIOD_PAID_MUTATION = gql`
   }
 `
 
+const DELETE_PAYROLL_PERIOD_MUTATION = gql`
+  mutation DeletePayrollPeriod($input: DeletePayrollPeriodInput!) {
+    deletePayrollPeriod(input: $input)
+  }
+`
+
 const EXPORT_PAYSLIP_PDF_QUERY = gql`
   query ExportPayslipPdf($payslipId: String!) {
     exportPayslipPdf(payslipId: $payslipId) {
@@ -170,6 +176,9 @@ export function PayrollPage() {
   )
   const [markPayrollPeriodPaid, { loading: markingPayrollPeriodPaid }] = useMutation(
     MARK_PAYROLL_PERIOD_PAID_MUTATION
+  )
+  const [deletePayrollPeriod, { loading: deletingPayrollPeriod }] = useMutation(
+    DELETE_PAYROLL_PERIOD_MUTATION
   )
 
   const employees = data?.employees ?? []
@@ -281,6 +290,36 @@ export function PayrollPage() {
         mutationError instanceof Error
           ? mutationError.message
           : 'Unable to mark payroll period as paid.'
+      )
+    }
+  }
+
+  const handleDeletePayrollPeriod = async (payrollPeriodId: string, periodMonth: string) => {
+    if (!window.confirm(`Delete payroll period ${periodMonth}? Generated payslips for it will be removed.`)) {
+      return
+    }
+
+    setErrorMessage(null)
+    setStatusMessage(null)
+
+    try {
+      await deletePayrollPeriod({
+        variables: {
+          input: {
+            payrollPeriodId,
+          },
+        },
+      })
+      if (selectedPeriodId === payrollPeriodId) {
+        setSelectedPeriodId(null)
+      }
+      setStatusMessage('Payroll period deleted.')
+      await refetch()
+    } catch (mutationError) {
+      setErrorMessage(
+        mutationError instanceof Error
+          ? mutationError.message
+          : 'Unable to delete payroll period.'
       )
     }
   }
@@ -585,6 +624,19 @@ export function PayrollPage() {
                               disabled={markingPayrollPeriodPaid}
                             >
                               {markingPayrollPeriodPaid ? 'Updating...' : 'Mark Paid'}
+                            </Button>
+                          )}
+                          {period.status !== 'PAID' && (
+                            <Button
+                              type="button"
+                              variant="outline"
+                              onClick={() =>
+                                handleDeletePayrollPeriod(period.id, period.periodMonth)
+                              }
+                              disabled={deletingPayrollPeriod}
+                            >
+                              <Trash2 className="mr-2 h-4 w-4" />
+                              Delete
                             </Button>
                           )}
                         </div>

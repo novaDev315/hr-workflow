@@ -144,6 +144,82 @@ export class CreateLocationInput {
 }
 
 @InputType()
+export class UpdateLocationInput {
+  @Field(() => ID)
+  @IsString()
+  id: string;
+
+  @Field({ nullable: true })
+  @IsOptional()
+  @IsString()
+  @MaxLength(120)
+  name?: string;
+
+  @Field({ nullable: true })
+  @IsOptional()
+  @Matches(/^[A-Z0-9_]+$/)
+  code?: string;
+
+  @Field(() => Float, { nullable: true })
+  @IsOptional()
+  @IsNumber()
+  latitude?: number;
+
+  @Field(() => Float, { nullable: true })
+  @IsOptional()
+  @IsNumber()
+  longitude?: number;
+
+  @Field({ nullable: true })
+  @IsOptional()
+  @Min(20)
+  geofenceRadius?: number;
+
+  @Field({ nullable: true })
+  @IsOptional()
+  @IsString()
+  @MaxLength(255)
+  address?: string;
+
+  @Field({ nullable: true })
+  @IsOptional()
+  @IsString()
+  @MaxLength(120)
+  city?: string;
+
+  @Field({ nullable: true })
+  @IsOptional()
+  @IsString()
+  @MaxLength(120)
+  state?: string;
+
+  @Field({ nullable: true })
+  @IsOptional()
+  @IsString()
+  @MaxLength(2)
+  country?: string;
+
+  @Field({ nullable: true })
+  @IsOptional()
+  @IsString()
+  @MaxLength(40)
+  postalCode?: string;
+
+  @Field({ nullable: true })
+  @IsOptional()
+  @IsString()
+  @MaxLength(120)
+  landmark?: string;
+}
+
+@InputType()
+export class DeactivateLocationInput {
+  @Field(() => ID)
+  @IsString()
+  id: string;
+}
+
+@InputType()
 export class AssignEmployeeLocationInput {
   @Field()
   @IsString()
