@@ -20,6 +20,7 @@ try {
 const adminEmail = process.env.RAKSS_ADMIN_EMAIL || 'admin@rakss.lab.novadev.tech';
 const adminPassword = process.env.RAKSS_ADMIN_PASSWORD;
 const baseUrl = process.env.RAKSS_ADMIN_URL || 'https://admin.rakss.lab.novadev.tech';
+const executablePath = process.env.PLAYWRIGHT_MCP_EXECUTABLE_PATH || process.env.PLAYWRIGHT_CHROME;
 
 await mkdir('output/playwright', { recursive: true });
 
@@ -43,7 +44,10 @@ const sweepSource = await readFile(
   'utf8',
 );
 const sweep = eval(sweepSource);
-const browser = await chromium.launch({ headless: true });
+const browser = await chromium.launch({
+  headless: true,
+  ...(executablePath ? { executablePath } : {}),
+});
 const page = await browser.newPage({ viewport: { width: 1280, height: 900 } });
 
 try {

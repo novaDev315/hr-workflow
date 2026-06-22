@@ -63,6 +63,11 @@
     return payload.body.data;
   }
 
+  async function closeForm() {
+    await page.getByLabel('Close form').click();
+    await page.getByLabel('Close form').waitFor({ state: 'hidden' });
+  }
+
   await page.goto(baseUrl, { waitUntil: 'networkidle' });
   const token = await page.evaluate(() => localStorage.getItem('auth_token'));
   const account = await page.evaluate(() => {
@@ -92,7 +97,7 @@
   proof.created.department = department;
   check('ui create department');
 
-  await page.locator('.rounded-lg.border').filter({ hasText: `UI_OPS_${runId}` }).getByRole('button', { name: 'Edit' }).click();
+  await page.locator('.app-muted-surface').filter({ hasText: `UI_OPS_${runId}` }).getByRole('button', { name: 'Edit' }).click();
   await page.locator('#department-description').fill('Updated by UI lifecycle sweep');
   await page.getByRole('button', { name: 'Update Department' }).click();
   await page.getByText('Department updated.').waitFor();
@@ -110,7 +115,7 @@
   proof.created.designation = designation;
   check('ui create designation');
 
-  await page.locator('.rounded-lg.border').filter({ hasText: `UI_COORD_${runId}` }).getByRole('button', { name: 'Edit' }).click();
+  await page.locator('.app-muted-surface').filter({ hasText: `UI_COORD_${runId}` }).getByRole('button', { name: 'Edit' }).click();
   await page.locator('#designation-level').fill('3');
   await page.getByRole('button', { name: 'Update Designation' }).click();
   await page.getByText('Designation updated.').waitFor();
@@ -126,6 +131,7 @@
   await page.locator('#employee-join-date').fill(today);
   await page.getByRole('button', { name: 'Create Employee', exact: true }).click();
   await page.getByText('Employee created.').waitFor();
+  await closeForm();
   await page.getByPlaceholder('Search employees').fill(employeeEmail);
   await page.getByRole('cell', { name: employeeEmail }).waitFor();
   const employee = await gql(`
@@ -143,7 +149,6 @@
   await page.getByText('Employee updated.').waitFor();
   check('ui update employee');
 
-  await page.getByPlaceholder('Search employees').fill('');
   await page.locator('#employee-account-employee').selectOption(employee.id);
   await page.locator('#employee-account-password').fill(`Ui.${runId}.Pass1`);
   await page.getByRole('button', { name: 'Create Employee Account', exact: true }).click();
@@ -171,6 +176,7 @@
     throw new Error('Staff access UI action did not add SUPERVISOR role');
   }
   check('ui provision staff access', { roles: staffAccount.linkedAccountRoles });
+  await closeForm();
 
   await page.goto(`${baseUrl}/directory`, { waitUntil: 'networkidle' });
   await page.getByText(employeeEmail).waitFor();
@@ -196,6 +202,7 @@
   `, {}, token).then((data) => data.locations.find((row) => row.code === `UI_HQ_${runId}`));
   proof.created.location = location;
   check('ui create location');
+  await closeForm();
 
   await page.locator('.app-muted-surface').filter({ hasText: `UI_HQ_${runId}` }).getByRole('button', { name: 'Edit' }).click();
   await page.locator('#location-city').fill('Abu Dhabi');
@@ -208,6 +215,7 @@
   await page.getByRole('button', { name: 'Assign Location' }).click();
   await page.getByText('Location assignment saved.').waitFor();
   check('ui assign location');
+  await closeForm();
 
   await page.locator('#attendance-employee').selectOption(employee.id);
   await page.locator('#attendance-location').selectOption(location.id);
@@ -223,6 +231,7 @@
   check('ui deactivate location');
 
   await page.goto(`${baseUrl}/leave`, { waitUntil: 'networkidle' });
+  await page.getByRole('button', { name: 'New leave type' }).click();
   await page.locator('#leave-type-code').fill(`UI_${runId.slice(4)}`);
   await page.locator('#leave-type-name').fill(`UI Leave ${runId}`);
   await page.locator('#leave-type-days').fill('2');
@@ -235,12 +244,13 @@
   proof.created.leaveType = leaveType;
   check('ui create leave type');
 
-  await page.locator('.rounded-lg.border').filter({ hasText: `UI Leave ${runId}` }).getByRole('button', { name: 'Edit' }).click();
+  await page.locator('.app-muted-surface').filter({ hasText: `UI Leave ${runId}` }).getByRole('button', { name: 'Edit' }).click();
   await page.locator('#leave-type-days').fill('3');
   await page.getByRole('button', { name: 'Update Leave Type' }).click();
   await page.getByText('Leave type updated.').waitFor();
   check('ui update leave type');
 
+  await page.getByRole('button', { name: 'New leave request' }).click();
   await page.locator('#leave-request-employee').selectOption(employee.id);
   await page.locator('#leave-request-type').selectOption(leaveType.id);
   await page.locator('#leave-request-start').fill(futureDate(14));
@@ -251,13 +261,13 @@
   check('ui create leave request');
 
   await page.reload({ waitUntil: 'networkidle' });
-  const leaveCard = page.locator('div.rounded-lg.border').filter({ hasText: `UI Employee ${runId}` }).first();
+  const leaveCard = page.locator('.app-muted-surface').filter({ hasText: `UI Employee ${runId}` }).first();
   await leaveCard.waitFor();
   await leaveCard.getByPlaceholder('Optional decision note').fill('Rejected by UI lifecycle sweep');
   await leaveCard.getByRole('button', { name: 'Reject' }).click();
   await page.getByText('Leave request rejected.').waitFor();
   check('ui review leave request reject');
-  await page.locator('.rounded-lg.border').filter({ hasText: `UI Leave ${runId}` }).getByRole('button', { name: 'Deactivate' }).click();
+  await page.locator('.app-muted-surface').filter({ hasText: `UI Leave ${runId}` }).getByRole('button', { name: 'Deactivate' }).click();
   await page.getByText('Leave type deactivated.').waitFor();
   check('ui deactivate leave type');
 
@@ -272,11 +282,12 @@
   await page.getByRole('button', { name: 'Save Compensation' }).click();
   await page.getByText('Compensation profile saved.').waitFor();
   check('ui create/update compensation profile');
+  await closeForm();
 
   await page.locator('#period-month').fill(payrollDeleteMonth);
   await page.getByRole('button', { name: 'Create Period' }).click();
   await page.getByText('Payroll period created.').waitFor();
-  await page.locator('.rounded-lg.border').filter({ hasText: payrollDeleteMonth }).getByRole('button', { name: 'Delete' }).click();
+  await page.locator('.app-muted-surface').filter({ hasText: payrollDeleteMonth }).getByRole('button', { name: 'Delete' }).click();
   await page.getByText('Payroll period deleted.').waitFor();
   check('ui delete open payroll period');
 
@@ -284,9 +295,9 @@
   await page.getByRole('button', { name: 'Create Period' }).click();
   await page.getByText('Payroll period created.').waitFor();
   check('ui create payroll period');
-  await page.locator('.rounded-lg.border').filter({ hasText: payrollMonth }).getByRole('button', { name: 'Process' }).click();
+  await page.locator('.app-muted-surface').filter({ hasText: payrollMonth }).getByRole('button', { name: 'Process' }).click();
   await page.getByText('Payroll processed.').waitFor();
-  await page.locator('.rounded-lg.border').filter({ hasText: payrollMonth }).getByRole('button', { name: 'Mark Paid' }).click();
+  await page.locator('.app-muted-surface').filter({ hasText: payrollMonth }).getByRole('button', { name: 'Mark Paid' }).click();
   await page.getByText('Payroll period marked as paid.').waitFor();
   await page.getByRole('button', { name: 'Download PDF' }).first().click();
   await page.getByText('Payslip PDF downloaded.').waitFor();
@@ -453,10 +464,10 @@
   check('ui deactivate employee');
 
   await page.getByRole('button', { name: 'Add records' }).click();
-  await page.locator('.rounded-lg.border').filter({ hasText: `UI_COORD_${runId}` }).getByRole('button', { name: 'Deactivate' }).click();
+  await page.locator('.app-muted-surface').filter({ hasText: `UI_COORD_${runId}` }).getByRole('button', { name: 'Deactivate' }).click();
   await page.getByText('Designation deactivated.').waitFor();
   check('ui deactivate designation');
-  await page.locator('.rounded-lg.border').filter({ hasText: `UI_OPS_${runId}` }).getByRole('button', { name: 'Deactivate' }).click();
+  await page.locator('.app-muted-surface').filter({ hasText: `UI_OPS_${runId}` }).getByRole('button', { name: 'Deactivate' }).click();
   await page.getByText('Department deactivated.').waitFor();
   check('ui deactivate department');
 
