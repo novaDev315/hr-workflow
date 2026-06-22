@@ -19,13 +19,24 @@ try {
 
 const adminEmail = process.env.RAKSS_ADMIN_EMAIL || 'admin@rakss.lab.novadev.tech';
 const adminPassword = process.env.RAKSS_ADMIN_PASSWORD;
-const baseUrl = 'https://admin.rakss.lab.novadev.tech';
-
-if (!adminPassword) {
-  throw new Error('RAKSS_ADMIN_PASSWORD is required');
-}
+const baseUrl = process.env.RAKSS_ADMIN_URL || 'https://admin.rakss.lab.novadev.tech';
 
 await mkdir('output/playwright', { recursive: true });
+
+if (!adminPassword) {
+  await writeFile(
+    'output/playwright/rakss-ui-lifecycle-proof.json',
+    `${JSON.stringify({
+      ok: false,
+      blocked: true,
+      reason: 'RAKSS_ADMIN_PASSWORD is required',
+      baseUrl,
+      adminEmail,
+      checkedAt: new Date().toISOString(),
+    }, null, 2)}\n`,
+  );
+  throw new Error('RAKSS_ADMIN_PASSWORD is required');
+}
 
 const sweepSource = await readFile(
   new URL('./rakss-ui-lifecycle-sweep.js', import.meta.url),

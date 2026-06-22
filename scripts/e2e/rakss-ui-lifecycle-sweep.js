@@ -1,7 +1,7 @@
 (page) => (async () => {
-  const adminEmail = 'admin@rakss.lab.novadev.tech';
-  const apiUrl = 'https://api.rakss.lab.novadev.tech/graphql';
-  const baseUrl = 'https://admin.rakss.lab.novadev.tech';
+  const adminEmail = process.env.RAKSS_ADMIN_EMAIL || 'admin@rakss.lab.novadev.tech';
+  const apiUrl = process.env.RAKSS_API_URL || 'https://api.rakss.lab.novadev.tech/graphql';
+  const baseUrl = process.env.RAKSS_ADMIN_URL || 'https://admin.rakss.lab.novadev.tech';
   const runId = new Date().toISOString().replace(/[-:.TZ]/g, '').slice(0, 14);
   const today = new Date().toISOString().slice(0, 10);
   const runMinuteIndex = Number(runId.slice(8, 10)) * 60 + Number(runId.slice(10, 12));
@@ -466,8 +466,11 @@
   check('ui export reports pdf button');
 
   await page.goto(`${baseUrl}/demos`, { waitUntil: 'networkidle' });
-  await page.getByText('Talent Haven').first().waitFor();
-  check('demos gallery renders');
+  const demoGalleryCount = await page.getByText('Rakss demo gallery').count();
+  if (demoGalleryCount > 0) {
+    throw new Error('Production admin app mounted the demo gallery');
+  }
+  check('production demo routes not mounted');
 
   await page.goto(`${baseUrl}/`, { waitUntil: 'networkidle' });
   await page.setViewportSize({ width: 390, height: 844 });
