@@ -170,6 +170,47 @@ Serve `apps/web-admin/dist` behind your reverse proxy or static web server.
 - GraphQL endpoint: `POST /graphql`
 - Policy files: `GET /policy-files/:storedFileName`
 
+## Current Deployment Proof
+
+Last checked: June 22, 2026.
+
+Local deployment contract:
+
+```bash
+docker compose config
+docker compose -f docker-compose.dev.yml config
+bun run build
+```
+
+Result:
+
+- Production compose renders a PostgreSQL service and backend service on port `4001`.
+- Development compose renders a PostgreSQL service and watch-mode backend service on port `4001`.
+- Full repo build passes across backend, admin portal, and mobile typecheck.
+
+Live route checks:
+
+```bash
+curl -I -L https://admin.rakss.lab.novadev.tech
+curl -I -L https://admin.rakss.lab.novadev.tech/health
+curl -I -L https://api.rakss.lab.novadev.tech/health
+curl -sS -X POST https://api.rakss.lab.novadev.tech/graphql \
+  -H 'content-type: application/json' \
+  --data '{"query":"query { __typename }"}'
+```
+
+Result:
+
+- `https://admin.rakss.lab.novadev.tech` returns HTTP `200`.
+- `https://admin.rakss.lab.novadev.tech/health` returns HTTP `200`.
+- `https://api.rakss.lab.novadev.tech/health` returns HTTP `200`.
+- GraphQL returns `{"data":{"__typename":"Query"}}`.
+
+Homelab caveat:
+
+- `homelab --project-root /home/nova/projects/work/rakss --output json validate` passes global Homelab contract validation, with a warning that project config discovery for `homelab.yaml` is not yet enforced.
+- `homelab --project-root /home/nova/projects/work/rakss --output json apps database verify rakss --service backend` failed with `ssh failed: remote command`; do not treat database provisioning verification as complete until that exact command passes or the remote-side failure is explained.
+
 ### Suggested Smoke Checks
 
 ```bash
