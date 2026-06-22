@@ -211,6 +211,35 @@ Homelab caveat:
 - `homelab --project-root /home/nova/projects/work/rakss --output json validate` passes global Homelab contract validation, with a warning that project config discovery for `homelab.yaml` is not yet enforced.
 - `homelab --project-root /home/nova/projects/work/rakss --output json apps database verify rakss --service backend` failed with `ssh failed: remote command`; do not treat database provisioning verification as complete until that exact command passes or the remote-side failure is explained.
 
+## Operations Hardening Status
+
+Last checked: June 22, 2026.
+
+Implemented in the current backend:
+
+- Helmet is enabled in `apps/backend/src/main.ts`; production enables Helmet content security policy.
+- Response compression is enabled.
+- Global validation uses whitelist, transform, and `forbidNonWhitelisted`.
+- CORS is controlled by `ALLOWED_ORIGINS`; production must set it explicitly.
+- GraphQL playground and introspection are disabled when `NODE_ENV=production`.
+- Backend and admin deployment health endpoints are configured in `homelab.yaml`.
+- PostgreSQL backup and policy-storage backup commands are documented below.
+
+Operator-required configuration:
+
+- Set a real `JWT_SECRET`; the compose default is only a local-development fallback.
+- Set `ALLOWED_ORIGINS` to the deployed admin and mobile origins.
+- Set and back up `POLICY_STORAGE_DIR` with the database because policy rows reference stored files.
+- Run database migration verification before shipping: `bun run --cwd apps/backend migrate:deploy` or the homelab database migration wrapper for the target deployment.
+
+Not yet proven or not implemented in this repo:
+
+- No `.github/workflows` CI pipeline is checked in.
+- No production alert rules are checked in.
+- No log aggregation or error tracking pipeline is checked in.
+- No load-test script or smoke-performance threshold is checked in.
+- `config/prometheus.yml` still targets the retired gateway and microservice service names; do not treat it as current monolith monitoring proof until it is replaced with real backend/admin metrics or blackbox health checks.
+
 ### Suggested Smoke Checks
 
 ```bash
