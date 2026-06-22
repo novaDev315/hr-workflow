@@ -29,10 +29,10 @@ export function FormDrawer({
   return (
     <Dialog.Root open={open} onOpenChange={onOpenChange}>
       <Dialog.Portal>
-        <Dialog.Overlay className="fixed inset-0 z-50 bg-[rgba(39,30,20,0.36)] backdrop-blur-[2px]" />
+        <Dialog.Overlay className="fixed inset-0 z-50 bg-[rgba(39,30,20,0.42)] backdrop-blur-[3px]" />
         <Dialog.Content
           className={cn(
-            'fixed inset-x-2 bottom-2 top-2 z-50 flex flex-col overflow-hidden rounded-[1.2rem] border border-border/80 bg-card text-card-foreground shadow-[0_30px_90px_rgba(39,30,20,0.24)] outline-none sm:inset-x-auto sm:bottom-4 sm:right-4 sm:top-4 sm:w-[min(720px,calc(100vw-2rem))]',
+            'fixed left-1/2 top-1/2 z-50 flex max-h-[calc(100dvh-1rem)] w-[calc(100vw-1rem)] -translate-x-1/2 -translate-y-1/2 flex-col overflow-hidden rounded-[1.2rem] border border-border/80 bg-card text-card-foreground shadow-[0_34px_110px_rgba(39,30,20,0.28)] outline-none sm:max-h-[min(820px,calc(100dvh-2rem))] sm:w-[min(760px,calc(100vw-2rem))]',
             className,
           )}
         >
