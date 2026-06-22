@@ -1,22 +1,65 @@
-import { useEffect } from 'react'
+import { lazy, Suspense, useEffect } from 'react'
 import { Routes, Route, Navigate } from 'react-router-dom'
-import { LoginPage } from './pages/LoginPage'
-import { DashboardLayout } from './components/layouts/DashboardLayout'
-import { DashboardPage } from './pages/DashboardPage'
-import { EmployeesPage } from './pages/EmployeesPage'
-import { EmployeeDirectoryPage } from './pages/EmployeeDirectoryPage'
-import { AttendancePage } from './pages/AttendancePage'
-import { LeavePage } from './pages/LeavePage'
-import { PayrollPage } from './pages/PayrollPage'
-import { RecruitmentPage } from './pages/RecruitmentPage'
-import { ReportsPage } from './pages/ReportsPage'
-import { PolicyDocumentsPage } from './pages/PolicyDocumentsPage'
-import { DemoGalleryPage } from './demo/pages/DemoGalleryPage'
-import { DemoWorkspacePage } from './demo/pages/DemoWorkspacePage'
 import {
   clearAdminSession,
   useAdminSession,
 } from './lib/auth-session'
+
+const LoginPage = lazy(() =>
+  import('./pages/LoginPage').then((module) => ({ default: module.LoginPage }))
+)
+const DashboardLayout = lazy(() =>
+  import('./components/layouts/DashboardLayout').then((module) => ({
+    default: module.DashboardLayout,
+  }))
+)
+const DashboardPage = lazy(() =>
+  import('./pages/DashboardPage').then((module) => ({
+    default: module.DashboardPage,
+  }))
+)
+const EmployeesPage = lazy(() =>
+  import('./pages/EmployeesPage').then((module) => ({
+    default: module.EmployeesPage,
+  }))
+)
+const EmployeeDirectoryPage = lazy(() =>
+  import('./pages/EmployeeDirectoryPage').then((module) => ({
+    default: module.EmployeeDirectoryPage,
+  }))
+)
+const AttendancePage = lazy(() =>
+  import('./pages/AttendancePage').then((module) => ({
+    default: module.AttendancePage,
+  }))
+)
+const LeavePage = lazy(() =>
+  import('./pages/LeavePage').then((module) => ({ default: module.LeavePage }))
+)
+const PayrollPage = lazy(() =>
+  import('./pages/PayrollPage').then((module) => ({
+    default: module.PayrollPage,
+  }))
+)
+const RecruitmentPage = lazy(() =>
+  import('./pages/RecruitmentPage').then((module) => ({
+    default: module.RecruitmentPage,
+  }))
+)
+const ReportsPage = lazy(() =>
+  import('./pages/ReportsPage').then((module) => ({
+    default: module.ReportsPage,
+  }))
+)
+const PolicyDocumentsPage = lazy(() =>
+  import('./pages/PolicyDocumentsPage').then((module) => ({
+    default: module.PolicyDocumentsPage,
+  }))
+)
+
+function AppLoadingFallback() {
+  return <div className="min-h-screen bg-background text-foreground" />
+}
 
 function App() {
   const { isAuthenticated, hasAccess } = useAdminSession()
@@ -28,41 +71,40 @@ function App() {
   }, [hasAccess, isAuthenticated])
 
   return (
-    <Routes>
-      <Route path="/demos" element={<DemoGalleryPage />} />
-      <Route path="/demos/:demoId" element={<DemoWorkspacePage />} />
-      <Route path="/demos/:demoId/:pageId" element={<DemoWorkspacePage />} />
-      <Route
-        path="/login"
-        element={
-          isAuthenticated && hasAccess ? (
-            <Navigate to="/" replace />
-          ) : (
-            <LoginPage />
-          )
-        }
-      />
-      <Route
-        path="/"
-        element={
-          isAuthenticated && hasAccess ? (
-            <DashboardLayout />
-          ) : (
-            <Navigate to="/login" replace />
-          )
-        }
-      >
-        <Route index element={<DashboardPage />} />
-        <Route path="employees" element={<EmployeesPage />} />
-        <Route path="directory" element={<EmployeeDirectoryPage />} />
-        <Route path="attendance" element={<AttendancePage />} />
-        <Route path="leave" element={<LeavePage />} />
-        <Route path="payroll" element={<PayrollPage />} />
-        <Route path="recruitment" element={<RecruitmentPage />} />
-        <Route path="reports" element={<ReportsPage />} />
-        <Route path="policies" element={<PolicyDocumentsPage />} />
-      </Route>
-    </Routes>
+    <Suspense fallback={<AppLoadingFallback />}>
+      <Routes>
+        <Route
+          path="/login"
+          element={
+            isAuthenticated && hasAccess ? (
+              <Navigate to="/" replace />
+            ) : (
+              <LoginPage />
+            )
+          }
+        />
+        <Route
+          path="/"
+          element={
+            isAuthenticated && hasAccess ? (
+              <DashboardLayout />
+            ) : (
+              <Navigate to="/login" replace />
+            )
+          }
+        >
+          <Route index element={<DashboardPage />} />
+          <Route path="employees" element={<EmployeesPage />} />
+          <Route path="directory" element={<EmployeeDirectoryPage />} />
+          <Route path="attendance" element={<AttendancePage />} />
+          <Route path="leave" element={<LeavePage />} />
+          <Route path="payroll" element={<PayrollPage />} />
+          <Route path="recruitment" element={<RecruitmentPage />} />
+          <Route path="reports" element={<ReportsPage />} />
+          <Route path="policies" element={<PolicyDocumentsPage />} />
+        </Route>
+      </Routes>
+    </Suspense>
   )
 }
 
