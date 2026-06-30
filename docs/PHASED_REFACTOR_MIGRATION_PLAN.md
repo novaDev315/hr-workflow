@@ -61,7 +61,8 @@ rewrite. The migration should:
 ## Current Evidence
 
 - Current branch was clean before saving this plan.
-- `apps/web-admin/src/demo` exists even though production routes are not mounted.
+- At plan creation, `apps/web-admin/src/demo` existed even though production
+  routes were not mounted.
 - `apps/web-admin` uses Tailwind v3 tokens, local shadcn-like primitives, and no
   committed `components.json`.
 - Existing UI primitives include `button`, `card`, `form-drawer`, `input`,

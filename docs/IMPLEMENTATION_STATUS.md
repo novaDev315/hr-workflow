@@ -36,7 +36,7 @@ work under `apps/api-gateway`, `services/*`, or a root `web-admin/` tree.
 - Real login and role-gated admin shell
 - Dashboard backed by GraphQL reports
 - Employee, directory, attendance, leave, payroll, recruitment, reports, and policy screens
-- Production route bundle is split by page; demo routes are not mounted from the main app
+- Production route bundle is split by page; demo source has been removed from the admin app
 
 ### Mobile App
 

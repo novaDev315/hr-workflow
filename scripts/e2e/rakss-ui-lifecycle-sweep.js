@@ -476,13 +476,6 @@
   await page.getByRole('button', { name: 'Export PDF' }).click();
   check('ui export reports pdf button');
 
-  await page.goto(`${baseUrl}/demos`, { waitUntil: 'networkidle' });
-  const demoGalleryCount = await page.getByText('Rakss demo gallery').count();
-  if (demoGalleryCount > 0) {
-    throw new Error('Production admin app mounted the demo gallery');
-  }
-  check('production demo routes not mounted');
-
   await page.goto(`${baseUrl}/`, { waitUntil: 'networkidle' });
   await page.setViewportSize({ width: 390, height: 844 });
   await page.getByLabel('Open navigation').click();
