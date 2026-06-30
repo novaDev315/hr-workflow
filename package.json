@@ -24,6 +24,7 @@
     "dev:mobile": "bun run --cwd apps/mobile start",
     "build:backend": "bun run --cwd apps/backend build",
     "build:web-admin": "bun run --cwd apps/web-admin build",
+    "test:backend:unit": "bun run --cwd apps/backend test:unit",
     "test:backend": "NODE_ENV=test bun run --cwd apps/backend test",
     "typecheck:mobile": "bunx tsc --noEmit -p apps/mobile/tsconfig.json",
     "db:schema:ensure": "bun run --cwd apps/backend schema:ensure",
