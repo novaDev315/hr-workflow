@@ -104,7 +104,7 @@ const policyFormDefaults: PolicyFormState = {
 
 export function PolicyDocumentsPage() {
   const currentAdminAccount = readStoredAdminAccount();
-  const canManagePolicies = canManageAccounts(currentAdminAccount?.roles ?? []);
+  const canManagePolicies = canManageAccounts(currentAdminAccount);
   const [policyForm, setPolicyForm] = useState(policyFormDefaults);
   const [editingPolicyId, setEditingPolicyId] = useState<string | null>(null);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);

@@ -41,6 +41,8 @@ const LOGIN_MUTATION = gql`
         lastName
         fullName
         roles
+        canAccessAdminPanel
+        canManageAccounts
         isActive
       }
     }
@@ -59,6 +61,8 @@ const BOOTSTRAP_ADMIN_MUTATION = gql`
         lastName
         fullName
         roles
+        canAccessAdminPanel
+        canManageAccounts
         isActive
       }
     }
@@ -129,7 +133,7 @@ export function LoginPage() {
         throw new Error("Authentication response did not include an access token");
       }
 
-      if (!bootstrapRequired && !hasAdminPanelAccess(payload.account.roles)) {
+      if (!bootstrapRequired && !hasAdminPanelAccess(payload.account)) {
         clearAdminSession();
         throw new Error(
           "This account can use the mobile app, but only ADMIN, HR_ADMIN, MANAGER, and SUPERVISOR accounts can access the admin panel.",

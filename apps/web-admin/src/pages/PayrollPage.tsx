@@ -150,7 +150,7 @@ const compensationFormDefaults: CompensationFormState = {
 export function PayrollPage() {
   const apolloClient = useApolloClient()
   const currentAdminAccount = readStoredAdminAccount()
-  const canManagePayroll = canManageAccounts(currentAdminAccount?.roles ?? [])
+  const canManagePayroll = canManageAccounts(currentAdminAccount)
   const [selectedPeriodId, setSelectedPeriodId] = useState<string | null>(null)
   const [periodMonth, setPeriodMonth] = useState(new Date().toISOString().slice(0, 7))
   const [compensationForm, setCompensationForm] = useState(compensationFormDefaults)

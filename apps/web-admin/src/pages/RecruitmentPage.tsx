@@ -269,9 +269,7 @@ const selectClassName =
 
 export function RecruitmentPage() {
   const currentAdminAccount = readStoredAdminAccount()
-  const canManageRecruitment = canManageAccounts(
-    currentAdminAccount?.roles ?? [],
-  )
+  const canManageRecruitment = canManageAccounts(currentAdminAccount)
   const [searchQuery, setSearchQuery] = useState('')
   const [statusFilter, setStatusFilter] = useState('')
   const [applicationStatusFilter, setApplicationStatusFilter] = useState('')

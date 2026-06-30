@@ -1,17 +1,5 @@
 import { useSyncExternalStore } from 'react'
 
-export const ADMIN_PANEL_ROLES = [
-  'ADMIN',
-  'HR_ADMIN',
-  'MANAGER',
-  'SUPERVISOR',
-] as const
-
-export const ACCOUNT_MANAGER_ROLES = ['ADMIN', 'HR_ADMIN'] as const
-
-export type AdminPanelRole = (typeof ADMIN_PANEL_ROLES)[number]
-export type AccountManagerRole = (typeof ACCOUNT_MANAGER_ROLES)[number]
-
 export type StoredAdminAccount = {
   id: string
   email: string
@@ -19,6 +7,8 @@ export type StoredAdminAccount = {
   lastName: string
   fullName: string
   roles: string[]
+  canAccessAdminPanel?: boolean
+  canManageAccounts?: boolean
   isActive: boolean
 }
 
@@ -45,16 +35,12 @@ let cachedToken: string | null = null
 let cachedAccountRaw: string | null = null
 let cachedSnapshot: AdminSessionSnapshot = EMPTY_ADMIN_SESSION
 
-export function hasAdminPanelAccess(roles: string[] = []) {
-  return roles.some((role) =>
-    ADMIN_PANEL_ROLES.includes(role as AdminPanelRole)
-  )
+export function hasAdminPanelAccess(account: StoredAdminAccount | null | undefined) {
+  return Boolean(account?.canAccessAdminPanel)
 }
 
-export function canManageAccounts(roles: string[] = []) {
-  return roles.some((role) =>
-    ACCOUNT_MANAGER_ROLES.includes(role as AccountManagerRole)
-  )
+export function canManageAccounts(account: StoredAdminAccount | null | undefined) {
+  return Boolean(account?.canManageAccounts)
 }
 
 export function readStoredAdminAccount() {
@@ -141,7 +127,7 @@ function getAdminSessionSnapshot() {
     }
   }
 
-  const hasAccess = account ? hasAdminPanelAccess(account.roles) : false
+  const hasAccess = hasAdminPanelAccess(account)
   cachedToken = token
   cachedAccountRaw = accountRaw
   cachedSnapshot = {

@@ -245,7 +245,7 @@ const staffAccessFormDefaults: StaffAccessFormState = {
 
 export function EmployeesPage() {
   const currentAdminAccount = readStoredAdminAccount()
-  const accountManagerAccess = canManageAccounts(currentAdminAccount?.roles ?? [])
+  const accountManagerAccess = canManageAccounts(currentAdminAccount)
   const [searchQuery, setSearchQuery] = useState('')
   const deferredSearch = useDeferredValue(searchQuery)
   const [showForms, setShowForms] = useState(false)

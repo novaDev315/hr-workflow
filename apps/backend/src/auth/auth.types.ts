@@ -37,6 +37,12 @@ export class AccountProfileType {
   @Field(() => [String])
   roles: string[];
 
+  @Field()
+  canAccessAdminPanel: boolean;
+
+  @Field()
+  canManageAccounts: boolean;
+
   @Field({ nullable: true })
   employeeId?: string | null;
 

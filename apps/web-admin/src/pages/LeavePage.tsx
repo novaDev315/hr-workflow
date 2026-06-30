@@ -129,7 +129,7 @@ const leaveRequestFormDefaults: LeaveRequestFormState = {
 
 export function LeavePage() {
   const currentAdminAccount = readStoredAdminAccount()
-  const canManageLeavePolicies = canManageAccounts(currentAdminAccount?.roles ?? [])
+  const canManageLeavePolicies = canManageAccounts(currentAdminAccount)
   const [leaveTypeForm, setLeaveTypeForm] = useState(leaveTypeFormDefaults)
   const [editingLeaveTypeId, setEditingLeaveTypeId] = useState<string | null>(null)
   const [leaveRequestForm, setLeaveRequestForm] = useState(leaveRequestFormDefaults)

@@ -18,6 +18,7 @@ import {
 import * as bcrypt from 'bcrypt';
 import { randomUUID } from 'crypto';
 import {
+  AccountManagerRoleKey,
   AdminAccessRoleKey,
   ADMIN_ACCESS_ROLE_KEYS,
   ACCOUNT_MANAGER_ROLE_KEYS,
@@ -410,6 +411,8 @@ export class AuthService {
   }
 
   private mapUser(user: UserWithRoles) {
+    const roles = user.roleAssignments.map((assignment) => assignment.role.key);
+
     return {
       id: user.id,
       email: user.email,
@@ -417,7 +420,9 @@ export class AuthService {
       lastName: user.lastName,
       fullName: `${user.firstName} ${user.lastName}`.trim(),
       isActive: user.isActive,
-      roles: user.roleAssignments.map((assignment) => assignment.role.key),
+      roles,
+      canAccessAdminPanel: this.canAccessAdminPanel(roles),
+      canManageAccounts: this.canManageAccounts(roles),
       employeeId: user.employeeProfile?.employeeId ?? null,
       employeeNumber: user.employeeProfile?.employeeNumber ?? null,
       departmentName: user.employeeProfile?.departmentName ?? null,
@@ -427,15 +432,23 @@ export class AuthService {
   }
 
   private assertCanManageAccounts(roles: string[]) {
-    const hasAccess = roles.some((role) =>
-      ACCOUNT_MANAGER_ROLE_KEYS.includes(role as 'ADMIN' | 'HR_ADMIN'),
-    );
-
-    if (!hasAccess) {
+    if (!this.canManageAccounts(roles)) {
       throw new ForbiddenException(
         'Only ADMIN and HR_ADMIN accounts can manage employee and staff access',
       );
     }
+  }
+
+  private canAccessAdminPanel(roles: string[]) {
+    return roles.some((role) =>
+      ADMIN_ACCESS_ROLE_KEYS.includes(role as AdminAccessRoleKey),
+    );
+  }
+
+  private canManageAccounts(roles: string[]) {
+    return roles.some((role) =>
+      ACCOUNT_MANAGER_ROLE_KEYS.includes(role as AccountManagerRoleKey),
+    );
   }
 
   private async ensureRole(key: SystemRoleKey, client?: any) {
