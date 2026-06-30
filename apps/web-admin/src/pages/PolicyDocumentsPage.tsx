@@ -10,7 +10,15 @@ import { FormDrawer } from "@/components/ui/form-drawer";
 import { Input } from "@/components/ui/input";
 import { MetricCard } from "@/components/ui/metric-card";
 import { Notice } from "@/components/ui/notice";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { StatusBadge } from "@/components/ui/status-badge";
+import { Textarea } from "@/components/ui/textarea";
 import { canManageAccounts, readStoredAdminAccount } from "@/lib/auth-session";
 import { readFileAsBase64 } from "@/lib/download-export";
 import { formatDate } from "@/lib/utils";
@@ -391,18 +399,24 @@ export function PolicyDocumentsPage() {
                   }
                   required
                 />
-                <select
+                <Select
+                  name="policy-status"
                   value={policyForm.status}
-                  onChange={(event) =>
+                  onValueChange={(status) =>
                     setPolicyForm((current) => ({
                       ...current,
-                      status: event.target.value,
+                      status,
                     }))
                   }
                 >
-                  <option value="DRAFT">Draft</option>
-                  <option value="PUBLISHED">Published</option>
-                </select>
+                  <SelectTrigger aria-label="Policy status">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="DRAFT">Draft</SelectItem>
+                    <SelectItem value="PUBLISHED">Published</SelectItem>
+                  </SelectContent>
+                </Select>
               </div>
               <Input
                 value={policyForm.description}
@@ -438,7 +452,7 @@ export function PolicyDocumentsPage() {
                   option is fine.
                 </p>
               </div>
-              <textarea
+              <Textarea
                 value={policyForm.content}
                 onChange={(event) =>
                   setPolicyForm((current) => ({

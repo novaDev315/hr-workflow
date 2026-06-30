@@ -9,6 +9,13 @@ import { Button } from '@/components/ui/button'
 import { FormDrawer } from '@/components/ui/form-drawer'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 import { CalendarClock, FileCheck2, Pencil, PlaneTakeoff, Plus, XCircle } from 'lucide-react'
 import { MetricCard } from '@/components/ui/metric-card'
 import { StatusBadge } from '@/components/ui/status-badge'
@@ -622,47 +629,55 @@ export function LeavePage() {
         <form className="space-y-4" onSubmit={handleRequestLeave}>
           <div className="space-y-2">
             <Label htmlFor="leave-request-employee">Employee</Label>
-            <select
-              id="leave-request-employee"
+            <Select
+              name="leave-request-employee"
               value={leaveRequestForm.employeeId}
-              onChange={(event) =>
+              onValueChange={(employeeId) =>
                 setLeaveRequestForm((current) => ({
                   ...current,
-                  employeeId: event.target.value,
+                  employeeId,
                 }))
               }
               required
             >
-              <option value="">Select employee</option>
-              {employees.map(
-                (employee: { id: string; fullName: string; employeeNumber: string }) => (
-                  <option key={employee.id} value={employee.id}>
-                    {employee.fullName} ({employee.employeeNumber})
-                  </option>
-                )
-              )}
-            </select>
+              <SelectTrigger id="leave-request-employee">
+                <SelectValue placeholder="Select employee" />
+              </SelectTrigger>
+              <SelectContent>
+                {employees.map(
+                  (employee: { id: string; fullName: string; employeeNumber: string }) => (
+                    <SelectItem key={employee.id} value={employee.id}>
+                      {employee.fullName} ({employee.employeeNumber})
+                    </SelectItem>
+                  )
+                )}
+              </SelectContent>
+            </Select>
           </div>
           <div className="space-y-2">
             <Label htmlFor="leave-request-type">Leave Type</Label>
-            <select
-              id="leave-request-type"
+            <Select
+              name="leave-request-type"
               value={leaveRequestForm.leaveTypeId}
-              onChange={(event) =>
+              onValueChange={(leaveTypeId) =>
                 setLeaveRequestForm((current) => ({
                   ...current,
-                  leaveTypeId: event.target.value,
+                  leaveTypeId,
                 }))
               }
               required
             >
-              <option value="">Select type</option>
-              {leaveTypes.map((leaveType: { id: string; name: string; code: string }) => (
-                <option key={leaveType.id} value={leaveType.id}>
-                  {leaveType.name} ({leaveType.code})
-                </option>
-              ))}
-            </select>
+              <SelectTrigger id="leave-request-type">
+                <SelectValue placeholder="Select type" />
+              </SelectTrigger>
+              <SelectContent>
+                {leaveTypes.map((leaveType: { id: string; name: string; code: string }) => (
+                  <SelectItem key={leaveType.id} value={leaveType.id}>
+                    {leaveType.name} ({leaveType.code})
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
           <div className="grid gap-4 sm:grid-cols-2">
             <div className="space-y-2">

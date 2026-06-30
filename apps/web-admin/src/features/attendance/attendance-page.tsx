@@ -9,6 +9,13 @@ import { Button } from '@/components/ui/button'
 import { FormDrawer } from '@/components/ui/form-drawer'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 import { Clock3, MapPin, Pencil, Settings2, XCircle } from 'lucide-react'
 import { MetricCard } from '@/components/ui/metric-card'
 import { Notice } from '@/components/ui/notice'
@@ -28,6 +35,8 @@ import {
   attendanceActionDefaults,
   locationFormDefaults,
 } from './types'
+
+const ALL_EMPLOYEES_FILTER_VALUE = 'ALL_EMPLOYEES'
 
 export function AttendancePage() {
   const [locationForm, setLocationForm] = useState(locationFormDefaults)
@@ -335,51 +344,59 @@ export function AttendancePage() {
           <CardContent className="space-y-4">
             <div className="space-y-2">
               <Label htmlFor="attendance-employee">Employee</Label>
-              <select
-                id="attendance-employee"
+              <Select
+                name="attendance-employee"
                 value={attendanceForm.employeeId}
-                onChange={(event) =>
+                onValueChange={(employeeId) =>
                   setAttendanceForm((current) => ({
                     ...current,
-                    employeeId: event.target.value,
+                    employeeId,
                   }))
                 }
               >
-                <option value="">Select employee</option>
-                {employees.map(
-                  (employee: {
-                    id: string
-                    fullName: string
-                    employeeNumber: string
-                  }) => (
-                    <option key={employee.id} value={employee.id}>
-                      {employee.fullName} ({employee.employeeNumber})
-                    </option>
-                  )
-                )}
-              </select>
+                <SelectTrigger id="attendance-employee">
+                  <SelectValue placeholder="Select employee" />
+                </SelectTrigger>
+                <SelectContent>
+                  {employees.map(
+                    (employee: {
+                      id: string
+                      fullName: string
+                      employeeNumber: string
+                    }) => (
+                      <SelectItem key={employee.id} value={employee.id}>
+                        {employee.fullName} ({employee.employeeNumber})
+                      </SelectItem>
+                    )
+                  )}
+                </SelectContent>
+              </Select>
             </div>
             <div className="space-y-2">
               <Label htmlFor="attendance-location">Location</Label>
-              <select
-                id="attendance-location"
+              <Select
+                name="attendance-location"
                 value={attendanceForm.locationId}
-                onChange={(event) =>
+                onValueChange={(locationId) =>
                   setAttendanceForm((current) => ({
                     ...current,
-                    locationId: event.target.value,
+                    locationId,
                   }))
                 }
               >
-                <option value="">Select location</option>
-                {locations
-                  .filter((location: { isActive: boolean }) => location.isActive)
-                  .map((location: { id: string; name: string; code: string }) => (
-                    <option key={location.id} value={location.id}>
-                      {location.name} ({location.code})
-                    </option>
-                  ))}
-              </select>
+                <SelectTrigger id="attendance-location">
+                  <SelectValue placeholder="Select location" />
+                </SelectTrigger>
+                <SelectContent>
+                  {locations
+                    .filter((location: { isActive: boolean }) => location.isActive)
+                    .map((location: { id: string; name: string; code: string }) => (
+                      <SelectItem key={location.id} value={location.id}>
+                        {location.name} ({location.code})
+                      </SelectItem>
+                    ))}
+                </SelectContent>
+              </Select>
             </div>
             <div className="grid gap-4 sm:grid-cols-2">
               <div className="space-y-2">
@@ -473,25 +490,35 @@ export function AttendancePage() {
               </div>
               <div className="min-w-[250px]">
                 <Label htmlFor="attendance-filter-employee">Filter by Employee</Label>
-                <select
-                  id="attendance-filter-employee"
-                  value={attendanceFilterEmployeeId}
-                  onChange={(event) => setAttendanceFilterEmployeeId(event.target.value)}
-                  className="mt-2"
-                >
-                  <option value="">All employees</option>
-                  {employees.map(
-                    (employee: {
-                      id: string
-                      fullName: string
-                      employeeNumber: string
-                    }) => (
-                      <option key={employee.id} value={employee.id}>
-                        {employee.fullName} ({employee.employeeNumber})
-                      </option>
+                <Select
+                  name="attendance-filter-employee"
+                  value={attendanceFilterEmployeeId || ALL_EMPLOYEES_FILTER_VALUE}
+                  onValueChange={(employeeId) =>
+                    setAttendanceFilterEmployeeId(
+                      employeeId === ALL_EMPLOYEES_FILTER_VALUE ? '' : employeeId
                     )
-                  )}
-                </select>
+                  }
+                >
+                  <SelectTrigger id="attendance-filter-employee" className="mt-2">
+                    <SelectValue placeholder="All employees" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value={ALL_EMPLOYEES_FILTER_VALUE}>
+                      All employees
+                    </SelectItem>
+                    {employees.map(
+                      (employee: {
+                        id: string
+                        fullName: string
+                        employeeNumber: string
+                      }) => (
+                        <SelectItem key={employee.id} value={employee.id}>
+                          {employee.fullName} ({employee.employeeNumber})
+                        </SelectItem>
+                      )
+                    )}
+                  </SelectContent>
+                </Select>
               </div>
             </div>
           </CardHeader>
@@ -800,70 +827,80 @@ export function AttendancePage() {
                 <form className="space-y-4" onSubmit={handleAssignLocation}>
               <div className="space-y-2">
                 <Label htmlFor="assignment-employee">Employee</Label>
-                <select
-                  id="assignment-employee"
+                <Select
+                  name="assignment-employee"
                   value={assignmentForm.employeeId}
-                  onChange={(event) =>
+                  onValueChange={(employeeId) =>
                     setAssignmentForm((current) => ({
                       ...current,
-                      employeeId: event.target.value,
+                      employeeId,
                     }))
                   }
-                  className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
                   required
                 >
-                  <option value="">Select employee</option>
-                  {employees.map(
-                    (employee: {
-                      id: string
-                      fullName: string
-                      employeeNumber: string
-                    }) => (
-                      <option key={employee.id} value={employee.id}>
-                        {employee.fullName} ({employee.employeeNumber})
-                      </option>
-                    )
-                  )}
-                </select>
+                  <SelectTrigger id="assignment-employee">
+                    <SelectValue placeholder="Select employee" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {employees.map(
+                      (employee: {
+                        id: string
+                        fullName: string
+                        employeeNumber: string
+                      }) => (
+                        <SelectItem key={employee.id} value={employee.id}>
+                          {employee.fullName} ({employee.employeeNumber})
+                        </SelectItem>
+                      )
+                    )}
+                  </SelectContent>
+                </Select>
               </div>
               <div className="space-y-2">
                 <Label htmlFor="assignment-location">Location</Label>
-                <select
-                  id="assignment-location"
+                <Select
+                  name="assignment-location"
                   value={assignmentForm.locationId}
-                  onChange={(event) =>
+                  onValueChange={(locationId) =>
                     setAssignmentForm((current) => ({
                       ...current,
-                      locationId: event.target.value,
+                      locationId,
                     }))
                   }
-                  className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
                   required
                 >
-                  <option value="">Select location</option>
-                  {locations.map((location: { id: string; name: string; code: string }) => (
-                    <option key={location.id} value={location.id}>
-                      {location.name} ({location.code})
-                    </option>
-                  ))}
-                </select>
+                  <SelectTrigger id="assignment-location">
+                    <SelectValue placeholder="Select location" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {locations.map((location: { id: string; name: string; code: string }) => (
+                      <SelectItem key={location.id} value={location.id}>
+                        {location.name} ({location.code})
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
               <div className="space-y-2">
                 <Label htmlFor="assignment-primary">Assignment Type</Label>
-                <select
-                  id="assignment-primary"
+                <Select
+                  name="assignment-primary"
                   value={assignmentForm.isPrimary}
-                  onChange={(event) =>
+                  onValueChange={(isPrimary) =>
                     setAssignmentForm((current) => ({
                       ...current,
-                      isPrimary: event.target.value,
+                      isPrimary,
                     }))
                   }
-                  className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
                 >
-                  <option value="true">Primary</option>
-                  <option value="false">Secondary</option>
-                </select>
+                  <SelectTrigger id="assignment-primary">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="true">Primary</SelectItem>
+                    <SelectItem value="false">Secondary</SelectItem>
+                  </SelectContent>
+                </Select>
               </div>
               <Button
                 className="w-full"

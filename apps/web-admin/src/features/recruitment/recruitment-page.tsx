@@ -21,7 +21,15 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { MetricCard } from '@/components/ui/metric-card'
 import { Notice } from '@/components/ui/notice'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 import { StatusBadge } from '@/components/ui/status-badge'
+import { Textarea } from '@/components/ui/textarea'
 import { canManageAccounts, readStoredAdminAccount } from '@/lib/auth-session'
 import {
   ADVANCE_RECRUITMENT_APPLICATION_MUTATION,
@@ -41,8 +49,10 @@ import {
   type RecruitmentApplication,
 } from './types'
 
-const selectClassName =
-  'h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground shadow-sm outline-none transition-colors focus:border-ring focus:ring-2 focus:ring-ring/20'
+const ALL_REQUISITION_STATUSES_VALUE = 'ALL_REQUISITION_STATUSES'
+const ALL_APPLICATION_STATUSES_VALUE = 'ALL_APPLICATION_STATUSES'
+const ALL_REQUISITIONS_VALUE = 'ALL_REQUISITIONS'
+const ANY_DESIGNATION_VALUE = 'ANY_DESIGNATION'
 
 export function RecruitmentPage() {
   const currentAdminAccount = readStoredAdminAccount()
@@ -460,58 +470,82 @@ export function RecruitmentPage() {
               <Label htmlFor="requisition-status-filter">
                 Requisition status
               </Label>
-              <select
-                id="requisition-status-filter"
-                className={selectClassName}
-                value={statusFilter}
-                onChange={(event) => setStatusFilter(event.target.value)}
+              <Select
+                name="requisition-status-filter"
+                value={statusFilter || ALL_REQUISITION_STATUSES_VALUE}
+                onValueChange={(status) =>
+                  setStatusFilter(
+                    status === ALL_REQUISITION_STATUSES_VALUE ? '' : status
+                  )
+                }
               >
-                <option value="">All requisitions</option>
-                <option value="OPEN">Open</option>
-                <option value="ON_HOLD">On hold</option>
-                <option value="FILLED">Filled</option>
-                <option value="CLOSED">Closed</option>
-              </select>
+                <SelectTrigger id="requisition-status-filter">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value={ALL_REQUISITION_STATUSES_VALUE}>
+                    All requisitions
+                  </SelectItem>
+                  <SelectItem value="OPEN">Open</SelectItem>
+                  <SelectItem value="ON_HOLD">On hold</SelectItem>
+                  <SelectItem value="FILLED">Filled</SelectItem>
+                  <SelectItem value="CLOSED">Closed</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
             <div>
               <Label htmlFor="application-status-filter">
                 Application status
               </Label>
-              <select
-                id="application-status-filter"
-                className={selectClassName}
-                value={applicationStatusFilter}
-                onChange={(event) =>
-                  setApplicationStatusFilter(event.target.value)
+              <Select
+                name="application-status-filter"
+                value={applicationStatusFilter || ALL_APPLICATION_STATUSES_VALUE}
+                onValueChange={(status) =>
+                  setApplicationStatusFilter(
+                    status === ALL_APPLICATION_STATUSES_VALUE ? '' : status
+                  )
                 }
               >
-                <option value="">All applications</option>
-                {applicationStatuses.map((status) => (
-                  <option key={status} value={status}>
-                    {formatStatus(status)}
-                  </option>
-                ))}
-              </select>
+                <SelectTrigger id="application-status-filter">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value={ALL_APPLICATION_STATUSES_VALUE}>
+                    All applications
+                  </SelectItem>
+                  {applicationStatuses.map((status) => (
+                    <SelectItem key={status} value={status}>
+                      {formatStatus(status)}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
             <div>
               <Label htmlFor="application-requisition-filter">
                 Requisition
               </Label>
-              <select
-                id="application-requisition-filter"
-                className={selectClassName}
-                value={selectedRequisitionFilter}
-                onChange={(event) =>
-                  setSelectedRequisitionFilter(event.target.value)
+              <Select
+                name="application-requisition-filter"
+                value={selectedRequisitionFilter || ALL_REQUISITIONS_VALUE}
+                onValueChange={(requisitionId) =>
+                  setSelectedRequisitionFilter(
+                    requisitionId === ALL_REQUISITIONS_VALUE ? '' : requisitionId
+                  )
                 }
               >
-                <option value="">All roles</option>
-                {requisitions.map((requisition) => (
-                  <option key={requisition.id} value={requisition.id}>
-                    {requisition.jobTitle}
-                  </option>
-                ))}
-              </select>
+                <SelectTrigger id="application-requisition-filter">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value={ALL_REQUISITIONS_VALUE}>All roles</SelectItem>
+                  {requisitions.map((requisition) => (
+                    <SelectItem key={requisition.id} value={requisition.id}>
+                      {requisition.jobTitle}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
           </div>
         </CardContent>
@@ -548,47 +582,55 @@ export function RecruitmentPage() {
             </div>
             <div>
               <Label htmlFor="requisition-department">Department</Label>
-              <select
-                id="requisition-department"
-                required
-                className={selectClassName}
+              <Select
+                name="requisition-department"
                 value={requisitionForm.departmentId}
-                onChange={(event) =>
+                onValueChange={(departmentId) =>
                   setRequisitionForm((current) => ({
                     ...current,
-                    departmentId: event.target.value,
+                    departmentId,
                     designationId: '',
                   }))
                 }
+                required
               >
-                <option value="">Select department</option>
-                {departments.map((department) => (
-                  <option key={department.id} value={department.id}>
-                    {department.name}
-                  </option>
-                ))}
-              </select>
+                <SelectTrigger id="requisition-department">
+                  <SelectValue placeholder="Select department" />
+                </SelectTrigger>
+                <SelectContent>
+                  {departments.map((department) => (
+                    <SelectItem key={department.id} value={department.id}>
+                      {department.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
             <div>
               <Label htmlFor="requisition-designation">Designation</Label>
-              <select
-                id="requisition-designation"
-                className={selectClassName}
-                value={requisitionForm.designationId}
-                onChange={(event) =>
+              <Select
+                name="requisition-designation"
+                value={requisitionForm.designationId || ANY_DESIGNATION_VALUE}
+                onValueChange={(designationId) =>
                   setRequisitionForm((current) => ({
                     ...current,
-                    designationId: event.target.value,
+                    designationId:
+                      designationId === ANY_DESIGNATION_VALUE ? '' : designationId,
                   }))
                 }
               >
-                <option value="">Any designation</option>
-                {filteredDesignations.map((designation) => (
-                  <option key={designation.id} value={designation.id}>
-                    {designation.title}
-                  </option>
-                ))}
-              </select>
+                <SelectTrigger id="requisition-designation">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value={ANY_DESIGNATION_VALUE}>Any designation</SelectItem>
+                  {filteredDesignations.map((designation) => (
+                    <SelectItem key={designation.id} value={designation.id}>
+                      {designation.title}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
             <div>
               <Label htmlFor="requisition-positions">Positions</Label>
@@ -610,41 +652,49 @@ export function RecruitmentPage() {
               <Label htmlFor="requisition-employment-type">
                 Employment type
               </Label>
-              <select
-                id="requisition-employment-type"
-                className={selectClassName}
+              <Select
+                name="requisition-employment-type"
                 value={requisitionForm.employmentType}
-                onChange={(event) =>
+                onValueChange={(employmentType) =>
                   setRequisitionForm((current) => ({
                     ...current,
-                    employmentType: event.target.value,
+                    employmentType,
                   }))
                 }
               >
-                <option value="FULL_TIME">Full time</option>
-                <option value="PART_TIME">Part time</option>
-                <option value="CONTRACT">Contract</option>
-                <option value="INTERNSHIP">Internship</option>
-              </select>
+                <SelectTrigger id="requisition-employment-type">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="FULL_TIME">Full time</SelectItem>
+                  <SelectItem value="PART_TIME">Part time</SelectItem>
+                  <SelectItem value="CONTRACT">Contract</SelectItem>
+                  <SelectItem value="INTERNSHIP">Internship</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
             <div>
               <Label htmlFor="requisition-priority">Priority</Label>
-              <select
-                id="requisition-priority"
-                className={selectClassName}
+              <Select
+                name="requisition-priority"
                 value={requisitionForm.priority}
-                onChange={(event) =>
+                onValueChange={(priority) =>
                   setRequisitionForm((current) => ({
                     ...current,
-                    priority: event.target.value,
+                    priority,
                   }))
                 }
               >
-                <option value="LOW">Low</option>
-                <option value="MEDIUM">Medium</option>
-                <option value="HIGH">High</option>
-                <option value="URGENT">Urgent</option>
-              </select>
+                <SelectTrigger id="requisition-priority">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="LOW">Low</SelectItem>
+                  <SelectItem value="MEDIUM">Medium</SelectItem>
+                  <SelectItem value="HIGH">High</SelectItem>
+                  <SelectItem value="URGENT">Urgent</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
             <div>
               <Label htmlFor="requisition-target-start">Target start</Label>
@@ -694,10 +744,10 @@ export function RecruitmentPage() {
           <div className="grid gap-3 lg:grid-cols-2">
             <div>
               <Label htmlFor="requisition-description">Description</Label>
-              <textarea
+              <Textarea
                 id="requisition-description"
                 required
-                className={`${selectClassName} min-h-[110px] py-2`}
+                className="min-h-[110px]"
                 value={requisitionForm.description}
                 onChange={(event) =>
                   setRequisitionForm((current) => ({
@@ -709,9 +759,9 @@ export function RecruitmentPage() {
             </div>
             <div>
               <Label htmlFor="requisition-requirements">Requirements</Label>
-              <textarea
+              <Textarea
                 id="requisition-requirements"
-                className={`${selectClassName} min-h-[110px] py-2`}
+                className="min-h-[110px]"
                 value={requisitionForm.requirements}
                 onChange={(event) =>
                   setRequisitionForm((current) => ({
@@ -759,25 +809,28 @@ export function RecruitmentPage() {
           <div className="grid gap-3 lg:grid-cols-3">
             <div>
               <Label htmlFor="application-requisition">Requisition</Label>
-              <select
-                id="application-requisition"
-                required
-                className={selectClassName}
+              <Select
+                name="application-requisition"
                 value={applicationForm.requisitionId}
-                onChange={(event) =>
+                onValueChange={(requisitionId) =>
                   setApplicationForm((current) => ({
                     ...current,
-                    requisitionId: event.target.value,
+                    requisitionId,
                   }))
                 }
+                required
               >
-                <option value="">Select requisition</option>
-                {openRequisitions.map((requisition) => (
-                  <option key={requisition.id} value={requisition.id}>
-                    {requisition.jobTitle}
-                  </option>
-                ))}
-              </select>
+                <SelectTrigger id="application-requisition">
+                  <SelectValue placeholder="Select requisition" />
+                </SelectTrigger>
+                <SelectContent>
+                  {openRequisitions.map((requisition) => (
+                    <SelectItem key={requisition.id} value={requisition.id}>
+                      {requisition.jobTitle}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
             <div>
               <Label htmlFor="candidate-first-name">First name</Label>
@@ -895,9 +948,9 @@ export function RecruitmentPage() {
           </div>
           <div>
             <Label htmlFor="candidate-notes">Notes</Label>
-            <textarea
+            <Textarea
               id="candidate-notes"
-              className={`${selectClassName} min-h-[100px] py-2`}
+              className="min-h-[100px]"
               value={applicationForm.notes}
               onChange={(event) =>
                 setApplicationForm((current) => ({

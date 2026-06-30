@@ -9,6 +9,13 @@ import { Button } from '@/components/ui/button'
 import { FormDrawer } from '@/components/ui/form-drawer'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 import { CreditCard, Receipt, Trash2, Wallet } from 'lucide-react'
 import { MetricCard } from '@/components/ui/metric-card'
 import { StatusBadge } from '@/components/ui/status-badge'
@@ -427,31 +434,34 @@ export function PayrollPage() {
               <form className="space-y-4" onSubmit={handleSaveCompensation}>
               <div className="space-y-2">
                 <Label htmlFor="compensation-employee">Employee</Label>
-                <select
-                  id="compensation-employee"
+                <Select
+                  name="compensation-employee"
                   value={compensationForm.employeeId}
-                  onChange={(event) =>
+                  onValueChange={(employeeId) =>
                     setCompensationForm((current) => ({
                       ...current,
-                      employeeId: event.target.value,
+                      employeeId,
                     }))
                   }
-                  className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
                   required
                 >
-                  <option value="">Select employee</option>
-                  {employees.map(
-                    (employee: {
-                      id: string
-                      employeeNumber: string
-                      fullName: string
-                    }) => (
-                      <option key={employee.id} value={employee.id}>
-                        {employee.fullName} ({employee.employeeNumber})
-                      </option>
-                    )
-                  )}
-                </select>
+                  <SelectTrigger id="compensation-employee">
+                    <SelectValue placeholder="Select employee" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {employees.map(
+                      (employee: {
+                        id: string
+                        employeeNumber: string
+                        fullName: string
+                      }) => (
+                        <SelectItem key={employee.id} value={employee.id}>
+                          {employee.fullName} ({employee.employeeNumber})
+                        </SelectItem>
+                      )
+                    )}
+                  </SelectContent>
+                </Select>
               </div>
               <div className="grid gap-4 sm:grid-cols-2">
                 <div className="space-y-2">
