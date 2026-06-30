@@ -8,7 +8,7 @@ import {
 import { randomUUID } from 'crypto';
 import { mkdir, writeFile } from 'fs/promises';
 import path from 'path';
-import { PrismaService } from '../prisma/prisma.service';
+import { DatabaseService } from '../database/database.service';
 import { AuthenticatedUser } from '../common/current-user.decorator';
 import { ACCOUNT_MANAGER_ROLE_KEYS } from '../common/system-roles';
 import { hasAdminPanelAccess } from '../common/access-control';
@@ -39,10 +39,10 @@ interface PolicyDocumentRow {
 
 @Injectable()
 export class PolicyService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(private readonly database: DatabaseService) {}
 
   async policyDocuments(currentUser: AuthenticatedUser) {
-    const rows = await this.prisma.many<PolicyDocumentRow>(
+    const rows = await this.database.many<PolicyDocumentRow>(
       `
         SELECT
           id,
@@ -81,7 +81,7 @@ export class PolicyService {
 
     const title = input.title.trim();
     const version = input.version.trim();
-    const existing = await this.prisma.one<{ id: string }>(
+    const existing = await this.database.one<{ id: string }>(
       `
         SELECT id
         FROM policy_documents
@@ -94,7 +94,7 @@ export class PolicyService {
       throw new ConflictException('This policy title and version already exist');
     }
 
-    const created = await this.prisma.one<{ id: string }>(
+    const created = await this.database.one<{ id: string }>(
       `
         INSERT INTO policy_documents (
           id,
@@ -142,7 +142,7 @@ export class PolicyService {
       throw new BadRequestException('Policy status must be DRAFT, PUBLISHED, or ARCHIVED');
     }
 
-    const duplicate = await this.prisma.one<{ id: string }>(
+    const duplicate = await this.database.one<{ id: string }>(
       `
         SELECT id
         FROM policy_documents
@@ -155,7 +155,7 @@ export class PolicyService {
       throw new ConflictException('This policy title and version already exist');
     }
 
-    await this.prisma.query(
+    await this.database.query(
       `
         UPDATE policy_documents
         SET
@@ -201,7 +201,7 @@ export class PolicyService {
   ) {
     this.assertCanManagePolicies(currentUser.roles);
 
-    const existing = await this.prisma.one<{ id: string; status: string }>(
+    const existing = await this.database.one<{ id: string; status: string }>(
       `SELECT id, status FROM policy_documents WHERE id = $1`,
       [input.policyDocumentId],
     );
@@ -214,7 +214,7 @@ export class PolicyService {
       throw new BadRequestException('Policy document is already published');
     }
 
-    await this.prisma.query(
+    await this.database.query(
       `
         UPDATE policy_documents
         SET
@@ -236,7 +236,7 @@ export class PolicyService {
     this.assertCanManagePolicies(currentUser.roles);
     await this.getRawPolicyDocument(input.policyDocumentId);
 
-    await this.prisma.query(
+    await this.database.query(
       `
         UPDATE policy_documents
         SET
@@ -257,7 +257,7 @@ export class PolicyService {
   ) {
     this.assertCanManagePolicies(currentUser.roles);
 
-    const existing = await this.prisma.one<{ id: string }>(
+    const existing = await this.database.one<{ id: string }>(
       `SELECT id FROM policy_documents WHERE id = $1`,
       [input.policyDocumentId],
     );
@@ -288,7 +288,7 @@ export class PolicyService {
     await mkdir(storageDir, { recursive: true });
     await writeFile(absolutePath, fileBuffer);
 
-    await this.prisma.query(
+    await this.database.query(
       `
         UPDATE policy_documents
         SET
@@ -312,7 +312,7 @@ export class PolicyService {
   }
 
   async getStoredPolicyFile(storedFileName: string) {
-    const file = await this.prisma.one<{
+    const file = await this.database.one<{
       documentOriginalName: string | null;
       documentMimeType: string | null;
       storedFileName: string | null;
@@ -358,7 +358,7 @@ export class PolicyService {
   }
 
   private async getRawPolicyDocument(id: string) {
-    const row = await this.prisma.one<PolicyDocumentRow>(
+    const row = await this.database.one<PolicyDocumentRow>(
       `
         SELECT
           id,

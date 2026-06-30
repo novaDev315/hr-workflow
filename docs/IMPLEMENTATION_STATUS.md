@@ -8,7 +8,7 @@
 
 HRFlow Pro now has one supported runtime path:
 
-- `apps/backend` - NestJS GraphQL backend with Prisma/PostgreSQL
+- `apps/backend` - NestJS GraphQL backend with raw SQL/PostgreSQL ownership
 - `apps/web-admin` - React admin portal
 - `apps/mobile` - Expo mobile employee portal
 - `docker-compose.yml` and `docker-compose.dev.yml` - local PostgreSQL plus backend runtime

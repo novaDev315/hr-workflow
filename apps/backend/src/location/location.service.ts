@@ -16,7 +16,7 @@ import {
   hasManagerAccess,
   resolveEmployeeVisibilityScope,
 } from '../common/access-control';
-import { PrismaService } from '../prisma/prisma.service';
+import { DatabaseService } from '../database/database.service';
 import {
   AssignEmployeeLocationInput,
   CreateLocationInput,
@@ -44,13 +44,13 @@ interface LocationRow {
 @Injectable()
 export class LocationService {
   constructor(
-    private readonly prisma: PrismaService,
+    private readonly database: DatabaseService,
     private readonly geofence: GeofenceService,
   ) {}
 
   async findAll(currentUser: AuthenticatedUser, activeOnly = true) {
     assertAdminPanelAccess(currentUser.roles);
-    const scope = await resolveEmployeeVisibilityScope(this.prisma, currentUser);
+    const scope = await resolveEmployeeVisibilityScope(this.database, currentUser);
     const values: unknown[] = [];
     const where: string[] = [];
 
@@ -80,7 +80,7 @@ export class LocationService {
       values.push(...scopedValues);
     }
 
-    const rows = await this.prisma.many<LocationRow>(
+    const rows = await this.database.many<LocationRow>(
       `
         SELECT
           l.id,
@@ -108,7 +108,7 @@ export class LocationService {
 
   async findOne(currentUser: AuthenticatedUser, id: string) {
     assertAdminPanelAccess(currentUser.roles);
-    const row = await this.prisma.one<LocationRow>(
+    const row = await this.database.one<LocationRow>(
       `
         SELECT
           id,
@@ -149,7 +149,7 @@ export class LocationService {
   async create(currentUser: AuthenticatedUser, input: CreateLocationInput) {
     assertAccountManagerAccess(currentUser.roles);
     const code = input.code.trim().toUpperCase();
-    const existing = await this.prisma.one<{ id: string }>(
+    const existing = await this.database.one<{ id: string }>(
       `SELECT id FROM locations WHERE code = $1`,
       [code],
     );
@@ -158,7 +158,7 @@ export class LocationService {
       throw new ConflictException('Location with this code already exists');
     }
 
-    const created = await this.prisma.one<{ id: string }>(
+    const created = await this.database.one<{ id: string }>(
       `
         INSERT INTO locations (
           id,
@@ -202,7 +202,7 @@ export class LocationService {
     const code = input.code?.trim().toUpperCase() ?? existing.code;
 
     if (code !== existing.code) {
-      const duplicate = await this.prisma.one<{ id: string }>(
+      const duplicate = await this.database.one<{ id: string }>(
         `SELECT id FROM locations WHERE code = $1 AND id <> $2`,
         [code, input.id],
       );
@@ -212,7 +212,7 @@ export class LocationService {
       }
     }
 
-    await this.prisma.query(
+    await this.database.query(
       `
         UPDATE locations
         SET
@@ -255,7 +255,7 @@ export class LocationService {
     assertAccountManagerAccess(currentUser.roles);
     await this.findLocationById(input.id);
 
-    await this.prisma.query(
+    await this.database.query(
       `
         UPDATE locations
         SET is_active = FALSE, updated_at = NOW()
@@ -285,9 +285,9 @@ export class LocationService {
     await this.ensureEmployeeExists(input.employeeId);
     await this.findOne(currentUser, input.locationId);
 
-    return this.prisma.transaction(async (client) => {
+    return this.database.transaction(async (client) => {
       if (input.isPrimary) {
-        await this.prisma.query(
+        await this.database.query(
           `
             UPDATE employee_location_assignments
             SET is_primary = FALSE
@@ -298,7 +298,7 @@ export class LocationService {
         );
       }
 
-      const existing = await this.prisma.one<{ id: string }>(
+      const existing = await this.database.one<{ id: string }>(
         `
           SELECT id
           FROM employee_location_assignments
@@ -313,7 +313,7 @@ export class LocationService {
       );
 
       if (existing) {
-        await this.prisma.query(
+        await this.database.query(
           `
             UPDATE employee_location_assignments
             SET is_primary = $2
@@ -326,7 +326,7 @@ export class LocationService {
         return this.getAssignment(existing.id, client);
       }
 
-      const created = await this.prisma.one<{ id: string }>(
+      const created = await this.database.one<{ id: string }>(
         `
           INSERT INTO employee_location_assignments (
             id,
@@ -358,7 +358,7 @@ export class LocationService {
     await this.assertEmployeeScope(currentUser, employeeId);
     await this.ensureEmployeeExists(employeeId);
 
-    const rows = await this.prisma.many<any>(
+    const rows = await this.database.many<any>(
       `
         SELECT
           ela.id,
@@ -430,7 +430,7 @@ export class LocationService {
       throw new BadRequestException('Selected location is inactive');
     }
 
-    const assignment = await this.prisma.one<{ id: string }>(
+    const assignment = await this.database.one<{ id: string }>(
       `
         SELECT id
         FROM employee_location_assignments
@@ -471,7 +471,7 @@ export class LocationService {
   }
 
   private async findLocationById(id: string) {
-    const row = await this.prisma.one<LocationRow>(
+    const row = await this.database.one<LocationRow>(
       `
         SELECT
           id,
@@ -501,7 +501,7 @@ export class LocationService {
   }
 
   private async getAssignment(id: string, client?: any) {
-    const row = await this.prisma.one<any>(
+    const row = await this.database.one<any>(
       `
         SELECT
           ela.id,
@@ -563,7 +563,7 @@ export class LocationService {
   }
 
   private async ensureEmployeeExists(employeeId: string) {
-    const employee = await this.prisma.one<{ id: string }>(
+    const employee = await this.database.one<{ id: string }>(
       `SELECT id FROM employees WHERE id = $1 AND is_active = TRUE`,
       [employeeId],
     );
@@ -577,8 +577,8 @@ export class LocationService {
     currentUser: AuthenticatedUser,
     employeeId: string,
   ) {
-    const scope = await resolveEmployeeVisibilityScope(this.prisma, currentUser);
-    const employee = await this.prisma.one<{
+    const scope = await resolveEmployeeVisibilityScope(this.database, currentUser);
+    const employee = await this.database.one<{
       id: string;
       departmentId: string | null;
       supervisorId: string | null;

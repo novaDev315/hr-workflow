@@ -26,11 +26,10 @@
     "build:web-admin": "bun run --cwd apps/web-admin build",
     "test:backend": "NODE_ENV=test bun run --cwd apps/backend test",
     "typecheck:mobile": "bunx tsc --noEmit -p apps/mobile/tsconfig.json",
-    "prisma:generate:backend": "bun run --cwd apps/backend prisma:generate",
-    "prisma:migrate:backend": "bun run --cwd apps/backend prisma:migrate",
-    "migrate:up": "bun run prisma:migrate:backend",
-    "migrate:down": "echo 'Prisma down migrations are not supported. Use bunx prisma migrate reset --schema apps/backend/prisma/schema.prisma for local-only resets.'",
-    "migrate:status": "bunx prisma migrate status --schema apps/backend/prisma/schema.prisma"
+    "db:schema:ensure": "bun run --cwd apps/backend schema:ensure",
+    "migrate:up": "bun run build:backend && bun run --cwd apps/backend migrate:deploy",
+    "migrate:down": "echo 'Raw SQL startup migrations are forward-only. Restore from backup or add an explicit rollback script for the target change.'",
+    "migrate:status": "echo 'Raw SQL startup migrations are idempotent and do not keep a Prisma migration ledger.'"
   },
   "devDependencies": {
     "turbo": "^1.11.0",

@@ -3,7 +3,7 @@ import { ConfigModule } from '@nestjs/config';
 import { GraphQLModule } from '@nestjs/graphql';
 import { ApolloDriver, ApolloDriverConfig } from '@nestjs/apollo';
 import { join } from 'path';
-import { PrismaModule } from './prisma/prisma.module';
+import { DatabaseModule } from './database/database.module';
 import { HealthModule } from './health/health.module';
 import { AuthModule } from './auth/auth.module';
 import { OrgReferenceModule } from './org-reference/org-reference.module';
@@ -36,7 +36,7 @@ import { RecruitmentModule } from './recruitment/recruitment.module';
       },
       context: ({ req, res }) => ({ req, res }),
     }),
-    PrismaModule,
+    DatabaseModule,
     HealthModule,
     AuthModule,
     OrgReferenceModule,

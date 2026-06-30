@@ -6,7 +6,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { randomUUID } from 'crypto';
-import { PrismaService } from '../prisma/prisma.service';
+import { DatabaseService } from '../database/database.service';
 import { AuthenticatedUser } from '../common/current-user.decorator';
 import {
   ACCOUNT_MANAGER_ROLE_KEYS,
@@ -67,10 +67,10 @@ interface LeaveBalanceRow extends LeaveTypeRow {
 
 @Injectable()
 export class LeaveService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(private readonly database: DatabaseService) {}
 
   async leaveTypes() {
-    const rows = await this.prisma.many<LeaveTypeRow>(
+    const rows = await this.database.many<LeaveTypeRow>(
       `
         SELECT
           id,
@@ -102,7 +102,7 @@ export class LeaveService {
       throw new BadRequestException('Default days must be greater than zero');
     }
 
-    const existing = await this.prisma.one<{ id: string }>(
+    const existing = await this.database.one<{ id: string }>(
       `SELECT id FROM leave_types WHERE code = $1 OR LOWER(name) = LOWER($2)`,
       [code, name],
     );
@@ -111,7 +111,7 @@ export class LeaveService {
       throw new ConflictException('A leave type with this code or name already exists');
     }
 
-    const created = await this.prisma.one<{ id: string }>(
+    const created = await this.database.one<{ id: string }>(
       `
         INSERT INTO leave_types (
           id,
@@ -151,7 +151,7 @@ export class LeaveService {
       throw new BadRequestException('Default days must be greater than zero');
     }
 
-    const duplicate = await this.prisma.one<{ id: string }>(
+    const duplicate = await this.database.one<{ id: string }>(
       `
         SELECT id
         FROM leave_types
@@ -164,7 +164,7 @@ export class LeaveService {
       throw new ConflictException('A leave type with this code or name already exists');
     }
 
-    await this.prisma.query(
+    await this.database.query(
       `
         UPDATE leave_types
         SET
@@ -196,7 +196,7 @@ export class LeaveService {
     this.assertCanManageLeavePolicies(currentUser.roles);
     await this.findLeaveType(input.id);
 
-    await this.prisma.query(
+    await this.database.query(
       `
         UPDATE leave_types
         SET is_active = FALSE, updated_at = NOW()
@@ -220,7 +220,7 @@ export class LeaveService {
       throw new BadRequestException('End date must be on or after start date');
     }
 
-    const leaveType = await this.prisma.one<LeaveTypeRow>(
+    const leaveType = await this.database.one<LeaveTypeRow>(
       `
         SELECT
           id,
@@ -239,7 +239,7 @@ export class LeaveService {
       throw new NotFoundException('Leave type not found or inactive');
     }
 
-    const employee = await this.prisma.one<{ id: string }>(
+    const employee = await this.database.one<{ id: string }>(
       `SELECT id FROM employees WHERE id = $1 AND is_active = TRUE`,
       [employeeId],
     );
@@ -248,7 +248,7 @@ export class LeaveService {
       throw new NotFoundException('Employee not found or inactive');
     }
 
-    const overlapping = await this.prisma.one<{ id: string }>(
+    const overlapping = await this.database.one<{ id: string }>(
       `
         SELECT id
         FROM leave_requests
@@ -268,7 +268,7 @@ export class LeaveService {
     }
 
     const totalDays = this.calculateTotalDays(startDate, endDate);
-    const created = await this.prisma.one<{ id: string }>(
+    const created = await this.database.one<{ id: string }>(
       `
         INSERT INTO leave_requests (
           id,
@@ -309,7 +309,7 @@ export class LeaveService {
       throw new BadRequestException('Review status must be APPROVED or REJECTED');
     }
 
-    const existing = await this.prisma.one<{
+    const existing = await this.database.one<{
       id: string;
       status: string;
       employeeId: string;
@@ -338,7 +338,7 @@ export class LeaveService {
       throw new BadRequestException('Only pending leave requests can be reviewed');
     }
 
-    const scope = await resolveEmployeeVisibilityScope(this.prisma, currentUser);
+    const scope = await resolveEmployeeVisibilityScope(this.database, currentUser);
     if (
       !canAccessEmployeeWithinScope(scope, {
         employeeId: existing.employeeId,
@@ -351,7 +351,7 @@ export class LeaveService {
       );
     }
 
-    await this.prisma.query(
+    await this.database.query(
       `
         UPDATE leave_requests
         SET
@@ -377,7 +377,7 @@ export class LeaveService {
     currentUser: AuthenticatedUser,
     filter?: LeaveRequestFilterInput,
   ) {
-    const scope = await resolveEmployeeVisibilityScope(this.prisma, currentUser);
+    const scope = await resolveEmployeeVisibilityScope(this.database, currentUser);
     const values: unknown[] = [];
     const where: string[] = [];
 
@@ -415,7 +415,7 @@ export class LeaveService {
       where.push(`lr.end_date <= $${values.length}`);
     }
 
-    const rows = await this.prisma.many<LeaveRequestRow>(
+    const rows = await this.database.many<LeaveRequestRow>(
       `
         SELECT
           lr.id,
@@ -461,7 +461,7 @@ export class LeaveService {
       employeeId,
     );
     const currentYear = new Date().getUTCFullYear();
-    const rows = await this.prisma.many<LeaveBalanceRow>(
+    const rows = await this.database.many<LeaveBalanceRow>(
       `
         SELECT
           lt.id AS "leaveTypeId",
@@ -497,7 +497,7 @@ export class LeaveService {
   }
 
   private async findLeaveType(id: string) {
-    const row = await this.prisma.one<LeaveTypeRow>(
+    const row = await this.database.one<LeaveTypeRow>(
       `
         SELECT
           id,
@@ -520,7 +520,7 @@ export class LeaveService {
   }
 
   private async findRequest(id: string) {
-    const row = await this.prisma.one<LeaveRequestRow>(
+    const row = await this.database.one<LeaveRequestRow>(
       `
         SELECT
           lr.id,
@@ -571,8 +571,8 @@ export class LeaveService {
     if (!normalizedEmployeeId) {
       throw new BadRequestException('Employee is required');
     }
-    const scope = await resolveEmployeeVisibilityScope(this.prisma, currentUser);
-    const employee = await this.prisma.one<{
+    const scope = await resolveEmployeeVisibilityScope(this.database, currentUser);
+    const employee = await this.database.one<{
       id: string;
       departmentId: string | null;
       supervisorId: string | null;

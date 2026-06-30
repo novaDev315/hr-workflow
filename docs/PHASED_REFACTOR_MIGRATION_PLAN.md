@@ -67,9 +67,12 @@ rewrite. The migration should:
   committed `components.json`.
 - Existing UI primitives include `button`, `card`, `form-drawer`, `input`,
   `label`, `metric-card`, `notice`, and `status-badge`.
-- Backend package still exposes `prisma:*` scripts and has
-  `apps/backend/prisma/schema.prisma`, but runtime behavior goes through
-  `apps/backend/src/prisma/prisma.service.ts` with raw `pg` SQL and startup DDL.
+- Backend package now exposes raw SQL/Postgres schema verification scripts and
+  still keeps `apps/backend/prisma/schema.prisma` parked for the later Prisma
+  checkpoint.
+- Runtime database behavior goes through
+  `apps/backend/src/database/database.service.ts` with raw `pg` SQL plus
+  explicit schema and seed modules.
 - Prior proof showed web-admin build/lint, backend build, mobile typecheck, and
   backend integration tests can pass. Backend integration tests need access to
   the configured test Postgres host.
@@ -200,7 +203,9 @@ Files to inspect:
 - `apps/backend/package.json`
 - `apps/web-admin/src/App.tsx`
 - `apps/web-admin/src/demo/**`
-- `apps/backend/src/prisma/prisma.service.ts`
+- `apps/backend/src/database/database.service.ts`
+- `apps/backend/src/database/schema.ts`
+- `apps/backend/src/database/seeds.ts`
 - `apps/backend/prisma/schema.prisma`
 - `docs/IMPLEMENTATION_STATUS.md`
 - `scripts/e2e/run-rakss-ui-lifecycle.mjs`

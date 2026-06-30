@@ -4,7 +4,7 @@ import bcrypt from 'bcrypt';
 import { randomUUID } from 'crypto';
 import request from 'supertest';
 import { AppModule } from '../app.module';
-import { PrismaService } from '../prisma/prisma.service';
+import { DatabaseService } from '../database/database.service';
 import { SYSTEM_ROLE_DETAILS, SystemRoleKey } from '../common/system-roles';
 
 type GraphqlResponse<T> = {
@@ -16,7 +16,7 @@ jest.setTimeout(90000);
 
 describe('Mobile self-service flows', () => {
   let app: INestApplication;
-  let prisma: PrismaService;
+  let database: DatabaseService;
 
   const ids = {
     departmentId: randomUUID(),
@@ -48,10 +48,10 @@ describe('Mobile self-service flows', () => {
     app = moduleFixture.createNestApplication();
     await app.init();
 
-    prisma = moduleFixture.get(PrismaService);
+    database = moduleFixture.get(DatabaseService);
 
     await ensureRole('ADMIN');
-    await prisma.query(
+    await database.query(
       `
         INSERT INTO departments (id, name, code, description, is_active)
         VALUES ($1, $2, $3, $4, TRUE)
@@ -63,7 +63,7 @@ describe('Mobile self-service flows', () => {
         'Integration test department',
       ],
     );
-    await prisma.query(
+    await database.query(
       `
         INSERT INTO designations (
           id,
@@ -87,7 +87,7 @@ describe('Mobile self-service flows', () => {
     );
 
     const passwordHash = await bcrypt.hash(adminPassword, 10);
-    await prisma.query(
+    await database.query(
       `
         INSERT INTO users (
           id,
@@ -104,7 +104,7 @@ describe('Mobile self-service flows', () => {
     );
 
     const adminRoleId = await getRoleId('ADMIN');
-    await prisma.query(
+    await database.query(
       `
         INSERT INTO user_role_assignments (id, user_id, role_id)
         VALUES ($1, $2, $3)
@@ -114,7 +114,7 @@ describe('Mobile self-service flows', () => {
   });
 
   afterAll(async () => {
-    if (!prisma) {
+    if (!database) {
       return;
     }
 
@@ -503,7 +503,7 @@ describe('Mobile self-service flows', () => {
 
     payrollPeriodId = createdPayrollPeriod.createPayrollPeriod.id;
 
-    await prisma.query(
+    await database.query(
       `
         INSERT INTO attendance_records (
           id,
@@ -726,7 +726,7 @@ describe('Mobile self-service flows', () => {
   }
 
   async function ensureRole(roleKey: SystemRoleKey) {
-    const existing = await prisma.one<{ id: string }>(
+    const existing = await database.one<{ id: string }>(
       `SELECT id FROM roles WHERE key = $1`,
       [roleKey],
     );
@@ -736,7 +736,7 @@ describe('Mobile self-service flows', () => {
     }
 
     const detail = SYSTEM_ROLE_DETAILS[roleKey];
-    const created = await prisma.one<{ id: string }>(
+    const created = await database.one<{ id: string }>(
       `
         INSERT INTO roles (id, key, name, description, is_system)
         VALUES ($1, $2, $3, $4, TRUE)
@@ -749,7 +749,7 @@ describe('Mobile self-service flows', () => {
   }
 
   async function getRoleId(roleKey: SystemRoleKey) {
-    const role = await prisma.one<{ id: string }>(
+    const role = await database.one<{ id: string }>(
       `SELECT id FROM roles WHERE key = $1`,
       [roleKey],
     );
@@ -762,7 +762,7 @@ describe('Mobile self-service flows', () => {
   }
 
   async function getUserAssignmentIds(userId: string) {
-    const rows = await prisma.many<{ id: string }>(
+    const rows = await database.many<{ id: string }>(
       `SELECT id FROM user_role_assignments WHERE user_id = $1`,
       [userId],
     );
@@ -771,7 +771,7 @@ describe('Mobile self-service flows', () => {
   }
 
   async function getAttendanceRecordIds(employeeRecordId: string) {
-    const rows = await prisma.many<{ id: string }>(
+    const rows = await database.many<{ id: string }>(
       `SELECT id FROM attendance_records WHERE employee_id = $1`,
       [employeeRecordId],
     );
@@ -780,7 +780,7 @@ describe('Mobile self-service flows', () => {
   }
 
   async function getEmployeeLocationIds(employeeRecordId: string) {
-    const rows = await prisma.many<{ id: string }>(
+    const rows = await database.many<{ id: string }>(
       `SELECT id FROM employee_location_assignments WHERE employee_id = $1`,
       [employeeRecordId],
     );
@@ -790,7 +790,7 @@ describe('Mobile self-service flows', () => {
 
   async function getPayslipIds(periodId: string, employeeRecordId?: string) {
     const values = employeeRecordId ? [periodId, employeeRecordId] : [periodId];
-    const rows = await prisma.many<{ id: string }>(
+    const rows = await database.many<{ id: string }>(
       `
         SELECT id
         FROM payslips
@@ -805,7 +805,7 @@ describe('Mobile self-service flows', () => {
   }
 
   async function getCompensationIds(employeeRecordId: string) {
-    const rows = await prisma.many<{ id: string }>(
+    const rows = await database.many<{ id: string }>(
       `SELECT id FROM employee_compensations WHERE employee_id = $1`,
       [employeeRecordId],
     );
@@ -818,6 +818,6 @@ describe('Mobile self-service flows', () => {
       return;
     }
 
-    await prisma.query(`DELETE FROM ${tableName} WHERE id = ANY($1::text[])`, [values]);
+    await database.query(`DELETE FROM ${tableName} WHERE id = ANY($1::text[])`, [values]);
   }
 });

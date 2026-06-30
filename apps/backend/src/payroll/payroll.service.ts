@@ -6,7 +6,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { randomUUID } from 'crypto';
-import { PrismaService } from '../prisma/prisma.service';
+import { DatabaseService } from '../database/database.service';
 import { AuthenticatedUser } from '../common/current-user.decorator';
 import {
   ACCOUNT_MANAGER_ROLE_KEYS,
@@ -78,11 +78,11 @@ interface PayslipExportRow extends PayslipRow {
 
 @Injectable()
 export class PayrollService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(private readonly database: DatabaseService) {}
 
   async employeeCompensations(currentUser: AuthenticatedUser) {
     this.assertCanManagePayroll(currentUser.roles);
-    const rows = await this.prisma.many<EmployeeCompensationRow>(
+    const rows = await this.database.many<EmployeeCompensationRow>(
       `
         SELECT
           ec.id,
@@ -110,7 +110,7 @@ export class PayrollService {
   ) {
     this.assertCanManagePayroll(currentUser.roles);
 
-    const employee = await this.prisma.one<{ id: string }>(
+    const employee = await this.database.one<{ id: string }>(
       `SELECT id FROM employees WHERE id = $1 AND is_active = TRUE`,
       [input.employeeId],
     );
@@ -122,13 +122,13 @@ export class PayrollService {
     const effectiveFrom = input.effectiveFrom?.trim() || new Date().toISOString().slice(0, 10);
     const currencyCode = input.currencyCode?.trim().toUpperCase() || 'AED';
 
-    const existing = await this.prisma.one<{ id: string }>(
+    const existing = await this.database.one<{ id: string }>(
       `SELECT id FROM employee_compensations WHERE employee_id = $1`,
       [input.employeeId],
     );
 
     if (existing) {
-      await this.prisma.query(
+      await this.database.query(
         `
           UPDATE employee_compensations
           SET
@@ -155,7 +155,7 @@ export class PayrollService {
       return this.findEmployeeCompensationByEmployeeId(input.employeeId);
     }
 
-    const created = await this.prisma.one<{ id: string }>(
+    const created = await this.database.one<{ id: string }>(
       `
         INSERT INTO employee_compensations (
           id,
@@ -187,7 +187,7 @@ export class PayrollService {
 
   async payrollPeriods(currentUser: AuthenticatedUser) {
     this.assertCanManagePayroll(currentUser.roles);
-    const rows = await this.prisma.many<PayrollPeriodRow>(
+    const rows = await this.database.many<PayrollPeriodRow>(
       `
         SELECT
           pp.id,
@@ -216,7 +216,7 @@ export class PayrollService {
     this.assertCanManagePayroll(currentUser.roles);
 
     const { startDate, endDate } = this.getPeriodRange(input.periodMonth);
-    const existing = await this.prisma.one<{ id: string }>(
+    const existing = await this.database.one<{ id: string }>(
       `SELECT id FROM payroll_periods WHERE period_month = $1`,
       [input.periodMonth],
     );
@@ -225,7 +225,7 @@ export class PayrollService {
       throw new ConflictException('Payroll period already exists for this month');
     }
 
-    const created = await this.prisma.one<{ id: string }>(
+    const created = await this.database.one<{ id: string }>(
       `
         INSERT INTO payroll_periods (
           id,
@@ -254,7 +254,7 @@ export class PayrollService {
       throw new BadRequestException('Paid payroll periods cannot be reprocessed');
     }
 
-    const employees = await this.prisma.many<{
+    const employees = await this.database.many<{
       compensationId: string;
       employeeId: string;
       baseSalary: number;
@@ -289,8 +289,8 @@ export class PayrollService {
 
     const expectedWorkdays = this.countWeekdays(period.startDate, period.endDate);
 
-    await this.prisma.transaction(async (tx) => {
-      await this.prisma.query(
+    await this.database.transaction(async (tx) => {
+      await this.database.query(
         `
           DELETE FROM payslips
           WHERE payroll_period_id = $1
@@ -300,7 +300,7 @@ export class PayrollService {
       );
 
       for (const employee of employees) {
-        const attendance = await this.prisma.one<{ attendedDays: string }>(
+        const attendance = await this.database.one<{ attendedDays: string }>(
           `
             SELECT COUNT(*)::text AS "attendedDays"
             FROM attendance_records
@@ -313,7 +313,7 @@ export class PayrollService {
           tx,
         );
 
-        const approvedLeave = await this.prisma.one<{ approvedLeaveDays: string }>(
+        const approvedLeave = await this.database.one<{ approvedLeaveDays: string }>(
           `
             SELECT COALESCE(SUM(total_days), 0)::text AS "approvedLeaveDays"
             FROM leave_requests
@@ -348,7 +348,7 @@ export class PayrollService {
           ),
         );
 
-        await this.prisma.query(
+        await this.database.query(
           `
             INSERT INTO payslips (
               id,
@@ -396,7 +396,7 @@ export class PayrollService {
         );
       }
 
-      await this.prisma.query(
+      await this.database.query(
         `
           UPDATE payroll_periods
           SET
@@ -424,8 +424,8 @@ export class PayrollService {
       throw new BadRequestException('Only processed payroll periods can be marked as paid');
     }
 
-    await this.prisma.transaction(async (tx) => {
-      await this.prisma.query(
+    await this.database.transaction(async (tx) => {
+      await this.database.query(
         `
           UPDATE payroll_periods
           SET
@@ -438,7 +438,7 @@ export class PayrollService {
         tx,
       );
 
-      await this.prisma.query(
+      await this.database.query(
         `
           UPDATE payslips
           SET status = 'PAID'
@@ -463,13 +463,13 @@ export class PayrollService {
       throw new BadRequestException('Paid payroll periods cannot be deleted');
     }
 
-    await this.prisma.transaction(async (tx) => {
-      await this.prisma.query(
+    await this.database.transaction(async (tx) => {
+      await this.database.query(
         `DELETE FROM payslips WHERE payroll_period_id = $1`,
         [period.id],
         tx,
       );
-      await this.prisma.query(
+      await this.database.query(
         `DELETE FROM payroll_periods WHERE id = $1`,
         [period.id],
         tx,
@@ -498,7 +498,7 @@ export class PayrollService {
       where.push(`ps.payroll_period_id = $${values.length}`);
     }
 
-    const rows = await this.prisma.many<PayslipRow>(
+    const rows = await this.database.many<PayslipRow>(
       `
         SELECT
           ps.id,
@@ -534,7 +534,7 @@ export class PayrollService {
   }
 
   async exportPayslipPdf(currentUser: AuthenticatedUser, payslipId: string) {
-    const row = await this.prisma.one<PayslipExportRow>(
+    const row = await this.database.one<PayslipExportRow>(
       `
         SELECT
           ps.id,
@@ -625,7 +625,7 @@ export class PayrollService {
   }
 
   private async findEmployeeCompensation(id: string) {
-    const row = await this.prisma.one<EmployeeCompensationRow>(
+    const row = await this.database.one<EmployeeCompensationRow>(
       `
         SELECT
           ec.id,
@@ -653,7 +653,7 @@ export class PayrollService {
   }
 
   private async findEmployeeCompensationByEmployeeId(employeeId: string) {
-    const row = await this.prisma.one<EmployeeCompensationRow>(
+    const row = await this.database.one<EmployeeCompensationRow>(
       `
         SELECT
           ec.id,
@@ -681,7 +681,7 @@ export class PayrollService {
   }
 
   private async getRawPayrollPeriod(id: string) {
-    const row = await this.prisma.one<PayrollPeriodRow>(
+    const row = await this.database.one<PayrollPeriodRow>(
       `
         SELECT
           pp.id,
@@ -736,7 +736,7 @@ export class PayrollService {
       return requestedEmployeeId?.trim() || null;
     }
 
-    const account = await this.prisma.one<{ employeeId: string | null }>(
+    const account = await this.database.one<{ employeeId: string | null }>(
       `SELECT employee_id AS "employeeId" FROM users WHERE id = $1`,
       [currentUser.userId],
     );

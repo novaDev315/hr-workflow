@@ -7,7 +7,7 @@ import {
   UnauthorizedException,
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
-import { PrismaService } from '../prisma/prisma.service';
+import { DatabaseService } from '../database/database.service';
 import { AuthenticatedUser } from '../common/current-user.decorator';
 import {
   BootstrapAdminInput,
@@ -56,12 +56,12 @@ type UserWithRoles = UserRow & {
 @Injectable()
 export class AuthService {
   constructor(
-    private readonly prisma: PrismaService,
+    private readonly database: DatabaseService,
     private readonly jwtService: JwtService,
   ) {}
 
   async getBootstrapStatus() {
-    const countRow = await this.prisma.one<{ count: string }>(
+    const countRow = await this.database.one<{ count: string }>(
       `SELECT COUNT(*)::text AS count FROM users`,
     );
     const accountCount = Number(countRow?.count ?? '0');
@@ -76,8 +76,8 @@ export class AuthService {
     const normalizedEmail = input.email.trim().toLowerCase();
     const passwordHash = await bcrypt.hash(input.password, 10);
 
-    const createdUser = await this.prisma.transaction(async (tx) => {
-      const countRow = await this.prisma.one<{ count: string }>(
+    const createdUser = await this.database.transaction(async (tx) => {
+      const countRow = await this.database.one<{ count: string }>(
         `SELECT COUNT(*)::text AS count FROM users`,
         [],
         tx,
@@ -92,7 +92,7 @@ export class AuthService {
 
       const adminRole = await this.ensureRole(DEFAULT_ADMIN_ROLE, tx);
 
-      const user = await this.prisma.one<{ id: string }>(
+      const user = await this.database.one<{ id: string }>(
         `
           INSERT INTO users (
             id,
@@ -116,7 +116,7 @@ export class AuthService {
         tx,
       );
 
-      await this.prisma.query(
+      await this.database.query(
         `
           INSERT INTO user_role_assignments (id, user_id, role_id)
           VALUES ($1, $2, $3)
@@ -170,7 +170,7 @@ export class AuthService {
     name: string;
     description?: string;
   }) {
-    const existing = await this.prisma.one<{ id: string }>(
+    const existing = await this.database.one<{ id: string }>(
       `SELECT id FROM roles WHERE key = $1`,
       [data.key],
     );
@@ -179,7 +179,7 @@ export class AuthService {
       throw new ConflictException(`Role ${data.key} already exists`);
     }
 
-    return this.prisma.one<{
+    return this.database.one<{
       id: string;
       key: string;
       name: string;
@@ -202,8 +202,8 @@ export class AuthService {
     const employeeId = input.employeeId.trim();
     const passwordHash = await bcrypt.hash(input.password, 10);
 
-    const createdUser = await this.prisma.transaction(async (tx) => {
-      const employee = await this.prisma.one<{
+    const createdUser = await this.database.transaction(async (tx) => {
+      const employee = await this.database.one<{
         id: string;
         email: string;
         firstName: string;
@@ -226,7 +226,7 @@ export class AuthService {
         throw new NotFoundException('Employee not found or inactive');
       }
 
-      const linkedUser = await this.prisma.one<{ id: string }>(
+      const linkedUser = await this.database.one<{ id: string }>(
         `SELECT id FROM users WHERE employee_id = $1`,
         [employeeId],
         tx,
@@ -236,7 +236,7 @@ export class AuthService {
         throw new ConflictException('This employee already has a linked account');
       }
 
-      const existingEmailUser = await this.prisma.one<{ id: string }>(
+      const existingEmailUser = await this.database.one<{ id: string }>(
         `SELECT id FROM users WHERE LOWER(email) = LOWER($1)`,
         [employee.email],
         tx,
@@ -250,7 +250,7 @@ export class AuthService {
 
       const employeeRole = await this.ensureRole('EMPLOYEE', tx);
 
-      const user = await this.prisma.one<{ id: string }>(
+      const user = await this.database.one<{ id: string }>(
         `
           INSERT INTO users (
             id,
@@ -274,7 +274,7 @@ export class AuthService {
         tx,
       );
 
-      await this.prisma.query(
+      await this.database.query(
         `
           INSERT INTO user_role_assignments (id, user_id, role_id)
           VALUES ($1, $2, $3)
@@ -304,8 +304,8 @@ export class AuthService {
       );
     }
 
-    return this.prisma.transaction(async (tx) => {
-      const employee = await this.prisma.one<{
+    return this.database.transaction(async (tx) => {
+      const employee = await this.database.one<{
         id: string;
         email: string;
         firstName: string;
@@ -331,7 +331,7 @@ export class AuthService {
       const employeeRole = await this.ensureRole('EMPLOYEE', tx);
       const staffRole = await this.ensureRole(roleKey, tx);
 
-      let account = await this.prisma.one<{ id: string }>(
+      let account = await this.database.one<{ id: string }>(
         `SELECT id FROM users WHERE employee_id = $1`,
         [employeeId],
         tx,
@@ -344,7 +344,7 @@ export class AuthService {
           );
         }
 
-        const existingEmailAccount = await this.prisma.one<{ id: string }>(
+        const existingEmailAccount = await this.database.one<{ id: string }>(
           `SELECT id FROM users WHERE LOWER(email) = LOWER($1)`,
           [employee.email],
           tx,
@@ -356,7 +356,7 @@ export class AuthService {
           );
         }
 
-        account = await this.prisma.one<{ id: string }>(
+        account = await this.database.one<{ id: string }>(
           `
             INSERT INTO users (
               id,
@@ -439,7 +439,7 @@ export class AuthService {
   }
 
   private async ensureRole(key: SystemRoleKey, client?: any) {
-    const existingRole = await this.prisma.one<{ id: string }>(
+    const existingRole = await this.database.one<{ id: string }>(
       `SELECT id FROM roles WHERE key = $1`,
       [key],
       client,
@@ -451,7 +451,7 @@ export class AuthService {
 
     const details = SYSTEM_ROLE_DETAILS[key];
 
-    return this.prisma.one<{ id: string }>(
+    return this.database.one<{ id: string }>(
       `
         INSERT INTO roles (id, key, name, description)
         VALUES ($1, $2, $3, $4)
@@ -467,7 +467,7 @@ export class AuthService {
     roleId: string,
     client?: any,
   ) {
-    const existingAssignment = await this.prisma.one<{ id: string }>(
+    const existingAssignment = await this.database.one<{ id: string }>(
       `
         SELECT id
         FROM user_role_assignments
@@ -481,7 +481,7 @@ export class AuthService {
       return existingAssignment;
     }
 
-    return this.prisma.one<{ id: string }>(
+    return this.database.one<{ id: string }>(
       `
         INSERT INTO user_role_assignments (id, user_id, role_id)
         VALUES ($1, $2, $3)
@@ -493,7 +493,7 @@ export class AuthService {
   }
 
   private async getUserWithRolesByEmail(email: string, client?: any) {
-    const user = await this.prisma.one<UserRow>(
+    const user = await this.database.one<UserRow>(
       `
         SELECT
           id,
@@ -518,7 +518,7 @@ export class AuthService {
   }
 
   private async getUserWithRolesById(id: string, client?: any) {
-    const user = await this.prisma.one<UserRow>(
+    const user = await this.database.one<UserRow>(
       `
         SELECT
           id,
@@ -543,7 +543,7 @@ export class AuthService {
   }
 
   private async attachRoles(user: UserRow, client?: any): Promise<UserWithRoles> {
-    const roles = await this.prisma.many<RoleRow>(
+    const roles = await this.database.many<RoleRow>(
       `
         SELECT r.key AS key
         FROM roles r
@@ -555,7 +555,7 @@ export class AuthService {
       client,
     );
 
-    const employeeProfile = await this.prisma.one<{
+    const employeeProfile = await this.database.one<{
       employeeId: string | null;
       employeeNumber: string | null;
       departmentName: string | null;

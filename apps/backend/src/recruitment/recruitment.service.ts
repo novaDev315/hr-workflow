@@ -7,7 +7,7 @@ import {
 import { randomUUID } from 'crypto';
 import { AuthenticatedUser } from '../common/current-user.decorator';
 import { assertAccountManagerAccess } from '../common/access-control';
-import { PrismaService } from '../prisma/prisma.service';
+import { DatabaseService } from '../database/database.service';
 import {
   AdvanceRecruitmentApplicationInput,
   ChangeJobRequisitionStatusInput,
@@ -93,7 +93,7 @@ interface RecruitmentApplicationRow {
 
 @Injectable()
 export class RecruitmentService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(private readonly database: DatabaseService) {}
 
   async jobRequisitions(
     currentUser: AuthenticatedUser,
@@ -126,7 +126,7 @@ export class RecruitmentService {
       where.push(`jr.department_id = $${values.length}`);
     }
 
-    const rows = await this.prisma.many<JobRequisitionRow>(
+    const rows = await this.database.many<JobRequisitionRow>(
       `
         ${this.requisitionSelect()}
         ${where.length > 0 ? `WHERE ${where.join(' AND ')}` : ''}
@@ -184,7 +184,7 @@ export class RecruitmentService {
       where.push(`ra.status = $${values.length}`);
     }
 
-    const rows = await this.prisma.many<RecruitmentApplicationRow>(
+    const rows = await this.database.many<RecruitmentApplicationRow>(
       `
         ${this.applicationSelect()}
         ${where.length > 0 ? `WHERE ${where.join(' AND ')}` : ''}
@@ -210,7 +210,7 @@ export class RecruitmentService {
 
   async recruitmentSummary(currentUser: AuthenticatedUser) {
     assertAccountManagerAccess(currentUser.roles);
-    const row = await this.prisma.one<{
+    const row = await this.database.one<{
       openRequisitions: number;
       activeApplications: number;
       screeningApplications: number;
@@ -251,7 +251,7 @@ export class RecruitmentService {
     await this.assertDepartmentAndDesignation(departmentId, designationId);
     this.assertSalaryRange(input.salaryMin ?? null, input.salaryMax ?? null);
 
-    const created = await this.prisma.one<{ id: string }>(
+    const created = await this.database.one<{ id: string }>(
       `
         INSERT INTO job_requisitions (
           id,
@@ -314,7 +314,7 @@ export class RecruitmentService {
     await this.assertDepartmentAndDesignation(departmentId, designationId);
     this.assertSalaryRange(salaryMin, salaryMax);
 
-    await this.prisma.query(
+    await this.database.query(
       `
         UPDATE job_requisitions
         SET
@@ -370,7 +370,7 @@ export class RecruitmentService {
     const status = this.normalizeRequisitionStatus(input.status);
     this.assertRequisitionTransition(existing.status as RequisitionStatus, status);
 
-    await this.prisma.query(
+    await this.database.query(
       `
         UPDATE job_requisitions
         SET
@@ -404,7 +404,7 @@ export class RecruitmentService {
     const email = input.email.trim().toLowerCase();
     this.assertNonNegative(input.yearsExperience, 'Years experience');
     this.assertNonNegative(input.expectedSalary, 'Expected salary');
-    const duplicate = await this.prisma.one<{ id: string }>(
+    const duplicate = await this.database.one<{ id: string }>(
       `
         SELECT id
         FROM recruitment_applications
@@ -419,7 +419,7 @@ export class RecruitmentService {
       );
     }
 
-    const created = await this.prisma.one<{ id: string }>(
+    const created = await this.database.one<{ id: string }>(
       `
         INSERT INTO recruitment_applications (
           id,
@@ -472,7 +472,7 @@ export class RecruitmentService {
     this.assertNonNegative(input.expectedSalary, 'Expected salary');
 
     if (email !== existing.email) {
-      const duplicate = await this.prisma.one<{ id: string }>(
+      const duplicate = await this.database.one<{ id: string }>(
         `
           SELECT id
           FROM recruitment_applications
@@ -488,7 +488,7 @@ export class RecruitmentService {
       }
     }
 
-    await this.prisma.query(
+    await this.database.query(
       `
         UPDATE recruitment_applications
         SET
@@ -539,7 +539,7 @@ export class RecruitmentService {
     const status = this.normalizeApplicationStatus(input.status);
     this.assertApplicationTransition(existing.status as ApplicationStatus, status);
 
-    await this.prisma.query(
+    await this.database.query(
       `
         UPDATE recruitment_applications
         SET
@@ -625,7 +625,7 @@ export class RecruitmentService {
   }
 
   private async findJobRequisition(id: string) {
-    const row = await this.prisma.one<JobRequisitionRow>(
+    const row = await this.database.one<JobRequisitionRow>(
       `
         ${this.requisitionSelect()}
         WHERE jr.id = $1
@@ -642,7 +642,7 @@ export class RecruitmentService {
   }
 
   private async findRecruitmentApplication(id: string) {
-    const row = await this.prisma.one<RecruitmentApplicationRow>(
+    const row = await this.database.one<RecruitmentApplicationRow>(
       `
         ${this.applicationSelect()}
         WHERE ra.id = $1
@@ -658,7 +658,7 @@ export class RecruitmentService {
   }
 
   private async getRawRequisition(id: string) {
-    const row = await this.prisma.one<{
+    const row = await this.database.one<{
       id: string;
       jobTitle: string;
       departmentId: string;
@@ -704,7 +704,7 @@ export class RecruitmentService {
   }
 
   private async getRawApplication(id: string) {
-    const row = await this.prisma.one<{
+    const row = await this.database.one<{
       id: string;
       requisitionId: string;
       firstName: string;
@@ -751,7 +751,7 @@ export class RecruitmentService {
     departmentId: string,
     designationId?: string | null,
   ) {
-    const department = await this.prisma.one<{ id: string }>(
+    const department = await this.database.one<{ id: string }>(
       `SELECT id FROM departments WHERE id = $1 AND is_active = TRUE`,
       [departmentId],
     );
@@ -764,7 +764,7 @@ export class RecruitmentService {
       return;
     }
 
-    const designation = await this.prisma.one<{
+    const designation = await this.database.one<{
       id: string;
       departmentId: string;
     }>(

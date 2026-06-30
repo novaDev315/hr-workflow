@@ -1,5 +1,5 @@
 import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
-import { PrismaService } from '../prisma/prisma.service';
+import { DatabaseService } from '../database/database.service';
 import {
   CreateDepartmentInput,
   DeactivateDepartmentInput,
@@ -9,10 +9,10 @@ import { randomUUID } from 'crypto';
 
 @Injectable()
 export class DepartmentService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(private readonly database: DatabaseService) {}
 
   async findAll(includeInactive = false) {
-    return this.prisma.many(
+    return this.database.many(
       `
         SELECT
           id,
@@ -31,7 +31,7 @@ export class DepartmentService {
     const name = input.name.trim();
     const code = input.code.trim().toUpperCase();
 
-    const existing = await this.prisma.one<{ id: string }>(
+    const existing = await this.database.one<{ id: string }>(
       `
         SELECT id
         FROM departments
@@ -44,7 +44,7 @@ export class DepartmentService {
       throw new ConflictException('Department with this name or code already exists');
     }
 
-    return this.prisma.one(
+    return this.database.one(
       `
         INSERT INTO departments (id, name, code, description)
         VALUES ($1, $2, $3, $4)
@@ -64,7 +64,7 @@ export class DepartmentService {
     const name = input.name?.trim() ?? existing.name;
     const code = input.code?.trim().toUpperCase() ?? existing.code;
 
-    const duplicate = await this.prisma.one<{ id: string }>(
+    const duplicate = await this.database.one<{ id: string }>(
       `
         SELECT id
         FROM departments
@@ -77,7 +77,7 @@ export class DepartmentService {
       throw new ConflictException('Department with this name or code already exists');
     }
 
-    const updated = await this.prisma.one(
+    const updated = await this.database.one(
       `
         UPDATE departments
         SET
@@ -108,7 +108,7 @@ export class DepartmentService {
 
   async deactivate(input: DeactivateDepartmentInput) {
     await this.findById(input.id);
-    const updated = await this.prisma.one(
+    const updated = await this.database.one(
       `
         UPDATE departments
         SET is_active = FALSE, updated_at = NOW()
@@ -127,7 +127,7 @@ export class DepartmentService {
   }
 
   private async findById(id: string) {
-    const row = await this.prisma.one<{
+    const row = await this.database.one<{
       id: string;
       name: string;
       code: string;

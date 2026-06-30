@@ -11,7 +11,7 @@ import {
   canAccessEmployeeWithinScope,
   resolveEmployeeVisibilityScope,
 } from '../common/access-control';
-import { PrismaService } from '../prisma/prisma.service';
+import { DatabaseService } from '../database/database.service';
 import { LocationService } from '../location/location.service';
 import {
   AttendanceFilterInput,
@@ -43,7 +43,7 @@ interface AttendanceRow {
 @Injectable()
 export class AttendanceService {
   constructor(
-    private readonly prisma: PrismaService,
+    private readonly database: DatabaseService,
     private readonly locationService: LocationService,
   ) {}
 
@@ -53,7 +53,7 @@ export class AttendanceService {
       input.employeeId,
     );
     const today = new Date().toISOString().slice(0, 10);
-    const existing = await this.prisma.one<{ id: string; clockInAt: string | null }>(
+    const existing = await this.database.one<{ id: string; clockInAt: string | null }>(
       `
         SELECT id, clock_in_at::text AS "clockInAt"
         FROM attendance_records
@@ -76,7 +76,7 @@ export class AttendanceService {
     const now = new Date();
 
     if (existing) {
-      await this.prisma.query(
+      await this.database.query(
         `
           UPDATE attendance_records
           SET
@@ -107,7 +107,7 @@ export class AttendanceService {
       return this.findOne(currentUser, existing.id);
     }
 
-    const created = await this.prisma.one<{ id: string }>(
+    const created = await this.database.one<{ id: string }>(
       `
         INSERT INTO attendance_records (
           id,
@@ -149,7 +149,7 @@ export class AttendanceService {
       input.employeeId,
     );
     const today = new Date().toISOString().slice(0, 10);
-    const attendance = await this.prisma.one<{
+    const attendance = await this.database.one<{
       id: string;
       locationId: string;
       clockInAt: string | null;
@@ -196,7 +196,7 @@ export class AttendanceService {
     const regularHours = Number(Math.min(totalHours, 8).toFixed(2));
     const overtimeHours = Number(Math.max(totalHours - 8, 0).toFixed(2));
 
-    await this.prisma.query(
+    await this.database.query(
       `
         UPDATE attendance_records
         SET
@@ -239,7 +239,7 @@ export class AttendanceService {
   ) {
     const values: unknown[] = [];
     const where: string[] = [];
-    const scope = await resolveEmployeeVisibilityScope(this.prisma, currentUser);
+    const scope = await resolveEmployeeVisibilityScope(this.database, currentUser);
     const visibilityClause = buildEmployeeVisibilityClause(values, scope, {
       employeeId: 'e.id',
       departmentId: 'e.department_id',
@@ -279,7 +279,7 @@ export class AttendanceService {
       where.push(`a.status = $${values.length}`);
     }
 
-    const rows = await this.prisma.many<AttendanceRow>(
+    const rows = await this.database.many<AttendanceRow>(
       `
         SELECT
           a.id,
@@ -313,7 +313,7 @@ export class AttendanceService {
   }
 
   async findOne(currentUser: AuthenticatedUser, id: string) {
-    const row = await this.prisma.one<AttendanceRow>(
+    const row = await this.database.one<AttendanceRow>(
       `
         SELECT
           a.id,
@@ -346,7 +346,7 @@ export class AttendanceService {
       throw new NotFoundException(`Attendance record ${id} not found`);
     }
 
-    const scope = await resolveEmployeeVisibilityScope(this.prisma, currentUser);
+    const scope = await resolveEmployeeVisibilityScope(this.database, currentUser);
     if (
       !canAccessEmployeeWithinScope(scope, {
         employeeId: row.employeeId,
@@ -367,8 +367,8 @@ export class AttendanceService {
     employeeId: string,
   ) {
     const normalizedEmployeeId = employeeId.trim();
-    const scope = await resolveEmployeeVisibilityScope(this.prisma, currentUser);
-    const employee = await this.prisma.one<{
+    const scope = await resolveEmployeeVisibilityScope(this.database, currentUser);
+    const employee = await this.database.one<{
       id: string;
       departmentId: string | null;
       supervisorId: string | null;

@@ -1,14 +1,14 @@
 import { Injectable } from '@nestjs/common';
-import { PrismaService } from '../prisma/prisma.service';
+import { DatabaseService } from '../database/database.service';
 import { UpsertCompanySettingsInput } from '../auth/auth.types';
 import { randomUUID } from 'crypto';
 
 @Injectable()
 export class CompanySettingsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(private readonly database: DatabaseService) {}
 
   async getSettings() {
-    return this.prisma.one(
+    return this.database.one(
       `
         SELECT
           id,
@@ -26,7 +26,7 @@ export class CompanySettingsService {
   }
 
   async upsertSettings(input: UpsertCompanySettingsInput) {
-    return this.prisma.one(
+    return this.database.one(
       `
         INSERT INTO company_settings (
           id,

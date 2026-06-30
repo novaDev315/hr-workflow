@@ -3,7 +3,7 @@ import {
   ForbiddenException,
   Injectable,
 } from '@nestjs/common';
-import { PrismaService } from '../prisma/prisma.service';
+import { DatabaseService } from '../database/database.service';
 import { AuthenticatedUser } from '../common/current-user.decorator';
 import { ADMIN_ACCESS_ROLE_KEYS } from '../common/system-roles';
 import { createSimplePdf } from '../common/simple-pdf';
@@ -14,14 +14,14 @@ import {
 
 @Injectable()
 export class ReportsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(private readonly database: DatabaseService) {}
 
   async dashboard(currentUser: AuthenticatedUser, periodMonth?: string) {
     this.assertCanViewReports(currentUser.roles);
 
     const normalizedMonth = this.normalizePeriodMonth(periodMonth);
     const { startDate, endDate } = this.getPeriodRange(normalizedMonth);
-    const scope = await resolveEmployeeVisibilityScope(this.prisma, currentUser);
+    const scope = await resolveEmployeeVisibilityScope(this.database, currentUser);
     const buildScope = (
       initialValues: unknown[],
       columns: {
@@ -58,7 +58,7 @@ export class ReportsService {
           departmentId: 'e.department_id',
           supervisorId: 'e.supervisor_id',
         });
-        return this.prisma.one<{ count: string }>(
+        return this.database.one<{ count: string }>(
           `
             SELECT COUNT(*)::text AS count
             FROM employees e
@@ -73,7 +73,7 @@ export class ReportsService {
           departmentId: 'e.department_id',
           supervisorId: 'e.supervisor_id',
         });
-        return this.prisma.one<{ count: string }>(
+        return this.database.one<{ count: string }>(
           `
             SELECT COUNT(*)::text AS count
             FROM leave_requests lr
@@ -89,7 +89,7 @@ export class ReportsService {
           departmentId: 'e.department_id',
           supervisorId: 'e.supervisor_id',
         });
-        return this.prisma.one<{ count: string }>(
+        return this.database.one<{ count: string }>(
           `
             SELECT COUNT(DISTINCT pp.id)::text AS count
             FROM payroll_periods pp
@@ -100,7 +100,7 @@ export class ReportsService {
           scoped.values,
         );
       })(),
-      this.prisma.one<{ count: string }>(
+      this.database.one<{ count: string }>(
         `SELECT COUNT(*)::text AS count FROM policy_documents WHERE status = 'PUBLISHED'`,
       ),
       (() => {
@@ -109,7 +109,7 @@ export class ReportsService {
           departmentId: 'e.department_id',
           supervisorId: 'e.supervisor_id',
         });
-        return this.prisma.one<{ total: string }>(
+        return this.database.one<{ total: string }>(
           `
             SELECT COALESCE(SUM(ps.net_pay), 0)::text AS total
             FROM payslips ps
@@ -126,7 +126,7 @@ export class ReportsService {
           departmentId: 'e.department_id',
           supervisorId: 'e.supervisor_id',
         });
-        return this.prisma.many<{ departmentName: string; employeeCount: number }>(
+        return this.database.many<{ departmentName: string; employeeCount: number }>(
           `
             SELECT
               d.name AS "departmentName",
@@ -148,7 +148,7 @@ export class ReportsService {
           departmentId: 'e.department_id',
           supervisorId: 'e.supervisor_id',
         });
-        return this.prisma.many<{
+        return this.database.many<{
           employeeNumber: string;
           fullName: string;
           joinDate: string;
@@ -178,7 +178,7 @@ export class ReportsService {
           departmentId: 'e.department_id',
           supervisorId: 'e.supervisor_id',
         });
-        return this.prisma.many<{
+        return this.database.many<{
           employeeNumber: string;
           fullName: string;
           attendanceDays: number;
@@ -210,7 +210,7 @@ export class ReportsService {
           departmentId: 'e.department_id',
           supervisorId: 'e.supervisor_id',
         });
-        return this.prisma.many<{
+        return this.database.many<{
           departmentName: string;
           payslipCount: number;
           totalNetPay: number;
@@ -240,7 +240,7 @@ export class ReportsService {
           departmentId: 'e.department_id',
           supervisorId: 'e.supervisor_id',
         });
-        return this.prisma.many<{
+        return this.database.many<{
           employeeNumber: string;
           fullName: string;
           leaveTypeName: string;
@@ -266,7 +266,7 @@ export class ReportsService {
           scoped.values,
         );
       })(),
-      this.prisma.many<{
+      this.database.many<{
         title: string;
         category: string;
         version: string;

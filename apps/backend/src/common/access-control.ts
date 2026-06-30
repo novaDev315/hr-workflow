@@ -1,6 +1,6 @@
 import { ForbiddenException } from '@nestjs/common';
 import { AuthenticatedUser } from './current-user.decorator';
-import { PrismaService } from '../prisma/prisma.service';
+import { DatabaseService } from '../database/database.service';
 import {
   ACCOUNT_MANAGER_ROLE_KEYS,
   ADMIN_ACCESS_ROLE_KEYS,
@@ -62,7 +62,7 @@ export function assertAccountManagerAccess(roles: string[] = []) {
 }
 
 export async function resolveEmployeeVisibilityScope(
-  prisma: PrismaService,
+  database: DatabaseService,
   currentUser: AuthenticatedUser,
 ): Promise<EmployeeVisibilityScope> {
   if (hasGlobalAdminAccess(currentUser.roles)) {
@@ -72,7 +72,7 @@ export async function resolveEmployeeVisibilityScope(
     };
   }
 
-  const linkedEmployee = await getLinkedEmployeeContext(prisma, currentUser.userId);
+  const linkedEmployee = await getLinkedEmployeeContext(database, currentUser.userId);
 
   if (hasManagerAccess(currentUser.roles)) {
     if (!linkedEmployee.departmentId || !linkedEmployee.employeeId) {
@@ -164,10 +164,10 @@ export function canAccessEmployeeWithinScope(
 }
 
 async function getLinkedEmployeeContext(
-  prisma: PrismaService,
+  database: DatabaseService,
   userId: string,
 ): Promise<LinkedEmployeeContext> {
-  const row = await prisma.one<LinkedEmployeeContext>(
+  const row = await database.one<LinkedEmployeeContext>(
     `
       SELECT
         u.employee_id AS "employeeId",

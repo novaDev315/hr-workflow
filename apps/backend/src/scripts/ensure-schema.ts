@@ -1,14 +1,14 @@
 import 'reflect-metadata';
-import { PrismaService } from '../prisma/prisma.service';
+import { DatabaseService } from '../database/database.service';
 
 async function main() {
-  const prisma = new PrismaService();
+  const database = new DatabaseService();
 
   try {
-    await prisma.onModuleInit();
+    await database.onModuleInit();
     console.log('Database schema verified successfully.');
   } finally {
-    await prisma.onModuleDestroy();
+    await database.onModuleDestroy();
   }
 }
 

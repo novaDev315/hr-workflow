@@ -3,7 +3,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { PrismaService } from '../prisma/prisma.service';
+import { DatabaseService } from '../database/database.service';
 import {
   CreateDesignationInput,
   DeactivateDesignationInput,
@@ -13,7 +13,7 @@ import { randomUUID } from 'crypto';
 
 @Injectable()
 export class DesignationService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(private readonly database: DatabaseService) {}
 
   async findAll(filter?: {
     departmentId?: string;
@@ -31,7 +31,7 @@ export class DesignationService {
       where.push(`d.is_active = TRUE`);
     }
 
-    const rows = await this.prisma.many<any>(
+    const rows = await this.database.many<any>(
       `
         SELECT
           d.id,
@@ -58,7 +58,7 @@ export class DesignationService {
   }
 
   async create(input: CreateDesignationInput) {
-    const department = await this.prisma.one<{ id: string }>(
+    const department = await this.database.one<{ id: string }>(
       `SELECT id FROM departments WHERE id = $1`,
       [input.departmentId],
     );
@@ -70,7 +70,7 @@ export class DesignationService {
     const title = input.title.trim();
     const code = input.code.trim().toUpperCase();
 
-    const existing = await this.prisma.one<{ id: string }>(
+    const existing = await this.database.one<{ id: string }>(
       `
         SELECT id
         FROM designations
@@ -85,7 +85,7 @@ export class DesignationService {
       );
     }
 
-    const created = await this.prisma.one<{ id: string }>(
+    const created = await this.database.one<{ id: string }>(
       `
         INSERT INTO designations (
           id,
@@ -117,7 +117,7 @@ export class DesignationService {
     const title = input.title?.trim() ?? existing.title;
     const code = input.code?.trim().toUpperCase() ?? existing.code;
 
-    const department = await this.prisma.one<{ id: string }>(
+    const department = await this.database.one<{ id: string }>(
       `SELECT id FROM departments WHERE id = $1 AND is_active = TRUE`,
       [departmentId],
     );
@@ -126,7 +126,7 @@ export class DesignationService {
       throw new NotFoundException('Department not found or inactive');
     }
 
-    const duplicate = await this.prisma.one<{ id: string }>(
+    const duplicate = await this.database.one<{ id: string }>(
       `
         SELECT id
         FROM designations
@@ -141,7 +141,7 @@ export class DesignationService {
       );
     }
 
-    await this.prisma.query(
+    await this.database.query(
       `
         UPDATE designations
         SET
@@ -170,7 +170,7 @@ export class DesignationService {
 
   async deactivate(input: DeactivateDesignationInput) {
     await this.findById(input.id);
-    await this.prisma.query(
+    await this.database.query(
       `
         UPDATE designations
         SET is_active = FALSE, updated_at = NOW()
@@ -183,7 +183,7 @@ export class DesignationService {
   }
 
   private async findById(id: string) {
-    const row = await this.prisma.one<any>(
+    const row = await this.database.one<any>(
       `
         SELECT
           d.id,

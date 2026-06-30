@@ -14,7 +14,7 @@ import {
   canAccessEmployeeWithinScope,
   resolveEmployeeVisibilityScope,
 } from '../common/access-control';
-import { PrismaService } from '../prisma/prisma.service';
+import { DatabaseService } from '../database/database.service';
 import {
   CreateEmployeeInput,
   DeactivateEmployeeInput,
@@ -54,11 +54,11 @@ interface EmployeeRow {
 
 @Injectable()
 export class EmployeeService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(private readonly database: DatabaseService) {}
 
   async findAll(currentUser: AuthenticatedUser, filter?: EmployeeFilterInput) {
     assertAdminPanelAccess(currentUser.roles);
-    const scope = await resolveEmployeeVisibilityScope(this.prisma, currentUser);
+    const scope = await resolveEmployeeVisibilityScope(this.database, currentUser);
     const values: unknown[] = [];
     const where: string[] = [];
     const scopeClause = buildEmployeeVisibilityClause(values, scope, {
@@ -95,7 +95,7 @@ export class EmployeeService {
       where.push(`e.status = $${values.length}`);
     }
 
-    const rows = await this.prisma.many<EmployeeRow>(
+    const rows = await this.database.many<EmployeeRow>(
       `
         SELECT
           e.id,
@@ -147,8 +147,8 @@ export class EmployeeService {
 
   async findOne(currentUser: AuthenticatedUser, id: string) {
     assertAdminPanelAccess(currentUser.roles);
-    const scope = await resolveEmployeeVisibilityScope(this.prisma, currentUser);
-    const row = await this.prisma.one<EmployeeRow>(
+    const scope = await resolveEmployeeVisibilityScope(this.database, currentUser);
+    const row = await this.database.one<EmployeeRow>(
       `
         SELECT
           e.id,
@@ -216,7 +216,7 @@ export class EmployeeService {
   async create(currentUser: AuthenticatedUser, input: CreateEmployeeInput) {
     assertAccountManagerAccess(currentUser.roles);
     const normalizedEmail = input.email.trim().toLowerCase();
-    const existing = await this.prisma.one<{ id: string }>(
+    const existing = await this.database.one<{ id: string }>(
       `SELECT id FROM employees WHERE email = $1`,
       [normalizedEmail],
     );
@@ -225,7 +225,7 @@ export class EmployeeService {
       throw new ConflictException('Employee with this email already exists');
     }
 
-    const department = await this.prisma.one<{ id: string }>(
+    const department = await this.database.one<{ id: string }>(
       `SELECT id FROM departments WHERE id = $1 AND is_active = TRUE`,
       [input.departmentId],
     );
@@ -234,7 +234,7 @@ export class EmployeeService {
       throw new BadRequestException('Department not found or inactive');
     }
 
-    const designation = await this.prisma.one<{ id: string; departmentId: string }>(
+    const designation = await this.database.one<{ id: string; departmentId: string }>(
       `
         SELECT id, department_id AS "departmentId"
         FROM designations
@@ -254,7 +254,7 @@ export class EmployeeService {
     }
 
     if (input.supervisorId) {
-      const supervisor = await this.prisma.one<{ id: string }>(
+      const supervisor = await this.database.one<{ id: string }>(
         `SELECT id FROM employees WHERE id = $1`,
         [input.supervisorId],
       );
@@ -265,7 +265,7 @@ export class EmployeeService {
     }
 
     const employeeNumber = await this.generateEmployeeNumber();
-    const created = await this.prisma.one<{ id: string }>(
+    const created = await this.database.one<{ id: string }>(
       `
         INSERT INTO employees (
           id,
@@ -314,7 +314,7 @@ export class EmployeeService {
     const designationId = input.designationId ?? existing.designationId;
 
     if (normalizedEmail !== existing.email) {
-      const duplicate = await this.prisma.one<{ id: string }>(
+      const duplicate = await this.database.one<{ id: string }>(
         `SELECT id FROM employees WHERE email = $1 AND id <> $2`,
         [normalizedEmail, input.id],
       );
@@ -327,7 +327,7 @@ export class EmployeeService {
     await this.assertDepartmentAndDesignation(departmentId, designationId);
     await this.assertSupervisor(input.supervisorId ?? existing.supervisorId, input.id);
 
-    await this.prisma.query(
+    await this.database.query(
       `
         UPDATE employees
         SET
@@ -368,8 +368,8 @@ export class EmployeeService {
     await this.findRawEmployee(input.id);
     const exitDate = input.exitDate?.trim() || new Date().toISOString().slice(0, 10);
 
-    await this.prisma.transaction(async (client) => {
-      await this.prisma.query(
+    await this.database.transaction(async (client) => {
+      await this.database.query(
         `
           UPDATE employees
           SET
@@ -383,7 +383,7 @@ export class EmployeeService {
         client,
       );
 
-      await this.prisma.query(
+      await this.database.query(
         `
           UPDATE users
           SET is_active = FALSE, updated_at = NOW()
@@ -398,7 +398,7 @@ export class EmployeeService {
   }
 
   private async findRawEmployee(id: string) {
-    const employee = await this.prisma.one<{
+    const employee = await this.database.one<{
       id: string;
       firstName: string;
       lastName: string;
@@ -441,7 +441,7 @@ export class EmployeeService {
     departmentId: string,
     designationId: string,
   ) {
-    const department = await this.prisma.one<{ id: string }>(
+    const department = await this.database.one<{ id: string }>(
       `SELECT id FROM departments WHERE id = $1 AND is_active = TRUE`,
       [departmentId],
     );
@@ -450,7 +450,7 @@ export class EmployeeService {
       throw new BadRequestException('Department not found or inactive');
     }
 
-    const designation = await this.prisma.one<{ id: string; departmentId: string }>(
+    const designation = await this.database.one<{ id: string; departmentId: string }>(
       `
         SELECT id, department_id AS "departmentId"
         FROM designations
@@ -479,7 +479,7 @@ export class EmployeeService {
       throw new BadRequestException('Employee cannot supervise themselves');
     }
 
-    const supervisor = await this.prisma.one<{ id: string }>(
+    const supervisor = await this.database.one<{ id: string }>(
       `SELECT id FROM employees WHERE id = $1 AND is_active = TRUE`,
       [supervisorId],
     );
@@ -492,7 +492,7 @@ export class EmployeeService {
   private async generateEmployeeNumber() {
     const year = new Date().getFullYear();
     const prefix = `EMP${year}`;
-    const row = await this.prisma.one<{ employeeNumber: string }>(
+    const row = await this.database.one<{ employeeNumber: string }>(
       `
         SELECT employee_number AS "employeeNumber"
         FROM employees
