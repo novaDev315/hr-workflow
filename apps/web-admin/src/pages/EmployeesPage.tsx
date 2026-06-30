@@ -5,9 +5,17 @@ import { PageFeedback } from '@/components/admin/page-feedback'
 import { RecordCard } from '@/components/admin/record-card'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
+import { Field, FieldLabel } from '@/components/ui/field'
 import { FormDrawer } from '@/components/ui/form-drawer'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 import { Pencil, Plus, Search, UserX } from 'lucide-react'
 import { Notice } from '@/components/ui/notice'
 import { StatusBadge } from '@/components/ui/status-badge'
@@ -876,28 +884,31 @@ export function EmployeesPage() {
                     required
                   />
                 </div>
-                <div className="space-y-2">
-                  <Label htmlFor="designation-department">Department</Label>
-                  <select
-                    id="designation-department"
+                <Field>
+                  <FieldLabel htmlFor="designation-department">Department</FieldLabel>
+                  <Select
+                    name="designation-department"
                     value={designationForm.departmentId}
-                    onChange={(event) =>
+                    onValueChange={(departmentId) =>
                       setDesignationForm((current) => ({
                         ...current,
-                        departmentId: event.target.value,
+                        departmentId,
                       }))
                     }
-                    className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
                     required
                   >
-                    <option value="">Select department</option>
-                    {activeDepartments.map((department: { id: string; name: string }) => (
-                      <option key={department.id} value={department.id}>
-                        {department.name}
-                      </option>
-                    ))}
-                  </select>
-                </div>
+                    <SelectTrigger id="designation-department">
+                      <SelectValue placeholder="Select department" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {activeDepartments.map((department: { id: string; name: string }) => (
+                        <SelectItem key={department.id} value={department.id}>
+                          {department.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </Field>
                 <div className="space-y-2">
                   <Label htmlFor="designation-level">Level</Label>
                   <Input
@@ -1061,74 +1072,84 @@ export function EmployeesPage() {
                   />
                 </div>
                 <div className="grid gap-4 sm:grid-cols-2">
-                  <div className="space-y-2">
-                    <Label htmlFor="employee-department">Department</Label>
-                    <select
-                      id="employee-department"
+                  <Field>
+                    <FieldLabel htmlFor="employee-department">Department</FieldLabel>
+                    <Select
+                      name="employee-department"
                       value={employeeForm.departmentId}
-                      onChange={(event) =>
+                      onValueChange={(departmentId) =>
                         setEmployeeForm((current) => ({
                           ...current,
-                          departmentId: event.target.value,
+                          departmentId,
                           designationId: '',
                         }))
                       }
-                      className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
                       required
                     >
-                      <option value="">Select department</option>
-                      {activeDepartments.map((department: { id: string; name: string }) => (
-                        <option key={department.id} value={department.id}>
-                          {department.name}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="employee-designation">Designation</Label>
-                    <select
-                      id="employee-designation"
+                      <SelectTrigger id="employee-department">
+                        <SelectValue placeholder="Select department" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {activeDepartments.map((department: { id: string; name: string }) => (
+                          <SelectItem key={department.id} value={department.id}>
+                            {department.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </Field>
+                  <Field>
+                    <FieldLabel htmlFor="employee-designation">Designation</FieldLabel>
+                    <Select
+                      name="employee-designation"
                       value={employeeForm.designationId}
-                      onChange={(event) =>
+                      onValueChange={(designationId) =>
                         setEmployeeForm((current) => ({
                           ...current,
-                          designationId: event.target.value,
+                          designationId,
                         }))
                       }
-                      className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
                       required
                     >
-                      <option value="">Select designation</option>
-                      {employeeDesignationOptions.map(
-                        (designation: { id: string; title: string }) => (
-                          <option key={designation.id} value={designation.id}>
-                            {designation.title}
-                          </option>
-                        )
-                      )}
-                    </select>
-                  </div>
+                      <SelectTrigger id="employee-designation">
+                        <SelectValue placeholder="Select designation" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {employeeDesignationOptions.map(
+                          (designation: { id: string; title: string }) => (
+                            <SelectItem key={designation.id} value={designation.id}>
+                              {designation.title}
+                            </SelectItem>
+                          )
+                        )}
+                      </SelectContent>
+                    </Select>
+                  </Field>
                 </div>
                 <div className="grid gap-4 sm:grid-cols-2">
-                  <div className="space-y-2">
-                    <Label htmlFor="employee-employment-type">Employment Type</Label>
-                    <select
-                      id="employee-employment-type"
+                  <Field>
+                    <FieldLabel htmlFor="employee-employment-type">Employment Type</FieldLabel>
+                    <Select
+                      name="employee-employment-type"
                       value={employeeForm.employmentType}
-                      onChange={(event) =>
+                      onValueChange={(employmentType) =>
                         setEmployeeForm((current) => ({
                           ...current,
-                          employmentType: event.target.value,
+                          employmentType,
                         }))
                       }
-                      className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
                     >
-                      <option value="FULL_TIME">Full Time</option>
-                      <option value="PART_TIME">Part Time</option>
-                      <option value="CONTRACT">Contract</option>
-                      <option value="INTERNSHIP">Internship</option>
-                    </select>
-                  </div>
+                      <SelectTrigger id="employee-employment-type">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="FULL_TIME">Full Time</SelectItem>
+                        <SelectItem value="PART_TIME">Part Time</SelectItem>
+                        <SelectItem value="CONTRACT">Contract</SelectItem>
+                        <SelectItem value="INTERNSHIP">Internship</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </Field>
                   <div className="space-y-2">
                     <Label htmlFor="employee-join-date">Join Date</Label>
                     <Input
@@ -1145,24 +1166,28 @@ export function EmployeesPage() {
                     />
                   </div>
                 </div>
-                <div className="space-y-2">
-                  <Label htmlFor="employee-status">Status</Label>
-                  <select
-                    id="employee-status"
+                <Field>
+                  <FieldLabel htmlFor="employee-status">Status</FieldLabel>
+                  <Select
+                    name="employee-status"
                     value={employeeForm.status}
-                    onChange={(event) =>
+                    onValueChange={(status) =>
                       setEmployeeForm((current) => ({
                         ...current,
-                        status: event.target.value,
+                        status,
                       }))
                     }
-                    className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
                   >
-                    <option value="ACTIVE">Active</option>
-                    <option value="ON_LEAVE">On Leave</option>
-                    <option value="INACTIVE">Inactive</option>
-                  </select>
-                </div>
+                    <SelectTrigger id="employee-status">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="ACTIVE">Active</SelectItem>
+                      <SelectItem value="ON_LEAVE">On Leave</SelectItem>
+                      <SelectItem value="INACTIVE">Inactive</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </Field>
                 <Button
                   className="w-full"
                   type="submit"
@@ -1206,37 +1231,43 @@ export function EmployeesPage() {
                 </CardHeader>
                 <CardContent>
                   <form className="space-y-4" onSubmit={handleCreateEmployeeAccount}>
-                    <div className="space-y-2">
-                      <Label htmlFor="employee-account-employee">Employee</Label>
-                      <select
-                        id="employee-account-employee"
+                    <Field>
+                      <FieldLabel htmlFor="employee-account-employee">Employee</FieldLabel>
+                      <Select
+                        name="employee-account-employee"
                         value={employeeAccountForm.employeeId}
-                        onChange={(event) =>
+                        onValueChange={(employeeId) =>
                           setEmployeeAccountForm((current) => ({
                             ...current,
-                            employeeId: event.target.value,
+                            employeeId,
                           }))
                         }
-                        className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
                         required
                       >
-                        <option value="">Select employee</option>
-                        {employees
-                          .filter((employee: { hasLinkedAccount: boolean }) => !employee.hasLinkedAccount)
-                          .map(
-                            (employee: {
-                              id: string
-                              fullName: string
-                              employeeNumber: string
-                              email: string
-                            }) => (
-                              <option key={employee.id} value={employee.id}>
-                                {employee.fullName} ({employee.employeeNumber}) • {employee.email}
-                              </option>
+                        <SelectTrigger id="employee-account-employee">
+                          <SelectValue placeholder="Select employee" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {employees
+                            .filter(
+                              (employee: { hasLinkedAccount: boolean }) =>
+                                !employee.hasLinkedAccount
                             )
-                          )}
-                      </select>
-                    </div>
+                            .map(
+                              (employee: {
+                                id: string
+                                fullName: string
+                                employeeNumber: string
+                                email: string
+                              }) => (
+                                <SelectItem key={employee.id} value={employee.id}>
+                                  {employee.fullName} ({employee.employeeNumber}) • {employee.email}
+                                </SelectItem>
+                              )
+                            )}
+                        </SelectContent>
+                      </Select>
+                    </Field>
                     <div className="space-y-2">
                       <Label htmlFor="employee-account-password">Temporary Password</Label>
                       <Input
@@ -1279,59 +1310,66 @@ export function EmployeesPage() {
                 </CardHeader>
                 <CardContent>
                   <form className="space-y-4" onSubmit={handleProvisionStaffAccess}>
-                    <div className="space-y-2">
-                      <Label htmlFor="staff-access-employee">Employee</Label>
-                      <select
-                        id="staff-access-employee"
+                    <Field>
+                      <FieldLabel htmlFor="staff-access-employee">Employee</FieldLabel>
+                      <Select
+                        name="staff-access-employee"
                         value={staffAccessForm.employeeId}
-                        onChange={(event) =>
+                        onValueChange={(employeeId) =>
                           setStaffAccessForm((current) => ({
                             ...current,
-                            employeeId: event.target.value,
+                            employeeId,
                           }))
                         }
-                        className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
                         required
                       >
-                        <option value="">Select employee</option>
-                        {employees.map(
-                          (employee: {
-                            id: string
-                            fullName: string
-                            employeeNumber: string
-                            email: string
-                            linkedAccountRoles: string[]
-                          }) => (
-                            <option key={employee.id} value={employee.id}>
-                              {employee.fullName} ({employee.employeeNumber}) • {employee.email}
-                              {employee.linkedAccountRoles.length > 0
-                                ? ` • ${employee.linkedAccountRoles.join(', ')}`
-                                : ''}
-                            </option>
-                          )
-                        )}
-                      </select>
-                    </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="staff-access-role">Admin Panel Role</Label>
-                      <select
-                        id="staff-access-role"
+                        <SelectTrigger id="staff-access-employee">
+                          <SelectValue placeholder="Select employee" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {employees.map(
+                            (employee: {
+                              id: string
+                              fullName: string
+                              employeeNumber: string
+                              email: string
+                              linkedAccountRoles: string[]
+                            }) => (
+                              <SelectItem key={employee.id} value={employee.id}>
+                                {employee.fullName} ({employee.employeeNumber}) • {employee.email}
+                                {employee.linkedAccountRoles.length > 0
+                                  ? ` • ${employee.linkedAccountRoles.join(', ')}`
+                                  : ''}
+                              </SelectItem>
+                            )
+                          )}
+                        </SelectContent>
+                      </Select>
+                    </Field>
+                    <Field>
+                      <FieldLabel htmlFor="staff-access-role">Admin Panel Role</FieldLabel>
+                      <Select
+                        name="staff-access-role"
                         value={staffAccessForm.roleKey}
-                        onChange={(event) =>
+                        onValueChange={(roleKey) =>
                           setStaffAccessForm((current) => ({
                             ...current,
-                            roleKey: event.target.value,
+                            roleKey,
                           }))
                         }
-                        className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
                         required
                       >
-                        <option value="MANAGER">Manager</option>
-                        <option value="SUPERVISOR">Supervisor</option>
-                        <option value="HR_ADMIN">HR Admin</option>
-                        <option value="ADMIN">Admin</option>
-                      </select>
-                    </div>
+                        <SelectTrigger id="staff-access-role">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="MANAGER">Manager</SelectItem>
+                          <SelectItem value="SUPERVISOR">Supervisor</SelectItem>
+                          <SelectItem value="HR_ADMIN">HR Admin</SelectItem>
+                          <SelectItem value="ADMIN">Admin</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </Field>
                     {!selectedStaffEmployeeHasLinkedAccount && (
                       <div className="space-y-2">
                         <Label htmlFor="staff-access-password">Temporary Password</Label>
