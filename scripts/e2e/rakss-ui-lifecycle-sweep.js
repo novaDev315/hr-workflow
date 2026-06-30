@@ -68,6 +68,14 @@
     await page.getByLabel('Close form').waitFor({ state: 'hidden' });
   }
 
+  async function selectValue(controlId, value) {
+    const escapedValue = String(value).replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+    await page.locator(`#${controlId}`).click();
+    const option = page.locator(`[role="option"][data-value="${escapedValue}"]`).last();
+    await option.waitFor({ state: 'visible' });
+    await option.click();
+  }
+
   await page.goto(baseUrl, { waitUntil: 'networkidle' });
   const token = await page.evaluate(() => localStorage.getItem('auth_token'));
   const account = await page.evaluate(() => {
@@ -105,7 +113,7 @@
 
   await page.locator('#designation-title').fill(`UI E2E Coordinator ${runId}`);
   await page.locator('#designation-code').fill(`UI_COORD_${runId}`);
-  await page.locator('#designation-department').selectOption(department.id);
+  await selectValue('designation-department', department.id);
   await page.locator('#designation-level').fill('2');
   await page.getByRole('button', { name: 'Create Designation' }).click();
   await page.getByText('Designation created.').waitFor();
@@ -126,8 +134,8 @@
   await page.locator('#employee-last-name').fill(`Employee ${runId}`);
   await page.locator('#employee-email').fill(employeeEmail);
   await page.locator('#employee-phone').fill('+971500001111');
-  await page.locator('#employee-department').selectOption(department.id);
-  await page.locator('#employee-designation').selectOption(designation.id);
+  await selectValue('employee-department', department.id);
+  await selectValue('employee-designation', designation.id);
   await page.locator('#employee-join-date').fill(today);
   await page.getByRole('button', { name: 'Create Employee', exact: true }).click();
   await page.getByText('Employee created.').waitFor();
@@ -149,7 +157,7 @@
   await page.getByText('Employee updated.').waitFor();
   check('ui update employee');
 
-  await page.locator('#employee-account-employee').selectOption(employee.id);
+  await selectValue('employee-account-employee', employee.id);
   await page.locator('#employee-account-password').fill(`Ui.${runId}.Pass1`);
   await page.getByRole('button', { name: 'Create Employee Account', exact: true }).click();
   await page.waitForTimeout(1500);
@@ -163,8 +171,8 @@
   }
   check('ui create employee account');
 
-  await page.locator('#staff-access-employee').selectOption(employee.id);
-  await page.locator('#staff-access-role').selectOption('SUPERVISOR');
+  await selectValue('staff-access-employee', employee.id);
+  await selectValue('staff-access-role', 'SUPERVISOR');
   await page.getByRole('button', { name: 'Provision Staff Access' }).click();
   await page.waitForTimeout(1500);
   const staffAccount = await gql(`
@@ -210,15 +218,15 @@
   await page.getByText('Location updated.').waitFor();
   check('ui update location');
 
-  await page.locator('#assignment-employee').selectOption(employee.id);
-  await page.locator('#assignment-location').selectOption(location.id);
+  await selectValue('assignment-employee', employee.id);
+  await selectValue('assignment-location', location.id);
   await page.getByRole('button', { name: 'Assign Location' }).click();
   await page.getByText('Location assignment saved.').waitFor();
   check('ui assign location');
   await closeForm();
 
-  await page.locator('#attendance-employee').selectOption(employee.id);
-  await page.locator('#attendance-location').selectOption(location.id);
+  await selectValue('attendance-employee', employee.id);
+  await selectValue('attendance-location', location.id);
   await page.locator('#attendance-notes').fill('UI e2e attendance');
   await page.getByRole('button', { name: 'Clock In' }).click();
   await page.getByText('Clock in recorded.').waitFor();
@@ -251,8 +259,8 @@
   check('ui update leave type');
 
   await page.getByRole('button', { name: 'New leave request' }).click();
-  await page.locator('#leave-request-employee').selectOption(employee.id);
-  await page.locator('#leave-request-type').selectOption(leaveType.id);
+  await selectValue('leave-request-employee', employee.id);
+  await selectValue('leave-request-type', leaveType.id);
   await page.locator('#leave-request-start').fill(futureDate(14));
   await page.locator('#leave-request-end').fill(futureDate(15));
   await page.locator('#leave-request-reason').fill('Created by UI lifecycle sweep');
@@ -273,7 +281,7 @@
 
   await page.goto(`${baseUrl}/payroll`, { waitUntil: 'networkidle' });
   await page.getByRole('button', { name: 'Open compensation setup' }).click();
-  await page.locator('#compensation-employee').selectOption(employee.id);
+  await selectValue('compensation-employee', employee.id);
   await page.locator('#base-salary').fill('14000');
   await page.locator('#allowance-amount').fill('1500');
   await page.locator('#deduction-amount').fill('300');
@@ -345,11 +353,11 @@
 
   const requisitionTitle = `UI Recruiter ${runId}`;
   await page.locator('#requisition-title').fill(requisitionTitle);
-  await page.locator('#requisition-department').selectOption(department.id);
-  await page.locator('#requisition-designation').selectOption(designation.id);
+  await selectValue('requisition-department', department.id);
+  await selectValue('requisition-designation', designation.id);
   await page.locator('#requisition-positions').fill('2');
-  await page.locator('#requisition-employment-type').selectOption('FULL_TIME');
-  await page.locator('#requisition-priority').selectOption('HIGH');
+  await selectValue('requisition-employment-type', 'FULL_TIME');
+  await selectValue('requisition-priority', 'HIGH');
   await page.locator('#requisition-target-start').fill(futureDate(30));
   await page.locator('#requisition-salary-min').fill('12000');
   await page.locator('#requisition-salary-max').fill('18000');
@@ -383,7 +391,7 @@
   check('ui update recruitment requisition');
 
   await page.getByRole('button', { name: 'Add candidate' }).click();
-  await page.locator('#application-requisition').selectOption(requisition.id);
+  await selectValue('application-requisition', requisition.id);
   await page.locator('#candidate-first-name').fill('Recruitment');
   await page.locator('#candidate-last-name').fill(`Candidate ${runId}`);
   const candidateEmail = `candidate.${runId}@rakss.lab.novadev.tech`;
