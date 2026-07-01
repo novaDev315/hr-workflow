@@ -8,7 +8,9 @@ import {
 import { randomUUID } from 'crypto';
 import { mkdir, writeFile } from 'fs/promises';
 import path from 'path';
+import { and, desc, eq, ne, sql } from 'drizzle-orm';
 import { DatabaseService } from '../database/database.service';
+import { policyDocuments as policyDocumentsTable } from '../database/drizzle/schema';
 import { AuthenticatedUser } from '../common/current-user.decorator';
 import { ACCOUNT_MANAGER_ROLE_KEYS } from '../common/system-roles';
 import { hasAdminPanelAccess } from '../common/access-control';
@@ -42,28 +44,18 @@ export class PolicyService {
   constructor(private readonly database: DatabaseService) {}
 
   async policyDocuments(currentUser: AuthenticatedUser) {
-    const rows = await this.database.many<PolicyDocumentRow>(
-      `
-        SELECT
-          id,
-          title,
-          category,
-          version,
-          effective_date::text AS "effectiveDate",
-          description,
-          status,
-          document_url AS "documentUrl",
-          document_original_name AS "documentOriginalName",
-          document_mime_type AS "documentMimeType",
-          stored_file_name AS "storedFileName",
-          content,
-          created_at::text AS "createdAt",
-          published_at::text AS "publishedAt"
-        FROM policy_documents
-        ${hasAdminPanelAccess(currentUser.roles) ? '' : `WHERE status = 'PUBLISHED'`}
-        ORDER BY effective_date DESC, created_at DESC
-      `,
-    );
+    const rows = await this.database.drizzle
+      .select(this.policyDocumentSelectFields())
+      .from(policyDocumentsTable)
+      .where(
+        hasAdminPanelAccess(currentUser.roles)
+          ? undefined
+          : eq(policyDocumentsTable.status, 'PUBLISHED'),
+      )
+      .orderBy(
+        desc(policyDocumentsTable.effectiveDate),
+        desc(policyDocumentsTable.createdAt),
+      );
 
     return rows.map((row) => this.mapPolicyDocument(row));
   }
@@ -81,51 +73,38 @@ export class PolicyService {
 
     const title = input.title.trim();
     const version = input.version.trim();
-    const existing = await this.database.one<{ id: string }>(
-      `
-        SELECT id
-        FROM policy_documents
-        WHERE LOWER(title) = LOWER($1) AND LOWER(version) = LOWER($2)
-      `,
-      [title, version],
-    );
+    const [existing] = await this.database.drizzle
+      .select({ id: policyDocumentsTable.id })
+      .from(policyDocumentsTable)
+      .where(
+        and(
+          sql`LOWER(${policyDocumentsTable.title}) = LOWER(${title})`,
+          sql`LOWER(${policyDocumentsTable.version}) = LOWER(${version})`,
+        ),
+      )
+      .limit(1);
 
     if (existing) {
       throw new ConflictException('This policy title and version already exist');
     }
 
-    const created = await this.database.one<{ id: string }>(
-      `
-        INSERT INTO policy_documents (
-          id,
-          title,
-          category,
-          version,
-          effective_date,
-          description,
-          status,
-          document_url,
-          content,
-          published_at
-        )
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
-        RETURNING id
-      `,
-      [
-        randomUUID(),
+    const [created] = await this.database.drizzle
+      .insert(policyDocumentsTable)
+      .values({
+        id: randomUUID(),
         title,
-        input.category.trim(),
+        category: input.category.trim(),
         version,
-        input.effectiveDate.trim(),
-        input.description.trim(),
+        effectiveDate: input.effectiveDate.trim(),
+        description: input.description.trim(),
         status,
-        input.documentUrl?.trim() ?? null,
-        input.content?.trim() ?? null,
-        status === 'PUBLISHED' ? new Date().toISOString() : null,
-      ],
-    );
+        documentUrl: input.documentUrl?.trim() ?? null,
+        content: input.content?.trim() ?? null,
+        publishedAt: status === 'PUBLISHED' ? sql`NOW()` : null,
+      })
+      .returning({ id: policyDocumentsTable.id });
 
-    return this.findPolicyDocument(created!.id);
+    return this.findPolicyDocument(created.id);
   }
 
   async updatePolicyDocument(
@@ -142,55 +121,51 @@ export class PolicyService {
       throw new BadRequestException('Policy status must be DRAFT, PUBLISHED, or ARCHIVED');
     }
 
-    const duplicate = await this.database.one<{ id: string }>(
-      `
-        SELECT id
-        FROM policy_documents
-        WHERE LOWER(title) = LOWER($1) AND LOWER(version) = LOWER($2) AND id <> $3
-      `,
-      [title, version, input.id],
-    );
+    const [duplicate] = await this.database.drizzle
+      .select({ id: policyDocumentsTable.id })
+      .from(policyDocumentsTable)
+      .where(
+        and(
+          sql`LOWER(${policyDocumentsTable.title}) = LOWER(${title})`,
+          sql`LOWER(${policyDocumentsTable.version}) = LOWER(${version})`,
+          ne(policyDocumentsTable.id, input.id),
+        ),
+      )
+      .limit(1);
 
     if (duplicate) {
       throw new ConflictException('This policy title and version already exist');
     }
 
-    await this.database.query(
-      `
-        UPDATE policy_documents
-        SET
-          title = $2,
-          category = $3,
-          version = $4,
-          effective_date = $5,
-          description = $6,
-          status = $7,
-          document_url = $8,
-          content = $9,
-          published_at = CASE
-            WHEN $7 = 'PUBLISHED' AND published_at IS NULL THEN NOW()
-            WHEN $7 <> 'PUBLISHED' THEN NULL
-            ELSE published_at
-          END,
-          updated_at = NOW()
-        WHERE id = $1
-      `,
-      [
-        input.id,
+    await this.database.drizzle
+      .update(policyDocumentsTable)
+      .set({
         title,
-        input.category?.trim() ?? existing.category,
+        category: input.category?.trim() ?? existing.category,
         version,
-        input.effectiveDate?.trim() ?? existing.effectiveDate,
-        input.description !== undefined
-          ? input.description?.trim() || existing.description
-          : existing.description,
+        effectiveDate: input.effectiveDate?.trim() ?? existing.effectiveDate,
+        description:
+          input.description !== undefined
+            ? input.description?.trim() || existing.description
+            : existing.description,
         status,
-        input.documentUrl !== undefined
-          ? input.documentUrl?.trim() || null
-          : existing.documentUrl,
-        input.content !== undefined ? input.content?.trim() || null : existing.content,
-      ],
-    );
+        documentUrl:
+          input.documentUrl !== undefined
+            ? input.documentUrl?.trim() || null
+            : existing.documentUrl,
+        content:
+          input.content !== undefined
+            ? input.content?.trim() || null
+            : existing.content,
+        publishedAt:
+          status === 'PUBLISHED'
+            ? existing.publishedAt
+              ? sql`${policyDocumentsTable.publishedAt}`
+              : sql`NOW()`
+            : null,
+        updatedAt: sql`NOW()`,
+      })
+      .where(eq(policyDocumentsTable.id, input.id));
 
     return this.findPolicyDocument(input.id);
   }
@@ -201,10 +176,11 @@ export class PolicyService {
   ) {
     this.assertCanManagePolicies(currentUser.roles);
 
-    const existing = await this.database.one<{ id: string; status: string }>(
-      `SELECT id, status FROM policy_documents WHERE id = $1`,
-      [input.policyDocumentId],
-    );
+    const [existing] = await this.database.drizzle
+      .select({ id: policyDocumentsTable.id, status: policyDocumentsTable.status })
+      .from(policyDocumentsTable)
+      .where(eq(policyDocumentsTable.id, input.policyDocumentId))
+      .limit(1);
 
     if (!existing) {
       throw new NotFoundException('Policy document not found');
@@ -214,17 +190,14 @@ export class PolicyService {
       throw new BadRequestException('Policy document is already published');
     }
 
-    await this.database.query(
-      `
-        UPDATE policy_documents
-        SET
-          status = 'PUBLISHED',
-          published_at = NOW(),
-          updated_at = NOW()
-        WHERE id = $1
-      `,
-      [input.policyDocumentId],
-    );
+    await this.database.drizzle
+      .update(policyDocumentsTable)
+      .set({
+        status: 'PUBLISHED',
+        publishedAt: sql`NOW()`,
+        updatedAt: sql`NOW()`,
+      })
+      .where(eq(policyDocumentsTable.id, input.policyDocumentId));
 
     return this.findPolicyDocument(input.policyDocumentId);
   }
@@ -236,17 +209,14 @@ export class PolicyService {
     this.assertCanManagePolicies(currentUser.roles);
     await this.getRawPolicyDocument(input.policyDocumentId);
 
-    await this.database.query(
-      `
-        UPDATE policy_documents
-        SET
-          status = 'ARCHIVED',
-          published_at = NULL,
-          updated_at = NOW()
-        WHERE id = $1
-      `,
-      [input.policyDocumentId],
-    );
+    await this.database.drizzle
+      .update(policyDocumentsTable)
+      .set({
+        status: 'ARCHIVED',
+        publishedAt: null,
+        updatedAt: sql`NOW()`,
+      })
+      .where(eq(policyDocumentsTable.id, input.policyDocumentId));
 
     return this.findPolicyDocument(input.policyDocumentId);
   }
@@ -257,10 +227,11 @@ export class PolicyService {
   ) {
     this.assertCanManagePolicies(currentUser.roles);
 
-    const existing = await this.database.one<{ id: string }>(
-      `SELECT id FROM policy_documents WHERE id = $1`,
-      [input.policyDocumentId],
-    );
+    const [existing] = await this.database.drizzle
+      .select({ id: policyDocumentsTable.id })
+      .from(policyDocumentsTable)
+      .where(eq(policyDocumentsTable.id, input.policyDocumentId))
+      .limit(1);
 
     if (!existing) {
       throw new NotFoundException('Policy document not found');
@@ -288,45 +259,30 @@ export class PolicyService {
     await mkdir(storageDir, { recursive: true });
     await writeFile(absolutePath, fileBuffer);
 
-    await this.database.query(
-      `
-        UPDATE policy_documents
-        SET
-          document_url = $2,
-          document_original_name = $3,
-          document_mime_type = $4,
-          stored_file_name = $5,
-          updated_at = NOW()
-        WHERE id = $1
-      `,
-      [
-        input.policyDocumentId,
-        `${this.getBackendPublicUrl()}/policy-files/${storedFileName}`,
-        safeOriginalName,
-        input.mimeType.trim(),
+    await this.database.drizzle
+      .update(policyDocumentsTable)
+      .set({
+        documentUrl: `${this.getBackendPublicUrl()}/policy-files/${storedFileName}`,
+        documentOriginalName: safeOriginalName,
+        documentMimeType: input.mimeType.trim(),
         storedFileName,
-      ],
-    );
+        updatedAt: sql`NOW()`,
+      })
+      .where(eq(policyDocumentsTable.id, input.policyDocumentId));
 
     return this.findPolicyDocument(input.policyDocumentId);
   }
 
   async getStoredPolicyFile(storedFileName: string) {
-    const file = await this.database.one<{
-      documentOriginalName: string | null;
-      documentMimeType: string | null;
-      storedFileName: string | null;
-    }>(
-      `
-        SELECT
-          document_original_name AS "documentOriginalName",
-          document_mime_type AS "documentMimeType",
-          stored_file_name AS "storedFileName"
-        FROM policy_documents
-        WHERE stored_file_name = $1
-      `,
-      [storedFileName],
-    );
+    const [file] = await this.database.drizzle
+      .select({
+        documentOriginalName: policyDocumentsTable.documentOriginalName,
+        documentMimeType: policyDocumentsTable.documentMimeType,
+        storedFileName: policyDocumentsTable.storedFileName,
+      })
+      .from(policyDocumentsTable)
+      .where(eq(policyDocumentsTable.storedFileName, storedFileName))
+      .limit(1);
 
     if (!file?.storedFileName) {
       return null;
@@ -358,34 +314,36 @@ export class PolicyService {
   }
 
   private async getRawPolicyDocument(id: string) {
-    const row = await this.database.one<PolicyDocumentRow>(
-      `
-        SELECT
-          id,
-          title,
-          category,
-          version,
-          effective_date::text AS "effectiveDate",
-          description,
-          status,
-          document_url AS "documentUrl",
-          document_original_name AS "documentOriginalName",
-          document_mime_type AS "documentMimeType",
-          stored_file_name AS "storedFileName",
-          content,
-          created_at::text AS "createdAt",
-          published_at::text AS "publishedAt"
-        FROM policy_documents
-        WHERE id = $1
-      `,
-      [id],
-    );
+    const [row] = await this.database.drizzle
+      .select(this.policyDocumentSelectFields())
+      .from(policyDocumentsTable)
+      .where(eq(policyDocumentsTable.id, id))
+      .limit(1);
 
     if (!row) {
       throw new NotFoundException('Policy document not found');
     }
 
     return row;
+  }
+
+  private policyDocumentSelectFields() {
+    return {
+      id: policyDocumentsTable.id,
+      title: policyDocumentsTable.title,
+      category: policyDocumentsTable.category,
+      version: policyDocumentsTable.version,
+      effectiveDate: sql<string>`${policyDocumentsTable.effectiveDate}::text`,
+      description: policyDocumentsTable.description,
+      status: policyDocumentsTable.status,
+      documentUrl: policyDocumentsTable.documentUrl,
+      documentOriginalName: policyDocumentsTable.documentOriginalName,
+      documentMimeType: policyDocumentsTable.documentMimeType,
+      storedFileName: policyDocumentsTable.storedFileName,
+      content: policyDocumentsTable.content,
+      createdAt: sql<string>`${policyDocumentsTable.createdAt}::text`,
+      publishedAt: sql<string | null>`${policyDocumentsTable.publishedAt}::text`,
+    };
   }
 
   private mapPolicyDocument(row: PolicyDocumentRow) {

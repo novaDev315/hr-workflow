@@ -261,3 +261,27 @@ export const recruitmentApplications = pgTable(
     ),
   ],
 );
+
+export const policyDocuments = pgTable(
+  'policy_documents',
+  {
+    id: text('id').primaryKey(),
+    title: text('title').notNull(),
+    category: text('category').notNull(),
+    version: text('version').notNull(),
+    effectiveDate: date('effective_date').notNull(),
+    description: text('description').notNull(),
+    status: text('status').notNull().default('DRAFT'),
+    documentUrl: text('document_url'),
+    content: text('content'),
+    publishedAt: timestamp('published_at', { withTimezone: true }),
+    documentOriginalName: text('document_original_name'),
+    documentMimeType: text('document_mime_type'),
+    storedFileName: text('stored_file_name'),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    unique('policy_documents_title_version_key').on(table.title, table.version),
+  ],
+);
