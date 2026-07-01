@@ -2,6 +2,7 @@ import {
   AnyPgColumn,
   boolean,
   date,
+  doublePrecision,
   integer,
   pgTable,
   text,
@@ -123,3 +124,40 @@ export const employees = pgTable('employees', {
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 });
+
+export const locations = pgTable('locations', {
+  id: text('id').primaryKey(),
+  code: text('code').notNull().unique(),
+  name: text('name').notNull(),
+  latitude: doublePrecision('latitude').notNull(),
+  longitude: doublePrecision('longitude').notNull(),
+  geofenceRadius: integer('geofence_radius').notNull().default(100),
+  address: text('address').notNull(),
+  city: text('city'),
+  state: text('state'),
+  country: text('country').notNull().default('AE'),
+  postalCode: text('postal_code'),
+  landmark: text('landmark'),
+  isActive: boolean('is_active').notNull().default(true),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+});
+
+export const employeeLocationAssignments = pgTable(
+  'employee_location_assignments',
+  {
+    id: text('id').primaryKey(),
+    employeeId: text('employee_id')
+      .notNull()
+      .references(() => employees.id, { onDelete: 'cascade' }),
+    locationId: text('location_id')
+      .notNull()
+      .references(() => locations.id, { onDelete: 'cascade' }),
+    isPrimary: boolean('is_primary').notNull().default(false),
+    assignedAt: timestamp('assigned_at', { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    releaseDate: date('release_date'),
+    status: text('status').notNull().default('ACTIVE'),
+  },
+);
