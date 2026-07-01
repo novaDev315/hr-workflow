@@ -1,4 +1,5 @@
 import { Controller, Get } from '@nestjs/common';
+import { sql } from 'drizzle-orm';
 import { DatabaseService } from '../database/database.service';
 
 @Controller('health')
@@ -7,7 +8,7 @@ export class HealthController {
 
   @Get()
   async check() {
-    await this.database.query('SELECT 1');
+    await this.database.drizzle.execute(sql`SELECT 1`);
 
     return {
       status: 'ok',
