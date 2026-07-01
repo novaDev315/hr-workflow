@@ -145,7 +145,7 @@ homelab apps database verify rakss --service backend
 
 ```bash
 bun run build:backend
-node apps/backend/dist/main.js
+node apps/backend/dist/src/main.js
 ```
 
 Or in a service manager:
