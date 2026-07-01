@@ -15,12 +15,11 @@ out/
 
 # Environment
 .env
-.env.production
-.env.local
-.env.test
-.env.development.local
-.env.test.local
-.env.production.local
+.env.*
+!.env.example
+!.env.*.example
+!apps/**/.env.example
+!apps/**/.env.*.example
 
 # Logs
 logs/
