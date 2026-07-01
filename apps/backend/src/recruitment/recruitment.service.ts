@@ -5,9 +5,27 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { randomUUID } from 'crypto';
+import {
+  and,
+  desc,
+  eq,
+  ilike,
+  ne,
+  or,
+  sql,
+  SQL,
+} from 'drizzle-orm';
+import { alias } from 'drizzle-orm/pg-core';
 import { AuthenticatedUser } from '../common/current-user.decorator';
 import { assertAccountManagerAccess } from '../common/access-control';
 import { DatabaseService } from '../database/database.service';
+import {
+  departments,
+  designations,
+  jobRequisitions,
+  recruitmentApplications,
+  users,
+} from '../database/drizzle/schema';
 import {
   AdvanceRecruitmentApplicationInput,
   ChangeJobRequisitionStatusInput,
@@ -91,6 +109,8 @@ interface RecruitmentApplicationRow {
   lastActionByName: string | null;
 }
 
+const recruitmentActionUsers = alias(users, 'recruitment_action_users');
+
 @Injectable()
 export class RecruitmentService {
   constructor(private readonly database: DatabaseService) {}
@@ -100,48 +120,29 @@ export class RecruitmentService {
     filter?: JobRequisitionFilterInput,
   ) {
     assertAccountManagerAccess(currentUser.roles);
-    const values: unknown[] = [];
-    const where: string[] = [];
+    const where: SQL[] = [];
 
     if (filter?.search?.trim()) {
-      const search = `%${filter.search.trim().toLowerCase()}%`;
-      values.push(search);
-      const index = values.length;
-      where.push(
-        `(
-          LOWER(jr.requisition_number) LIKE $${index}
-          OR LOWER(jr.job_title) LIKE $${index}
-          OR LOWER(jr.description) LIKE $${index}
-        )`,
+      const search = `%${filter.search.trim()}%`;
+      const searchCondition = or(
+        ilike(jobRequisitions.requisitionNumber, search),
+        ilike(jobRequisitions.jobTitle, search),
+        ilike(jobRequisitions.description, search),
       );
+      if (searchCondition) {
+        where.push(searchCondition);
+      }
     }
 
     if (filter?.status?.trim()) {
-      values.push(filter.status.trim().toUpperCase());
-      where.push(`jr.status = $${values.length}`);
+      where.push(eq(jobRequisitions.status, filter.status.trim().toUpperCase()));
     }
 
     if (filter?.departmentId) {
-      values.push(filter.departmentId);
-      where.push(`jr.department_id = $${values.length}`);
+      where.push(eq(jobRequisitions.departmentId, filter.departmentId));
     }
 
-    const rows = await this.database.many<JobRequisitionRow>(
-      `
-        ${this.requisitionSelect()}
-        ${where.length > 0 ? `WHERE ${where.join(' AND ')}` : ''}
-        ${this.requisitionGroupBy()}
-        ORDER BY
-          CASE jr.status
-            WHEN 'OPEN' THEN 1
-            WHEN 'ON_HOLD' THEN 2
-            WHEN 'FILLED' THEN 3
-            ELSE 4
-          END,
-          jr.created_at DESC
-      `,
-      values,
-    );
+    const rows = await this.findRequisitionRows(where);
 
     return rows.map((row) => this.mapRequisition(row));
   }
@@ -156,82 +157,64 @@ export class RecruitmentService {
     filter?: RecruitmentApplicationFilterInput,
   ) {
     assertAccountManagerAccess(currentUser.roles);
-    const values: unknown[] = [];
-    const where: string[] = [];
+    const where: SQL[] = [];
 
     if (filter?.search?.trim()) {
-      const search = `%${filter.search.trim().toLowerCase()}%`;
-      values.push(search);
-      const index = values.length;
-      where.push(
-        `(
-          LOWER(ra.first_name) LIKE $${index}
-          OR LOWER(ra.last_name) LIKE $${index}
-          OR LOWER(ra.email) LIKE $${index}
-          OR LOWER(ra.application_number) LIKE $${index}
-          OR LOWER(jr.job_title) LIKE $${index}
-        )`,
+      const search = `%${filter.search.trim()}%`;
+      const searchCondition = or(
+        ilike(recruitmentApplications.firstName, search),
+        ilike(recruitmentApplications.lastName, search),
+        ilike(recruitmentApplications.email, search),
+        ilike(recruitmentApplications.applicationNumber, search),
+        ilike(jobRequisitions.jobTitle, search),
       );
+      if (searchCondition) {
+        where.push(searchCondition);
+      }
     }
 
     if (filter?.requisitionId) {
-      values.push(filter.requisitionId);
-      where.push(`ra.requisition_id = $${values.length}`);
+      where.push(eq(recruitmentApplications.requisitionId, filter.requisitionId));
     }
 
     if (filter?.status?.trim()) {
-      values.push(filter.status.trim().toUpperCase());
-      where.push(`ra.status = $${values.length}`);
+      where.push(
+        eq(recruitmentApplications.status, filter.status.trim().toUpperCase()),
+      );
     }
 
-    const rows = await this.database.many<RecruitmentApplicationRow>(
-      `
-        ${this.applicationSelect()}
-        ${where.length > 0 ? `WHERE ${where.join(' AND ')}` : ''}
-        ORDER BY
-          CASE ra.status
-            WHEN 'RECEIVED' THEN 1
-            WHEN 'SCREENING' THEN 2
-            WHEN 'SHORTLISTED' THEN 3
-            WHEN 'INTERVIEW_SCHEDULED' THEN 4
-            WHEN 'INTERVIEWED' THEN 5
-            WHEN 'SELECTED' THEN 6
-            WHEN 'OFFER_EXTENDED' THEN 7
-            WHEN 'HIRED' THEN 8
-            ELSE 9
-          END,
-          ra.applied_at DESC
-      `,
-      values,
-    );
+    const rows = await this.findApplicationRows(where);
 
     return rows.map((row) => this.mapApplication(row));
   }
 
   async recruitmentSummary(currentUser: AuthenticatedUser) {
     assertAccountManagerAccess(currentUser.roles);
-    const row = await this.database.one<{
-      openRequisitions: number;
-      activeApplications: number;
-      screeningApplications: number;
-      selectedApplications: number;
-    }>(
-      `
-        SELECT
-          COUNT(*) FILTER (WHERE jr.status IN ('OPEN', 'ON_HOLD'))::int AS "openRequisitions",
-          COUNT(ra.id) FILTER (
-            WHERE ra.status NOT IN ('HIRED', 'REJECTED', 'WITHDRAWN')
-          )::int AS "activeApplications",
-          COUNT(ra.id) FILTER (
-            WHERE ra.status IN ('SCREENING', 'SHORTLISTED', 'INTERVIEW_SCHEDULED', 'INTERVIEWED')
-          )::int AS "screeningApplications",
-          COUNT(ra.id) FILTER (
-            WHERE ra.status IN ('SELECTED', 'OFFER_EXTENDED', 'HIRED')
-          )::int AS "selectedApplications"
-        FROM job_requisitions jr
-        LEFT JOIN recruitment_applications ra ON ra.requisition_id = jr.id
-      `,
-    );
+    const [row] = await this.database.drizzle
+      .select({
+        openRequisitions: sql<number>`COUNT(*) FILTER (
+          WHERE ${jobRequisitions.status} IN ('OPEN', 'ON_HOLD')
+        )::int`,
+        activeApplications: sql<number>`COUNT(${recruitmentApplications.id}) FILTER (
+          WHERE ${recruitmentApplications.status} NOT IN ('HIRED', 'REJECTED', 'WITHDRAWN')
+        )::int`,
+        screeningApplications: sql<number>`COUNT(${recruitmentApplications.id}) FILTER (
+          WHERE ${recruitmentApplications.status} IN (
+            'SCREENING',
+            'SHORTLISTED',
+            'INTERVIEW_SCHEDULED',
+            'INTERVIEWED'
+          )
+        )::int`,
+        selectedApplications: sql<number>`COUNT(${recruitmentApplications.id}) FILTER (
+          WHERE ${recruitmentApplications.status} IN ('SELECTED', 'OFFER_EXTENDED', 'HIRED')
+        )::int`,
+      })
+      .from(jobRequisitions)
+      .leftJoin(
+        recruitmentApplications,
+        eq(recruitmentApplications.requisitionId, jobRequisitions.id),
+      );
 
     return {
       openRequisitions: row?.openRequisitions ?? 0,
@@ -251,48 +234,28 @@ export class RecruitmentService {
     await this.assertDepartmentAndDesignation(departmentId, designationId);
     this.assertSalaryRange(input.salaryMin ?? null, input.salaryMax ?? null);
 
-    const created = await this.database.one<{ id: string }>(
-      `
-        INSERT INTO job_requisitions (
-          id,
-          requisition_number,
-          job_title,
-          department_id,
-          designation_id,
-          positions_count,
-          employment_type,
-          priority,
-          target_start_date,
-          salary_min,
-          salary_max,
-          currency_code,
-          description,
-          requirements,
-          created_by_user_id
-        )
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
-        RETURNING id
-      `,
-      [
-        randomUUID(),
-        this.generateRecordNumber('REQ'),
-        input.jobTitle.trim(),
+    const [created] = await this.database.drizzle
+      .insert(jobRequisitions)
+      .values({
+        id: randomUUID(),
+        requisitionNumber: this.generateRecordNumber('REQ'),
+        jobTitle: input.jobTitle.trim(),
         departmentId,
         designationId,
-        input.positionsCount ?? 1,
-        this.normalizeEmploymentType(input.employmentType),
-        this.normalizePriority(input.priority),
-        input.targetStartDate?.trim() || null,
-        input.salaryMin ?? null,
-        input.salaryMax ?? null,
-        input.currencyCode?.trim().toUpperCase() ?? 'AED',
-        input.description.trim(),
-        input.requirements?.trim() || null,
-        currentUser.userId,
-      ],
-    );
+        positionsCount: input.positionsCount ?? 1,
+        employmentType: this.normalizeEmploymentType(input.employmentType),
+        priority: this.normalizePriority(input.priority),
+        targetStartDate: input.targetStartDate?.trim() || null,
+        salaryMin: input.salaryMin ?? null,
+        salaryMax: input.salaryMax ?? null,
+        currencyCode: input.currencyCode?.trim().toUpperCase() ?? 'AED',
+        description: input.description.trim(),
+        requirements: input.requirements?.trim() || null,
+        createdByUserId: currentUser.userId,
+      })
+      .returning({ id: jobRequisitions.id });
 
-    return this.findJobRequisition(created!.id);
+    return this.findJobRequisition(created.id);
   }
 
   async updateJobRequisition(
@@ -314,49 +277,36 @@ export class RecruitmentService {
     await this.assertDepartmentAndDesignation(departmentId, designationId);
     this.assertSalaryRange(salaryMin, salaryMax);
 
-    await this.database.query(
-      `
-        UPDATE job_requisitions
-        SET
-          job_title = $2,
-          department_id = $3,
-          designation_id = $4,
-          positions_count = $5,
-          employment_type = $6,
-          priority = $7,
-          target_start_date = $8,
-          salary_min = $9,
-          salary_max = $10,
-          currency_code = $11,
-          description = $12,
-          requirements = $13,
-          updated_at = NOW()
-        WHERE id = $1
-      `,
-      [
-        input.id,
-        input.jobTitle?.trim() ?? existing.jobTitle,
+    await this.database.drizzle
+      .update(jobRequisitions)
+      .set({
+        jobTitle: input.jobTitle?.trim() ?? existing.jobTitle,
         departmentId,
         designationId,
-        input.positionsCount ?? existing.positionsCount,
-        input.employmentType !== undefined
-          ? this.normalizeEmploymentType(input.employmentType)
-          : existing.employmentType,
-        input.priority !== undefined
-          ? this.normalizePriority(input.priority)
-          : existing.priority,
-        input.targetStartDate !== undefined
-          ? input.targetStartDate?.trim() || null
-          : existing.targetStartDate,
+        positionsCount: input.positionsCount ?? existing.positionsCount,
+        employmentType:
+          input.employmentType !== undefined
+            ? this.normalizeEmploymentType(input.employmentType)
+            : existing.employmentType,
+        priority:
+          input.priority !== undefined
+            ? this.normalizePriority(input.priority)
+            : existing.priority,
+        targetStartDate:
+          input.targetStartDate !== undefined
+            ? input.targetStartDate?.trim() || null
+            : existing.targetStartDate,
         salaryMin,
         salaryMax,
-        input.currencyCode?.trim().toUpperCase() ?? existing.currencyCode,
-        input.description?.trim() ?? existing.description,
-        input.requirements !== undefined
-          ? input.requirements?.trim() || null
-          : existing.requirements,
-      ],
-    );
+        currencyCode: input.currencyCode?.trim().toUpperCase() ?? existing.currencyCode,
+        description: input.description?.trim() ?? existing.description,
+        requirements:
+          input.requirements !== undefined
+            ? input.requirements?.trim() || null
+            : existing.requirements,
+        updatedAt: sql`NOW()`,
+      })
+      .where(eq(jobRequisitions.id, input.id));
 
     return this.findJobRequisition(input.id);
   }
@@ -370,17 +320,14 @@ export class RecruitmentService {
     const status = this.normalizeRequisitionStatus(input.status);
     this.assertRequisitionTransition(existing.status as RequisitionStatus, status);
 
-    await this.database.query(
-      `
-        UPDATE job_requisitions
-        SET
-          status = $2,
-          closed_at = CASE WHEN $2 IN ('FILLED', 'CLOSED') THEN NOW() ELSE NULL END,
-          updated_at = NOW()
-        WHERE id = $1
-      `,
-      [input.id, status],
-    );
+    await this.database.drizzle
+      .update(jobRequisitions)
+      .set({
+        status,
+        closedAt: ['FILLED', 'CLOSED'].includes(status) ? sql`NOW()` : null,
+        updatedAt: sql`NOW()`,
+      })
+      .where(eq(jobRequisitions.id, input.id));
 
     return this.findJobRequisition(input.id);
   }
@@ -404,14 +351,16 @@ export class RecruitmentService {
     const email = input.email.trim().toLowerCase();
     this.assertNonNegative(input.yearsExperience, 'Years experience');
     this.assertNonNegative(input.expectedSalary, 'Expected salary');
-    const duplicate = await this.database.one<{ id: string }>(
-      `
-        SELECT id
-        FROM recruitment_applications
-        WHERE requisition_id = $1 AND email = $2
-      `,
-      [input.requisitionId, email],
-    );
+    const [duplicate] = await this.database.drizzle
+      .select({ id: recruitmentApplications.id })
+      .from(recruitmentApplications)
+      .where(
+        and(
+          eq(recruitmentApplications.requisitionId, input.requisitionId),
+          eq(recruitmentApplications.email, email),
+        ),
+      )
+      .limit(1);
 
     if (duplicate) {
       throw new ConflictException(
@@ -419,45 +368,27 @@ export class RecruitmentService {
       );
     }
 
-    const created = await this.database.one<{ id: string }>(
-      `
-        INSERT INTO recruitment_applications (
-          id,
-          application_number,
-          requisition_id,
-          first_name,
-          last_name,
-          email,
-          phone,
-          source,
-          years_experience,
-          expected_salary,
-          resume_url,
-          notes,
-          last_action_by_user_id,
-          last_action_at
-        )
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, NOW())
-        RETURNING id
-      `,
-      [
-        randomUUID(),
-        this.generateRecordNumber('APP'),
-        input.requisitionId,
-        input.firstName.trim(),
-        input.lastName.trim(),
+    const [created] = await this.database.drizzle
+      .insert(recruitmentApplications)
+      .values({
+        id: randomUUID(),
+        applicationNumber: this.generateRecordNumber('APP'),
+        requisitionId: input.requisitionId,
+        firstName: input.firstName.trim(),
+        lastName: input.lastName.trim(),
         email,
-        input.phone?.trim() || null,
-        input.source?.trim() || null,
-        input.yearsExperience ?? null,
-        input.expectedSalary ?? null,
-        input.resumeUrl?.trim() || null,
-        input.notes?.trim() || null,
-        currentUser.userId,
-      ],
-    );
+        phone: input.phone?.trim() || null,
+        source: input.source?.trim() || null,
+        yearsExperience: input.yearsExperience ?? null,
+        expectedSalary: input.expectedSalary ?? null,
+        resumeUrl: input.resumeUrl?.trim() || null,
+        notes: input.notes?.trim() || null,
+        lastActionByUserId: currentUser.userId,
+        lastActionAt: sql`NOW()`,
+      })
+      .returning({ id: recruitmentApplications.id });
 
-    return this.findRecruitmentApplication(created!.id);
+    return this.findRecruitmentApplication(created.id);
   }
 
   async updateRecruitmentApplication(
@@ -472,14 +403,17 @@ export class RecruitmentService {
     this.assertNonNegative(input.expectedSalary, 'Expected salary');
 
     if (email !== existing.email) {
-      const duplicate = await this.database.one<{ id: string }>(
-        `
-          SELECT id
-          FROM recruitment_applications
-          WHERE requisition_id = $1 AND email = $2 AND id <> $3
-        `,
-        [existing.requisitionId, email, input.id],
-      );
+      const [duplicate] = await this.database.drizzle
+        .select({ id: recruitmentApplications.id })
+        .from(recruitmentApplications)
+        .where(
+          and(
+            eq(recruitmentApplications.requisitionId, existing.requisitionId),
+            eq(recruitmentApplications.email, email),
+            ne(recruitmentApplications.id, input.id),
+          ),
+        )
+        .limit(1);
 
       if (duplicate) {
         throw new ConflictException(
@@ -488,44 +422,33 @@ export class RecruitmentService {
       }
     }
 
-    await this.database.query(
-      `
-        UPDATE recruitment_applications
-        SET
-          first_name = $2,
-          last_name = $3,
-          email = $4,
-          phone = $5,
-          source = $6,
-          years_experience = $7,
-          expected_salary = $8,
-          resume_url = $9,
-          notes = $10,
-          last_action_by_user_id = $11,
-          last_action_at = NOW(),
-          updated_at = NOW()
-        WHERE id = $1
-      `,
-      [
-        input.id,
-        input.firstName?.trim() ?? existing.firstName,
-        input.lastName?.trim() ?? existing.lastName,
+    await this.database.drizzle
+      .update(recruitmentApplications)
+      .set({
+        firstName: input.firstName?.trim() ?? existing.firstName,
+        lastName: input.lastName?.trim() ?? existing.lastName,
         email,
-        input.phone !== undefined ? input.phone?.trim() || null : existing.phone,
-        input.source !== undefined ? input.source?.trim() || null : existing.source,
-        input.yearsExperience !== undefined
-          ? input.yearsExperience
-          : existing.yearsExperience,
-        input.expectedSalary !== undefined
-          ? input.expectedSalary
-          : existing.expectedSalary,
-        input.resumeUrl !== undefined
-          ? input.resumeUrl?.trim() || null
-          : existing.resumeUrl,
-        input.notes !== undefined ? input.notes?.trim() || null : existing.notes,
-        currentUser.userId,
-      ],
-    );
+        phone: input.phone !== undefined ? input.phone?.trim() || null : existing.phone,
+        source:
+          input.source !== undefined ? input.source?.trim() || null : existing.source,
+        yearsExperience:
+          input.yearsExperience !== undefined
+            ? input.yearsExperience
+            : existing.yearsExperience,
+        expectedSalary:
+          input.expectedSalary !== undefined
+            ? input.expectedSalary
+            : existing.expectedSalary,
+        resumeUrl:
+          input.resumeUrl !== undefined
+            ? input.resumeUrl?.trim() || null
+            : existing.resumeUrl,
+        notes: input.notes !== undefined ? input.notes?.trim() || null : existing.notes,
+        lastActionByUserId: currentUser.userId,
+        lastActionAt: sql`NOW()`,
+        updatedAt: sql`NOW()`,
+      })
+      .where(eq(recruitmentApplications.id, input.id));
 
     return this.findRecruitmentApplication(input.id);
   }
@@ -539,100 +462,122 @@ export class RecruitmentService {
     const status = this.normalizeApplicationStatus(input.status);
     this.assertApplicationTransition(existing.status as ApplicationStatus, status);
 
-    await this.database.query(
-      `
-        UPDATE recruitment_applications
-        SET
-          status = $2,
-          decision_notes = $3,
-          last_action_by_user_id = $4,
-          last_action_at = NOW(),
-          updated_at = NOW()
-        WHERE id = $1
-      `,
-      [
-        input.id,
+    await this.database.drizzle
+      .update(recruitmentApplications)
+      .set({
         status,
-        input.decisionNotes?.trim() || existing.decisionNotes,
-        currentUser.userId,
-      ],
-    );
+        decisionNotes: input.decisionNotes?.trim() || existing.decisionNotes,
+        lastActionByUserId: currentUser.userId,
+        lastActionAt: sql`NOW()`,
+        updatedAt: sql`NOW()`,
+      })
+      .where(eq(recruitmentApplications.id, input.id));
 
     return this.findRecruitmentApplication(input.id);
   }
 
-  private requisitionSelect() {
-    return `
-      SELECT
-        jr.id,
-        jr.requisition_number AS "requisitionNumber",
-        jr.job_title AS "jobTitle",
-        jr.department_id AS "departmentId",
-        d.name AS "departmentName",
-        jr.designation_id AS "designationId",
-        des.title AS "designationTitle",
-        jr.positions_count AS "positionsCount",
-        jr.employment_type AS "employmentType",
-        jr.priority,
-        jr.status,
-        jr.target_start_date::text AS "targetStartDate",
-        jr.salary_min AS "salaryMin",
-        jr.salary_max AS "salaryMax",
-        jr.currency_code AS "currencyCode",
-        jr.description,
-        jr.requirements,
-        COUNT(ra.id)::int AS "applicationCount",
-        jr.opened_at::text AS "openedAt",
-        jr.closed_at::text AS "closedAt",
-        jr.created_at::text AS "createdAt"
-      FROM job_requisitions jr
-      INNER JOIN departments d ON d.id = jr.department_id
-      LEFT JOIN designations des ON des.id = jr.designation_id
-      LEFT JOIN recruitment_applications ra ON ra.requisition_id = jr.id
-    `;
+  private async findRequisitionRows(where: SQL[]): Promise<JobRequisitionRow[]> {
+    return this.database.drizzle
+      .select({
+        id: jobRequisitions.id,
+        requisitionNumber: jobRequisitions.requisitionNumber,
+        jobTitle: jobRequisitions.jobTitle,
+        departmentId: jobRequisitions.departmentId,
+        departmentName: departments.name,
+        designationId: jobRequisitions.designationId,
+        designationTitle: designations.title,
+        positionsCount: jobRequisitions.positionsCount,
+        employmentType: jobRequisitions.employmentType,
+        priority: jobRequisitions.priority,
+        status: jobRequisitions.status,
+        targetStartDate: sql<string | null>`${jobRequisitions.targetStartDate}::text`,
+        salaryMin: jobRequisitions.salaryMin,
+        salaryMax: jobRequisitions.salaryMax,
+        currencyCode: jobRequisitions.currencyCode,
+        description: jobRequisitions.description,
+        requirements: jobRequisitions.requirements,
+        applicationCount: sql<number>`(
+          SELECT COUNT(*)::int
+          FROM ${recruitmentApplications}
+          WHERE ${recruitmentApplications.requisitionId} = ${jobRequisitions.id}
+        )`,
+        openedAt: sql<string>`${jobRequisitions.openedAt}::text`,
+        closedAt: sql<string | null>`${jobRequisitions.closedAt}::text`,
+        createdAt: sql<string>`${jobRequisitions.createdAt}::text`,
+      })
+      .from(jobRequisitions)
+      .innerJoin(departments, eq(departments.id, jobRequisitions.departmentId))
+      .leftJoin(designations, eq(designations.id, jobRequisitions.designationId))
+      .where(and(...where))
+      .orderBy(this.requisitionStatusOrder(), desc(jobRequisitions.createdAt));
   }
 
-  private requisitionGroupBy() {
-    return `GROUP BY jr.id, d.name, des.title`;
+  private async findApplicationRows(
+    where: SQL[],
+  ): Promise<RecruitmentApplicationRow[]> {
+    return this.database.drizzle
+      .select({
+        id: recruitmentApplications.id,
+        applicationNumber: recruitmentApplications.applicationNumber,
+        requisitionId: recruitmentApplications.requisitionId,
+        requisitionNumber: jobRequisitions.requisitionNumber,
+        jobTitle: jobRequisitions.jobTitle,
+        firstName: recruitmentApplications.firstName,
+        lastName: recruitmentApplications.lastName,
+        email: recruitmentApplications.email,
+        phone: recruitmentApplications.phone,
+        source: recruitmentApplications.source,
+        yearsExperience: recruitmentApplications.yearsExperience,
+        expectedSalary: recruitmentApplications.expectedSalary,
+        resumeUrl: recruitmentApplications.resumeUrl,
+        status: recruitmentApplications.status,
+        notes: recruitmentApplications.notes,
+        decisionNotes: recruitmentApplications.decisionNotes,
+        appliedAt: sql<string>`${recruitmentApplications.appliedAt}::text`,
+        lastActionAt: sql<string | null>`${recruitmentApplications.lastActionAt}::text`,
+        lastActionByName: sql<string | null>`CASE
+          WHEN ${recruitmentActionUsers.id} IS NULL THEN NULL
+          ELSE CONCAT(${recruitmentActionUsers.firstName}, ' ', ${recruitmentActionUsers.lastName})
+        END`,
+      })
+      .from(recruitmentApplications)
+      .innerJoin(
+        jobRequisitions,
+        eq(jobRequisitions.id, recruitmentApplications.requisitionId),
+      )
+      .leftJoin(
+        recruitmentActionUsers,
+        eq(recruitmentActionUsers.id, recruitmentApplications.lastActionByUserId),
+      )
+      .where(and(...where))
+      .orderBy(this.applicationStatusOrder(), desc(recruitmentApplications.appliedAt));
   }
 
-  private applicationSelect() {
-    return `
-      SELECT
-        ra.id,
-        ra.application_number AS "applicationNumber",
-        ra.requisition_id AS "requisitionId",
-        jr.requisition_number AS "requisitionNumber",
-        jr.job_title AS "jobTitle",
-        ra.first_name AS "firstName",
-        ra.last_name AS "lastName",
-        ra.email,
-        ra.phone,
-        ra.source,
-        ra.years_experience AS "yearsExperience",
-        ra.expected_salary AS "expectedSalary",
-        ra.resume_url AS "resumeUrl",
-        ra.status,
-        ra.notes,
-        ra.decision_notes AS "decisionNotes",
-        ra.applied_at::text AS "appliedAt",
-        ra.last_action_at::text AS "lastActionAt",
-        CONCAT(u.first_name, ' ', u.last_name) AS "lastActionByName"
-      FROM recruitment_applications ra
-      INNER JOIN job_requisitions jr ON jr.id = ra.requisition_id
-      LEFT JOIN users u ON u.id = ra.last_action_by_user_id
-    `;
+  private requisitionStatusOrder() {
+    return sql<number>`CASE ${jobRequisitions.status}
+      WHEN 'OPEN' THEN 1
+      WHEN 'ON_HOLD' THEN 2
+      WHEN 'FILLED' THEN 3
+      ELSE 4
+    END`;
+  }
+
+  private applicationStatusOrder() {
+    return sql<number>`CASE ${recruitmentApplications.status}
+      WHEN 'RECEIVED' THEN 1
+      WHEN 'SCREENING' THEN 2
+      WHEN 'SHORTLISTED' THEN 3
+      WHEN 'INTERVIEW_SCHEDULED' THEN 4
+      WHEN 'INTERVIEWED' THEN 5
+      WHEN 'SELECTED' THEN 6
+      WHEN 'OFFER_EXTENDED' THEN 7
+      WHEN 'HIRED' THEN 8
+      ELSE 9
+    END`;
   }
 
   private async findJobRequisition(id: string) {
-    const row = await this.database.one<JobRequisitionRow>(
-      `
-        ${this.requisitionSelect()}
-        WHERE jr.id = $1
-        ${this.requisitionGroupBy()}
-      `,
-      [id],
-    );
+    const [row] = await this.findRequisitionRows([eq(jobRequisitions.id, id)]);
 
     if (!row) {
       throw new NotFoundException('Job requisition not found');
@@ -642,13 +587,9 @@ export class RecruitmentService {
   }
 
   private async findRecruitmentApplication(id: string) {
-    const row = await this.database.one<RecruitmentApplicationRow>(
-      `
-        ${this.applicationSelect()}
-        WHERE ra.id = $1
-      `,
-      [id],
-    );
+    const [row] = await this.findApplicationRows([
+      eq(recruitmentApplications.id, id),
+    ]);
 
     if (!row) {
       throw new NotFoundException('Recruitment application not found');
@@ -658,43 +599,26 @@ export class RecruitmentService {
   }
 
   private async getRawRequisition(id: string) {
-    const row = await this.database.one<{
-      id: string;
-      jobTitle: string;
-      departmentId: string;
-      designationId: string | null;
-      positionsCount: number;
-      employmentType: string;
-      priority: string;
-      status: string;
-      targetStartDate: string | null;
-      salaryMin: number | null;
-      salaryMax: number | null;
-      currencyCode: string;
-      description: string;
-      requirements: string | null;
-    }>(
-      `
-        SELECT
-          id,
-          job_title AS "jobTitle",
-          department_id AS "departmentId",
-          designation_id AS "designationId",
-          positions_count AS "positionsCount",
-          employment_type AS "employmentType",
-          priority,
-          status,
-          target_start_date::text AS "targetStartDate",
-          salary_min AS "salaryMin",
-          salary_max AS "salaryMax",
-          currency_code AS "currencyCode",
-          description,
-          requirements
-        FROM job_requisitions
-        WHERE id = $1
-      `,
-      [id],
-    );
+    const [row] = await this.database.drizzle
+      .select({
+        id: jobRequisitions.id,
+        jobTitle: jobRequisitions.jobTitle,
+        departmentId: jobRequisitions.departmentId,
+        designationId: jobRequisitions.designationId,
+        positionsCount: jobRequisitions.positionsCount,
+        employmentType: jobRequisitions.employmentType,
+        priority: jobRequisitions.priority,
+        status: jobRequisitions.status,
+        targetStartDate: sql<string | null>`${jobRequisitions.targetStartDate}::text`,
+        salaryMin: jobRequisitions.salaryMin,
+        salaryMax: jobRequisitions.salaryMax,
+        currencyCode: jobRequisitions.currencyCode,
+        description: jobRequisitions.description,
+        requirements: jobRequisitions.requirements,
+      })
+      .from(jobRequisitions)
+      .where(eq(jobRequisitions.id, id))
+      .limit(1);
 
     if (!row) {
       throw new NotFoundException('Job requisition not found');
@@ -704,41 +628,25 @@ export class RecruitmentService {
   }
 
   private async getRawApplication(id: string) {
-    const row = await this.database.one<{
-      id: string;
-      requisitionId: string;
-      firstName: string;
-      lastName: string;
-      email: string;
-      phone: string | null;
-      source: string | null;
-      yearsExperience: number | null;
-      expectedSalary: number | null;
-      resumeUrl: string | null;
-      status: string;
-      notes: string | null;
-      decisionNotes: string | null;
-    }>(
-      `
-        SELECT
-          id,
-          requisition_id AS "requisitionId",
-          first_name AS "firstName",
-          last_name AS "lastName",
-          email,
-          phone,
-          source,
-          years_experience AS "yearsExperience",
-          expected_salary AS "expectedSalary",
-          resume_url AS "resumeUrl",
-          status,
-          notes,
-          decision_notes AS "decisionNotes"
-        FROM recruitment_applications
-        WHERE id = $1
-      `,
-      [id],
-    );
+    const [row] = await this.database.drizzle
+      .select({
+        id: recruitmentApplications.id,
+        requisitionId: recruitmentApplications.requisitionId,
+        firstName: recruitmentApplications.firstName,
+        lastName: recruitmentApplications.lastName,
+        email: recruitmentApplications.email,
+        phone: recruitmentApplications.phone,
+        source: recruitmentApplications.source,
+        yearsExperience: recruitmentApplications.yearsExperience,
+        expectedSalary: recruitmentApplications.expectedSalary,
+        resumeUrl: recruitmentApplications.resumeUrl,
+        status: recruitmentApplications.status,
+        notes: recruitmentApplications.notes,
+        decisionNotes: recruitmentApplications.decisionNotes,
+      })
+      .from(recruitmentApplications)
+      .where(eq(recruitmentApplications.id, id))
+      .limit(1);
 
     if (!row) {
       throw new NotFoundException('Recruitment application not found');
@@ -751,10 +659,11 @@ export class RecruitmentService {
     departmentId: string,
     designationId?: string | null,
   ) {
-    const department = await this.database.one<{ id: string }>(
-      `SELECT id FROM departments WHERE id = $1 AND is_active = TRUE`,
-      [departmentId],
-    );
+    const [department] = await this.database.drizzle
+      .select({ id: departments.id })
+      .from(departments)
+      .where(and(eq(departments.id, departmentId), eq(departments.isActive, true)))
+      .limit(1);
 
     if (!department) {
       throw new BadRequestException('Department not found or inactive');
@@ -764,17 +673,19 @@ export class RecruitmentService {
       return;
     }
 
-    const designation = await this.database.one<{
-      id: string;
-      departmentId: string;
-    }>(
-      `
-        SELECT id, department_id AS "departmentId"
-        FROM designations
-        WHERE id = $1 AND is_active = TRUE
-      `,
-      [designationId],
-    );
+    const [designation] = await this.database.drizzle
+      .select({
+        id: designations.id,
+        departmentId: designations.departmentId,
+      })
+      .from(designations)
+      .where(
+        and(
+          eq(designations.id, designationId),
+          eq(designations.isActive, true),
+        ),
+      )
+      .limit(1);
 
     if (!designation) {
       throw new BadRequestException('Designation not found or inactive');

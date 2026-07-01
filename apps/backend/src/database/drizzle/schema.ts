@@ -197,3 +197,67 @@ export const leaveRequests = pgTable('leave_requests', {
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 });
+
+export const jobRequisitions = pgTable('job_requisitions', {
+  id: text('id').primaryKey(),
+  requisitionNumber: text('requisition_number').notNull().unique(),
+  jobTitle: text('job_title').notNull(),
+  departmentId: text('department_id')
+    .notNull()
+    .references(() => departments.id, { onDelete: 'restrict' }),
+  designationId: text('designation_id').references(() => designations.id, {
+    onDelete: 'set null',
+  }),
+  positionsCount: integer('positions_count').notNull().default(1),
+  employmentType: text('employment_type').notNull().default('FULL_TIME'),
+  priority: text('priority').notNull().default('MEDIUM'),
+  status: text('status').notNull().default('OPEN'),
+  targetStartDate: date('target_start_date'),
+  salaryMin: doublePrecision('salary_min'),
+  salaryMax: doublePrecision('salary_max'),
+  currencyCode: text('currency_code').notNull().default('AED'),
+  description: text('description').notNull(),
+  requirements: text('requirements'),
+  createdByUserId: text('created_by_user_id').references(() => users.id, {
+    onDelete: 'set null',
+  }),
+  openedAt: timestamp('opened_at', { withTimezone: true }).notNull().defaultNow(),
+  closedAt: timestamp('closed_at', { withTimezone: true }),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+});
+
+export const recruitmentApplications = pgTable(
+  'recruitment_applications',
+  {
+    id: text('id').primaryKey(),
+    applicationNumber: text('application_number').notNull().unique(),
+    requisitionId: text('requisition_id')
+      .notNull()
+      .references(() => jobRequisitions.id, { onDelete: 'cascade' }),
+    firstName: text('first_name').notNull(),
+    lastName: text('last_name').notNull(),
+    email: text('email').notNull(),
+    phone: text('phone'),
+    source: text('source'),
+    yearsExperience: doublePrecision('years_experience'),
+    expectedSalary: doublePrecision('expected_salary'),
+    resumeUrl: text('resume_url'),
+    status: text('status').notNull().default('RECEIVED'),
+    notes: text('notes'),
+    decisionNotes: text('decision_notes'),
+    appliedAt: timestamp('applied_at', { withTimezone: true }).notNull().defaultNow(),
+    lastActionByUserId: text('last_action_by_user_id').references(() => users.id, {
+      onDelete: 'set null',
+    }),
+    lastActionAt: timestamp('last_action_at', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    unique('recruitment_applications_requisition_id_email_key').on(
+      table.requisitionId,
+      table.email,
+    ),
+  ],
+);
