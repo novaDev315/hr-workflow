@@ -17,6 +17,8 @@ WORKDIR /app
 ENV NODE_ENV=production
 COPY --from=deps /app/node_modules ./node_modules
 COPY --from=builder /app/dist ./dist
+COPY --from=builder /app/drizzle.config.ts ./drizzle.config.ts
+COPY --from=builder /app/src/database/drizzle ./src/database/drizzle
 COPY --from=builder /app/package.json ./package.json
 
 EXPOSE 4001

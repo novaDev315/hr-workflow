@@ -1,19 +1,20 @@
 # Drizzle Migration
 
-Status: runtime service migration complete
+Status: runtime service and schema bootstrap migration complete
 Date: 2026-07-01
 
 ## Decision
 
-Rakss now uses Drizzle as the backend runtime query layer on top of the existing
-`pg` pool exposed by `DatabaseService.drizzle`.
+Rakss now uses Drizzle as the backend runtime query layer and explicit schema
+sync surface on top of the existing `pg` pool exposed by
+`DatabaseService.drizzle`.
 
-Raw SQL/Postgres remains the schema and seed owner until a separate versioned
-migration phase is approved:
+Drizzle owns:
 
-- `apps/backend/src/database/schema.ts`
-- `apps/backend/src/database/seeds.ts`
-- `apps/backend/src/database/database.service.ts`
+- table/index/constraint mapping in `apps/backend/src/database/drizzle/schema.ts`
+- schema synchronization through `drizzle-kit push`
+- idempotent seed data through `apps/backend/src/database/seeds.ts`
+- runtime service queries through `DatabaseService.drizzle`
 
 The old parked Prisma schema and unused Prisma backend packages were removed.
 Prisma is no longer a backend runtime dependency.
@@ -41,42 +42,41 @@ Drizzle table mappings live in:
 apps/backend/src/database/drizzle/schema.ts
 ```
 
-## Remaining Raw SQL Boundary
+## Remaining SQL Boundary
 
-The remaining raw SQL is intentional infrastructure/schema ownership, not
-service query ownership:
+The old hand-written startup DDL file was removed. Application runtime services
+should not call generic raw `pg` helpers, and `DatabaseService` no longer exposes
+`query`, `one`, `many`, or `transaction`.
 
-- startup schema creation in `schema.ts`
-- seed data in `seeds.ts`
-- the low-level `pg` helper methods retained on `DatabaseService`
-- integration-test fixture setup/cleanup where direct SQL is still used
+Remaining SQL text is limited to Drizzle-mediated SQL expressions where the
+query builder needs Postgres expressions, for example `NOW()`, `LOWER(...)`,
+`EXISTS`, date-range overlap, aggregate ordering, and health-check `SELECT 1`.
+Drizzle also prints generated SQL in `drizzle:check` output.
 
-Application runtime services should not call:
-
-```text
-database.query(...)
-database.one(...)
-database.many(...)
-database.transaction(...)
-```
-
-Use this audit:
+Use these audits:
 
 ```bash
-rg -n "database\.(query|one|many|transaction)\(" apps/backend/src \
-  --glob '!database/database.service.ts' \
-  --glob '!database/schema.ts' \
-  --glob '!database/seeds.ts' \
-  --glob '!**/__tests__/*.spec.ts'
+rg -n "database\.(query|one|many|transaction)\(" apps/backend/src
+rg -n "DATABASE_SCHEMA_STATEMENTS|DATABASE_SEED_STATEMENTS|CREATE TABLE IF NOT EXISTS" apps/backend/src
 ```
 
 Expected result: no matches.
+
+The remaining Drizzle expression fragments can be inspected with:
+
+```bash
+rg -n 'sql`|\.execute\(sql' apps/backend/src
+```
 
 ## Tooling
 
 Backend scripts:
 
 ```bash
+bun run --cwd apps/backend schema:push
+bun run --cwd apps/backend schema:seed
+bun run --cwd apps/backend schema:ensure
+bun run --cwd apps/backend migrate:deploy
 bun run --cwd apps/backend drizzle:check
 bun run --cwd apps/backend drizzle:generate
 bun run --cwd apps/backend drizzle:migration-check
@@ -89,9 +89,12 @@ Config:
 apps/backend/drizzle.config.ts
 ```
 
-`drizzle:check` validates that the mapped schema can be exported as Postgres
-DDL. `drizzle:migration-check` is reserved for the later versioned-migration
-phase.
+`schema:ensure` runs Drizzle schema sync first, then verifies the connection and
+seed data through the compiled backend script. `drizzle:check` validates that
+the mapped schema can be exported as Postgres DDL.
+
+Generated SQL migrations are not enabled yet. `drizzle:migration-check` remains
+reserved for a later versioned-migration phase.
 
 ## Proof
 

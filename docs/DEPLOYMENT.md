@@ -230,7 +230,7 @@ Operator-required configuration:
 - Set a real `JWT_SECRET`; the compose default is only a local-development fallback.
 - Set `ALLOWED_ORIGINS` to the deployed admin and mobile origins.
 - Set and back up `POLICY_STORAGE_DIR` with the database because policy rows reference stored files.
-- Run database migration verification before shipping: `bun run --cwd apps/backend migrate:deploy` or the homelab database migration wrapper for the target deployment.
+- Run database migration verification before shipping: `bun run --cwd apps/backend migrate:deploy` or the homelab database migration wrapper for the target deployment. This runs Drizzle schema sync followed by Drizzle seed verification.
 
 Not yet proven or not implemented in this repo:
 

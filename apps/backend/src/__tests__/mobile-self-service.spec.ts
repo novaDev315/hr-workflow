@@ -2,10 +2,26 @@ import { INestApplication } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import bcrypt from 'bcrypt';
 import { randomUUID } from 'crypto';
+import { and, asc, eq, inArray } from 'drizzle-orm';
 import request from 'supertest';
 import { AppModule } from '../app.module';
-import { DatabaseService } from '../database/database.service';
 import { SYSTEM_ROLE_DETAILS, SystemRoleKey } from '../common/system-roles';
+import { DatabaseService } from '../database/database.service';
+import {
+  attendanceRecords as attendanceRecordsTable,
+  departments,
+  designations,
+  employeeCompensations,
+  employeeLocationAssignments,
+  employees,
+  leaveRequests,
+  locations,
+  payrollPeriods,
+  payslips,
+  roles,
+  userRoleAssignments,
+  users,
+} from '../database/drizzle/schema';
 
 type GraphqlResponse<T> = {
   data?: T;
@@ -51,66 +67,40 @@ describe('Mobile self-service flows', () => {
     database = moduleFixture.get(DatabaseService);
 
     await ensureRole('ADMIN');
-    await database.query(
-      `
-        INSERT INTO departments (id, name, code, description, is_active)
-        VALUES ($1, $2, $3, $4, TRUE)
-      `,
-      [
-        ids.departmentId,
-        `Test Department ${uniqueSuffix}`,
-        `DEPT_${uniqueCode}`,
-        'Integration test department',
-      ],
-    );
-    await database.query(
-      `
-        INSERT INTO designations (
-          id,
-          title,
-          code,
-          department_id,
-          level,
-          description,
-          is_active
-        )
-        VALUES ($1, $2, $3, $4, $5, $6, TRUE)
-      `,
-      [
-        ids.designationId,
-        `Test Designation ${uniqueSuffix}`,
-        `DES_${uniqueCode}`,
-        ids.departmentId,
-        2,
-        'Integration test designation',
-      ],
-    );
+    await database.drizzle.insert(departments).values({
+      id: ids.departmentId,
+      name: `Test Department ${uniqueSuffix}`,
+      code: `DEPT_${uniqueCode}`,
+      description: 'Integration test department',
+      isActive: true,
+    });
+    await database.drizzle.insert(designations).values({
+      id: ids.designationId,
+      title: `Test Designation ${uniqueSuffix}`,
+      code: `DES_${uniqueCode}`,
+      departmentId: ids.departmentId,
+      level: 2,
+      description: 'Integration test designation',
+      isActive: true,
+    });
 
     const passwordHash = await bcrypt.hash(adminPassword, 10);
-    await database.query(
-      `
-        INSERT INTO users (
-          id,
-          email,
-          employee_id,
-          password_hash,
-          first_name,
-          last_name,
-          is_active
-        )
-        VALUES ($1, $2, NULL, $3, 'Test', 'Admin', TRUE)
-      `,
-      [ids.adminUserId, adminEmail, passwordHash],
-    );
+    await database.drizzle.insert(users).values({
+      id: ids.adminUserId,
+      email: adminEmail,
+      employeeId: null,
+      passwordHash,
+      firstName: 'Test',
+      lastName: 'Admin',
+      isActive: true,
+    });
 
     const adminRoleId = await getRoleId('ADMIN');
-    await database.query(
-      `
-        INSERT INTO user_role_assignments (id, user_id, role_id)
-        VALUES ($1, $2, $3)
-      `,
-      [ids.adminAssignmentId, ids.adminUserId, adminRoleId],
-    );
+    await database.drizzle.insert(userRoleAssignments).values({
+      id: ids.adminAssignmentId,
+      userId: ids.adminUserId,
+      roleId: adminRoleId,
+    });
   });
 
   afterAll(async () => {
@@ -118,24 +108,33 @@ describe('Mobile self-service flows', () => {
       return;
     }
 
-    await deleteByIds('user_role_assignments', [
+    await deleteByIds(userRoleAssignments, [
       ids.adminAssignmentId,
       ...(employeeAccountId ? await getUserAssignmentIds(employeeAccountId) : []),
     ]);
-    await deleteByIds('leave_requests', leaveRequestId ? [leaveRequestId] : []);
-    await deleteByIds('attendance_records', [
+    await deleteByIds(leaveRequests, leaveRequestId ? [leaveRequestId] : []);
+    await deleteByIds(attendanceRecordsTable, [
       ids.futureAttendanceId,
       ...(employeeId ? await getAttendanceRecordIds(employeeId) : []),
     ]);
-    await deleteByIds('employee_location_assignments', employeeId ? await getEmployeeLocationIds(employeeId) : []);
-    await deleteByIds('payslips', payrollPeriodId ? await getPayslipIds(payrollPeriodId) : []);
-    await deleteByIds('payroll_periods', payrollPeriodId ? [payrollPeriodId] : []);
-    await deleteByIds('employee_compensations', employeeId ? await getCompensationIds(employeeId) : []);
-    await deleteByIds('locations', locationId ? [locationId] : []);
-    await deleteByIds('users', [ids.adminUserId, employeeAccountId].filter(Boolean));
-    await deleteByIds('employees', employeeId ? [employeeId] : []);
-    await deleteByIds('designations', [ids.designationId]);
-    await deleteByIds('departments', [ids.departmentId]);
+    await deleteByIds(
+      employeeLocationAssignments,
+      employeeId ? await getEmployeeLocationIds(employeeId) : [],
+    );
+    await deleteByIds(
+      payslips,
+      payrollPeriodId ? await getPayslipIds(payrollPeriodId) : [],
+    );
+    await deleteByIds(payrollPeriods, payrollPeriodId ? [payrollPeriodId] : []);
+    await deleteByIds(
+      employeeCompensations,
+      employeeId ? await getCompensationIds(employeeId) : [],
+    );
+    await deleteByIds(locations, locationId ? [locationId] : []);
+    await deleteByIds(users, [ids.adminUserId, employeeAccountId].filter(Boolean));
+    await deleteByIds(employees, employeeId ? [employeeId] : []);
+    await deleteByIds(designations, [ids.designationId]);
+    await deleteByIds(departments, [ids.departmentId]);
 
     await app.close();
   });
@@ -540,52 +539,23 @@ describe('Mobile self-service flows', () => {
 
     payrollPeriodId = createdPayrollPeriod.createPayrollPeriod.id;
 
-    await database.query(
-      `
-        INSERT INTO attendance_records (
-          id,
-          employee_id,
-          location_id,
-          attendance_date,
-          clock_in_at,
-          clock_out_at,
-          clock_in_distance,
-          clock_out_distance,
-          clock_in_geofence_valid,
-          clock_out_geofence_valid,
-          total_minutes,
-          total_hours,
-          regular_hours,
-          overtime_hours,
-          status
-        )
-        VALUES (
-          $1,
-          $2,
-          $3,
-          $4,
-          $5,
-          $6,
-          0,
-          0,
-          TRUE,
-          TRUE,
-          480,
-          8,
-          8,
-          0,
-          'COMPLETED'
-        )
-      `,
-      [
-        ids.futureAttendanceId,
-        employeeId,
-        locationId,
-        `${payrollMonth}-15`,
-        `${payrollMonth}-15T08:00:00.000Z`,
-        `${payrollMonth}-15T16:00:00.000Z`,
-      ],
-    );
+    await database.drizzle.insert(attendanceRecordsTable).values({
+      id: ids.futureAttendanceId,
+      employeeId,
+      locationId,
+      attendanceDate: `${payrollMonth}-15`,
+      clockInAt: new Date(`${payrollMonth}-15T08:00:00.000Z`),
+      clockOutAt: new Date(`${payrollMonth}-15T16:00:00.000Z`),
+      clockInDistance: 0,
+      clockOutDistance: 0,
+      clockInGeofenceValid: true,
+      clockOutGeofenceValid: true,
+      totalMinutes: 480,
+      totalHours: 8,
+      regularHours: 8,
+      overtimeHours: 0,
+      status: 'COMPLETED',
+    });
 
     await graphqlRequest(
       `
@@ -763,33 +733,35 @@ describe('Mobile self-service flows', () => {
   }
 
   async function ensureRole(roleKey: SystemRoleKey) {
-    const existing = await database.one<{ id: string }>(
-      `SELECT id FROM roles WHERE key = $1`,
-      [roleKey],
-    );
+    const [existing] = await database.drizzle
+      .select({ id: roles.id })
+      .from(roles)
+      .where(eq(roles.key, roleKey));
 
     if (existing) {
       return existing.id;
     }
 
     const detail = SYSTEM_ROLE_DETAILS[roleKey];
-    const created = await database.one<{ id: string }>(
-      `
-        INSERT INTO roles (id, key, name, description, is_system)
-        VALUES ($1, $2, $3, $4, TRUE)
-        RETURNING id
-      `,
-      [randomUUID(), roleKey, detail.name, detail.description],
-    );
+    const [created] = await database.drizzle
+      .insert(roles)
+      .values({
+        id: randomUUID(),
+        key: roleKey,
+        name: detail.name,
+        description: detail.description,
+        isSystem: true,
+      })
+      .returning({ id: roles.id });
 
     return created!.id;
   }
 
   async function getRoleId(roleKey: SystemRoleKey) {
-    const role = await database.one<{ id: string }>(
-      `SELECT id FROM roles WHERE key = $1`,
-      [roleKey],
-    );
+    const [role] = await database.drizzle
+      .select({ id: roles.id })
+      .from(roles)
+      .where(eq(roles.key, roleKey));
 
     if (!role) {
       throw new Error(`Role ${roleKey} was not created`);
@@ -799,62 +771,62 @@ describe('Mobile self-service flows', () => {
   }
 
   async function getUserAssignmentIds(userId: string) {
-    const rows = await database.many<{ id: string }>(
-      `SELECT id FROM user_role_assignments WHERE user_id = $1`,
-      [userId],
-    );
+    const rows = await database.drizzle
+      .select({ id: userRoleAssignments.id })
+      .from(userRoleAssignments)
+      .where(eq(userRoleAssignments.userId, userId));
 
     return rows.map((row) => row.id);
   }
 
   async function getAttendanceRecordIds(employeeRecordId: string) {
-    const rows = await database.many<{ id: string }>(
-      `SELECT id FROM attendance_records WHERE employee_id = $1`,
-      [employeeRecordId],
-    );
+    const rows = await database.drizzle
+      .select({ id: attendanceRecordsTable.id })
+      .from(attendanceRecordsTable)
+      .where(eq(attendanceRecordsTable.employeeId, employeeRecordId));
 
     return rows.map((row) => row.id);
   }
 
   async function getEmployeeLocationIds(employeeRecordId: string) {
-    const rows = await database.many<{ id: string }>(
-      `SELECT id FROM employee_location_assignments WHERE employee_id = $1`,
-      [employeeRecordId],
-    );
+    const rows = await database.drizzle
+      .select({ id: employeeLocationAssignments.id })
+      .from(employeeLocationAssignments)
+      .where(eq(employeeLocationAssignments.employeeId, employeeRecordId));
 
     return rows.map((row) => row.id);
   }
 
   async function getPayslipIds(periodId: string, employeeRecordId?: string) {
-    const values = employeeRecordId ? [periodId, employeeRecordId] : [periodId];
-    const rows = await database.many<{ id: string }>(
-      `
-        SELECT id
-        FROM payslips
-        WHERE payroll_period_id = $1
-          ${employeeRecordId ? 'AND employee_id = $2' : ''}
-        ORDER BY id ASC
-      `,
-      values,
-    );
+    const filters = employeeRecordId
+      ? and(
+          eq(payslips.payrollPeriodId, periodId),
+          eq(payslips.employeeId, employeeRecordId),
+        )
+      : eq(payslips.payrollPeriodId, periodId);
+    const rows = await database.drizzle
+      .select({ id: payslips.id })
+      .from(payslips)
+      .where(filters)
+      .orderBy(asc(payslips.id));
 
     return rows.map((row) => row.id);
   }
 
   async function getCompensationIds(employeeRecordId: string) {
-    const rows = await database.many<{ id: string }>(
-      `SELECT id FROM employee_compensations WHERE employee_id = $1`,
-      [employeeRecordId],
-    );
+    const rows = await database.drizzle
+      .select({ id: employeeCompensations.id })
+      .from(employeeCompensations)
+      .where(eq(employeeCompensations.employeeId, employeeRecordId));
 
     return rows.map((row) => row.id);
   }
 
-  async function deleteByIds(tableName: string, values: string[]) {
+  async function deleteByIds(table: any, values: string[]) {
     if (values.length === 0) {
       return;
     }
 
-    await database.query(`DELETE FROM ${tableName} WHERE id = ANY($1::text[])`, [values]);
+    await database.drizzle.delete(table).where(inArray(table.id, values));
   }
 });

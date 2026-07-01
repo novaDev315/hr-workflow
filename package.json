@@ -30,7 +30,7 @@
     "db:schema:ensure": "bun run --cwd apps/backend schema:ensure",
     "migrate:up": "bun run build:backend && bun run --cwd apps/backend migrate:deploy",
     "migrate:down": "echo 'Raw SQL startup migrations are forward-only. Restore from backup or add an explicit rollback script for the target change.'",
-    "migrate:status": "echo 'Raw SQL startup migrations are idempotent and do not keep a versioned migration ledger yet.'"
+    "migrate:status": "echo 'Drizzle schema sync is explicit via migrate:up; generated SQL migrations are not enabled yet.'"
   },
   "devDependencies": {
     "turbo": "^1.11.0",

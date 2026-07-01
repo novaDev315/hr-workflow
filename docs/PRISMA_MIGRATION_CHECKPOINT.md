@@ -10,14 +10,14 @@ Do not start the optional Prisma ownership migration from this tree.
 
 This checkpoint is now historical. The later Drizzle migration removed the
 parked Prisma schema and unused Prisma backend packages. Drizzle is the backend
-runtime query layer; raw SQL/Postgres remains the schema and seed owner until a
-separate versioned-migration phase is approved.
+runtime query layer and explicit schema sync surface. Generated Drizzle
+migrations can be added later as a separate versioned-migration phase.
 
-The current runtime database owner is explicit raw SQL/Postgres through
-`DatabaseService`, `schema.ts`, and `seeds.ts`. The former parked Prisma schema
-was not ready to become runtime truth: it covered only auth and org-reference
-tables, did not map the real snake_case column names, and did not model most of
-the tables currently used by the backend.
+The current runtime database owner is Drizzle through `DatabaseService`,
+`drizzle/schema.ts`, and `seeds.ts`. The former parked Prisma schema was not
+ready to become runtime truth: it covered only auth and org-reference tables,
+did not map the real snake_case column names, and did not model most of the
+tables currently used by the backend.
 
 Phase 12 is therefore closed as superseded, not executed. A future Prisma
 attempt would need to reintroduce Prisma deliberately with a separate
@@ -26,7 +26,7 @@ domain-by-domain migration plan, backups, and proof after each domain.
 ## Sources Inspected
 
 - `apps/backend/src/database/database.service.ts`
-- `apps/backend/src/database/schema.ts`
+- `apps/backend/src/database/drizzle/schema.ts`
 - `apps/backend/src/database/seeds.ts`
 - former `apps/backend/prisma/schema.prisma` checkpoint state
 - Backend service modules under `apps/backend/src/**`
@@ -35,11 +35,12 @@ domain-by-domain migration plan, backups, and proof after each domain.
 
 ## Runtime Schema Truth
 
-The runtime schema is created idempotently by
-`DATABASE_SCHEMA_STATEMENTS` and seeded by `DATABASE_SEED_STATEMENTS` during
-backend startup and by `bun run --cwd apps/backend migrate:deploy`.
+The runtime schema was historically created idempotently by
+`DATABASE_SCHEMA_STATEMENTS` and seeded by `DATABASE_SEED_STATEMENTS`. That
+hand-written bootstrap path has since been replaced by Drizzle schema sync plus
+Drizzle seed inserts.
 
-| Raw SQL table | Domain | Prisma coverage |
+| Runtime table | Domain | Prisma coverage |
 | --- | --- | --- |
 | `users` | auth/accounts | partial, incompatible column mapping |
 | `roles` | auth/accounts | partial, incompatible column mapping |
@@ -60,12 +61,13 @@ backend startup and by `bun run --cwd apps/backend migrate:deploy`.
 | `job_requisitions` | recruitment | missing |
 | `recruitment_applications` | recruitment | missing |
 
-Raw SQL also owns later `ALTER TABLE` statements for `policy_documents` file
-metadata, `users.employee_id`, and the `users_employee_id_fkey` constraint. It
-owns index creation for user roles, org reference, employees, location
-assignments, attendance, leave, payroll, policy, and recruitment.
+Drizzle schema now maps the later `policy_documents` file metadata columns,
+`users.employee_id`, the user/employee foreign key, and the indexes for user
+roles, org reference, employees, location assignments, attendance, leave,
+payroll, policy, and recruitment.
 
-Seed data is not represented by Prisma migrations:
+Seed data is not represented by Prisma migrations. It is now represented by
+Drizzle seed inserts:
 
 - Default leave types: `CASUAL`, `SICK`, `EARNED`.
 - Published policy documents: handbook, leave policy, and IT security policy.
@@ -103,14 +105,15 @@ client contract for the existing database.
 
 ## Service Rewrite Surface
 
-The backend is built around a thin `pg` abstraction:
+At the time of the checkpoint, the backend was built around a thin `pg`
+abstraction:
 
 - `query`
 - `one`
 - `many`
 - `transaction`
 
-Direct `DatabaseService` call references by runtime file:
+Historical direct `DatabaseService` call references by runtime file:
 
 | File | References |
 | --- | ---: |
@@ -139,12 +142,12 @@ Risk is high for the current tree because:
 
 - `schema.prisma` is both incomplete and column-incompatible.
 - There is no active Prisma module or Prisma client service in the Nest runtime.
-- Runtime schema creation currently happens through startup SQL, not a Prisma
-  migration ledger.
+- Runtime schema sync currently happens through Drizzle, not a Prisma migration
+  ledger.
 - Reports and payroll rely on SQL aggregations and joins that do not map cleanly
   to simple Prisma CRUD calls.
-- Production deploy uses `migrate:deploy`, which currently means
-  `schema:ensure`; replacing that must be treated as a deploy contract change.
+- Production deploy uses `migrate:deploy`, which now means Drizzle schema sync
+  followed by Drizzle seed verification.
 - The central-DB integration test is the safety proof and must remain green
   after every domain migration.
 
@@ -155,8 +158,8 @@ runtime query migration.
 
 The safe closeout for the original phased plan became:
 
-1. Keep raw SQL/Postgres ownership as schema and seed truth.
-2. Use Drizzle for backend runtime service queries.
+1. Use Drizzle for backend runtime service queries.
+2. Use Drizzle schema sync and Drizzle seed inserts for database bootstrap.
 3. Remove the parked Prisma schema and unused Prisma backend packages.
 4. Do not reintroduce Prisma without a new approval and migration plan.
 
@@ -167,7 +170,7 @@ A future Prisma migration can start only after these are true:
 - A new `schema.prisma` fully covers all raw SQL tables, indexes, constraints,
   and relations with correct `@map(...)` and `@@map(...)` annotations.
 - Seed behavior has an explicit Prisma-compatible owner or remains clearly owned
-  by raw SQL.
+  by Drizzle.
 - A Prisma client service/module exists without changing existing runtime
   behavior.
 - One backend domain is selected as the first slice; auth is still the likely

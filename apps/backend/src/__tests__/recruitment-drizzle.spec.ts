@@ -1,10 +1,18 @@
 import { ConfigModule } from '@nestjs/config';
 import { TestingModule, Test } from '@nestjs/testing';
 import { randomUUID } from 'crypto';
+import { eq } from 'drizzle-orm';
 
 import { AuthenticatedUser } from '../common/current-user.decorator';
 import { DatabaseModule } from '../database/database.module';
 import { DatabaseService } from '../database/database.service';
+import {
+  departments,
+  designations,
+  jobRequisitions,
+  recruitmentApplications,
+  users,
+} from '../database/drizzle/schema';
 import { RecruitmentService } from '../recruitment/recruitment.service';
 
 jest.setTimeout(30000);
@@ -47,78 +55,53 @@ describe('Recruitment Drizzle migration', () => {
     database = moduleFixture.get(DatabaseService);
     recruitment = moduleFixture.get(RecruitmentService);
 
-    await database.query(
-      `
-        INSERT INTO users (
-          id,
-          email,
-          password_hash,
-          first_name,
-          last_name,
-          is_active
-        )
-        VALUES ($1, $2, $3, $4, $5, TRUE)
-      `,
-      [
-        userId,
-        currentUser.email,
-        'integration-test-password-hash',
-        'Recruitment',
-        'Tester',
-      ],
-    );
+    await database.drizzle.insert(users).values({
+      id: userId,
+      email: currentUser.email,
+      passwordHash: 'integration-test-password-hash',
+      firstName: 'Recruitment',
+      lastName: 'Tester',
+      isActive: true,
+    });
 
-    await database.query(
-      `
-        INSERT INTO departments (id, name, code, description, is_active)
-        VALUES ($1, $2, $3, $4, TRUE)
-      `,
-      [
-        departmentId,
-        `Recruitment Department ${suffix}`,
-        `REC_DEPT_${suffix}`.slice(0, 24).toUpperCase(),
-        'Recruitment Drizzle integration department',
-      ],
-    );
+    await database.drizzle.insert(departments).values({
+      id: departmentId,
+      name: `Recruitment Department ${suffix}`,
+      code: `REC_DEPT_${suffix}`.slice(0, 24).toUpperCase(),
+      description: 'Recruitment Drizzle integration department',
+      isActive: true,
+    });
 
-    await database.query(
-      `
-        INSERT INTO designations (
-          id,
-          title,
-          code,
-          department_id,
-          level,
-          description,
-          is_active
-        )
-        VALUES ($1, $2, $3, $4, 2, $5, TRUE)
-      `,
-      [
-        designationId,
-        `Recruitment Designation ${suffix}`,
-        `REC_DES_${suffix}`.slice(0, 24).toUpperCase(),
-        departmentId,
-        'Recruitment Drizzle integration designation',
-      ],
-    );
+    await database.drizzle.insert(designations).values({
+      id: designationId,
+      title: `Recruitment Designation ${suffix}`,
+      code: `REC_DES_${suffix}`.slice(0, 24).toUpperCase(),
+      departmentId,
+      level: 2,
+      description: 'Recruitment Drizzle integration designation',
+      isActive: true,
+    });
   });
 
   afterAll(async () => {
     if (database) {
-      await database.query('DELETE FROM recruitment_applications WHERE id = $1', [
-        applicationId,
-      ]);
-      await database.query('DELETE FROM job_requisitions WHERE id = $1', [
-        requisitionId,
-      ]);
-      await database.query('DELETE FROM designations WHERE id = $1', [
-        designationId,
-      ]);
-      await database.query('DELETE FROM departments WHERE id = $1', [
-        departmentId,
-      ]);
-      await database.query('DELETE FROM users WHERE id = $1', [userId]);
+      if (applicationId) {
+        await database.drizzle
+          .delete(recruitmentApplications)
+          .where(eq(recruitmentApplications.id, applicationId));
+      }
+      if (requisitionId) {
+        await database.drizzle
+          .delete(jobRequisitions)
+          .where(eq(jobRequisitions.id, requisitionId));
+      }
+      await database.drizzle
+        .delete(designations)
+        .where(eq(designations.id, designationId));
+      await database.drizzle
+        .delete(departments)
+        .where(eq(departments.id, departmentId));
+      await database.drizzle.delete(users).where(eq(users.id, userId));
     }
 
     await moduleFixture?.close();

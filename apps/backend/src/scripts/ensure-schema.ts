@@ -6,14 +6,14 @@ async function main() {
 
   try {
     await database.onModuleInit();
-    console.log('Database schema verified successfully.');
+    console.log('Database connection and seed data verified successfully.');
   } finally {
     await database.onModuleDestroy();
   }
 }
 
 main().catch((error) => {
-  console.error('Database schema verification failed.');
+  console.error('Database connection or seed verification failed.');
   console.error(error);
   process.exit(1);
 });

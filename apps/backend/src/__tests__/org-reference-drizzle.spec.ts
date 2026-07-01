@@ -1,9 +1,14 @@
 import { ConfigModule } from '@nestjs/config';
 import { TestingModule, Test } from '@nestjs/testing';
 import { randomUUID } from 'crypto';
+import { eq } from 'drizzle-orm';
 
 import { DatabaseModule } from '../database/database.module';
 import { DatabaseService } from '../database/database.service';
+import {
+  departments as departmentsTable,
+  designations as designationsTable,
+} from '../database/drizzle/schema';
 import { DepartmentService } from '../org-reference/department.service';
 import { DesignationService } from '../org-reference/designation.service';
 
@@ -43,12 +48,12 @@ describe('Org reference Drizzle migration', () => {
 
   afterAll(async () => {
     if (database) {
-      await database.query('DELETE FROM designations WHERE code = $1', [
-        designationCode,
-      ]);
-      await database.query('DELETE FROM departments WHERE code = $1', [
-        departmentCode,
-      ]);
+      await database.drizzle
+        .delete(designationsTable)
+        .where(eq(designationsTable.code, designationCode));
+      await database.drizzle
+        .delete(departmentsTable)
+        .where(eq(departmentsTable.code, departmentCode));
     }
 
     await moduleFixture?.close();
@@ -121,6 +126,8 @@ describe('Org reference Drizzle migration', () => {
       }),
     ).rejects.toThrow('Department with this name or code already exists');
 
-    await database.query('DELETE FROM departments WHERE code = $1', [code]);
+    await database.drizzle
+      .delete(departmentsTable)
+      .where(eq(departmentsTable.code, code));
   });
 });

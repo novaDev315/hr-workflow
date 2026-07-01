@@ -1,6 +1,6 @@
 # Rakss Phased Refactor And Migration Plan
 
-Status: repo-verified through Phase 11; Phase 12 deferred
+Status: repo-verified; Prisma path superseded by Drizzle
 Date: 2026-06-30
 Last updated: 2026-07-01
 Owner repo: `/home/nova/projects/work/rakss`
@@ -31,8 +31,8 @@ rewrite. The migration should:
 - Split large admin pages into feature modules with local GraphQL operations,
   types, hooks, forms, and list/detail components.
 - Add a fast backend unit lane while preserving the slow integration test.
-- Delay full Prisma migration until raw SQL truth and integration behavior are
-  documented and protected.
+- Supersede the full Prisma migration path with Drizzle runtime queries and
+  explicit Drizzle schema sync.
 
 ## Success Criteria
 
@@ -40,8 +40,7 @@ rewrite. The migration should:
   reference demo routes as a live source concern.
 - Web-admin has a formal component foundation for `Select`, `Textarea`, and
   `Field` that fits the current Tailwind tokens and local UI conventions.
-- Raw SQL/Postgres ownership is explicit, or a later approved Prisma migration
-  has a complete schema and module-by-module proof.
+- Drizzle owns runtime queries and explicit schema sync.
 - Web-admin receives role/capability decisions from backend auth payloads instead
   of maintaining separate role arrays as the source of truth.
 - `EmployeesPage`, `AttendancePage`, and `RecruitmentPage` are decomposed without
@@ -56,8 +55,8 @@ rewrite. The migration should:
 
 - Primary implementer: Codex or another agent working in this repo.
 - Reviewer: Nova, or any engineer checking proof and phase boundaries.
-- Future maintainer: someone deciding whether to continue the Prisma migration
-  after the safe cleanup and decomposition phases.
+- Future maintainer: someone deciding whether to add generated Drizzle
+  migrations after the safe cleanup and decomposition phases.
 
 ## Current Evidence
 
@@ -68,12 +67,12 @@ rewrite. The migration should:
   committed `components.json`.
 - Existing UI primitives include `button`, `card`, `form-drawer`, `input`,
   `label`, `metric-card`, `notice`, and `status-badge`.
-- Backend package now exposes raw SQL/Postgres schema verification scripts and
-  Drizzle runtime query tooling. The parked Prisma schema was removed after the
-  Drizzle migration.
+- Backend package now exposes Drizzle schema sync, Drizzle seed verification,
+  and Drizzle runtime query tooling. The parked Prisma schema was removed after
+  the Drizzle migration.
 - Runtime database behavior goes through
-  `apps/backend/src/database/database.service.ts` with raw `pg` SQL plus
-  explicit schema and seed modules.
+  `apps/backend/src/database/database.service.ts` and
+  `apps/backend/src/database/drizzle/schema.ts`.
 - Prisma migration checkpoint was completed on 2026-07-01 and later superseded
   by the Drizzle runtime query migration. See
   `docs/PRISMA_MIGRATION_CHECKPOINT.md` and `docs/DRIZZLE_MIGRATION.md`.
@@ -110,7 +109,8 @@ user approval.
 - Extract feature-local GraphQL operations, types, and hooks while decomposing
   pages.
 - Add a fast unit test lane for backend business logic.
-- Add a later explicit Prisma migration checkpoint and optional follow-on phases.
+- Add a later explicit generated Drizzle migration phase if versioned SQL files
+  become necessary.
 
 ## Out Of Scope
 
@@ -208,8 +208,8 @@ Files to inspect:
 - `apps/web-admin/src/App.tsx`
 - `apps/web-admin/src/demo/**`
 - `apps/backend/src/database/database.service.ts`
-- `apps/backend/src/database/schema.ts`
 - `apps/backend/src/database/seeds.ts`
+- `apps/backend/src/database/drizzle/schema.ts`
 - former `apps/backend/prisma/schema.prisma`
 - `docs/IMPLEMENTATION_STATUS.md`
 - `scripts/e2e/run-rakss-ui-lifecycle.mjs`
@@ -331,7 +331,7 @@ Stop gate:
 
 - Stop and review the pattern before applying to Attendance or Recruitment.
 
-### Phase 4: Backend Raw SQL Ownership Cleanup
+### Phase 4: Backend Database Ownership Cleanup
 
 Purpose: make the current database truth explicit before considering Prisma.
 
@@ -341,14 +341,14 @@ Expected edits:
   - `apps/backend/src/prisma/prisma.service.ts` to a database-owned module path.
   - `PrismaService` to `DatabaseService`.
   - `PrismaModule` to `DatabaseModule`.
-- Move startup SQL statements into explicit schema/seed files or modules, for
-  example:
-  - `apps/backend/src/database/schema.ts`
+- Move startup database ownership into explicit schema/seed files or modules,
+  for example:
+  - `apps/backend/src/database/drizzle/schema.ts`
   - `apps/backend/src/database/seeds.ts`
 - Update imports across backend services/tests.
 - Update package scripts and docs so Prisma is not advertised as the active
   migration/runtime truth.
-- Keep runtime SQL behavior unchanged.
+- Keep runtime behavior unchanged.
 
 Non-goals:
 

@@ -3,24 +3,38 @@ import {
   boolean,
   date,
   doublePrecision,
+  index,
   integer,
   pgTable,
   text,
   timestamp,
   unique,
+  uniqueIndex,
 } from 'drizzle-orm/pg-core';
+import { sql } from 'drizzle-orm';
 
-export const users = pgTable('users', {
-  id: text('id').primaryKey(),
-  email: text('email').notNull().unique(),
-  employeeId: text('employee_id'),
-  passwordHash: text('password_hash').notNull(),
-  firstName: text('first_name').notNull(),
-  lastName: text('last_name').notNull(),
-  isActive: boolean('is_active').notNull().default(true),
-  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
-  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
-});
+export const users = pgTable(
+  'users',
+  {
+    id: text('id').primaryKey(),
+    email: text('email').notNull().unique(),
+    employeeId: text('employee_id').references(
+      (): AnyPgColumn => employees.id,
+      { onDelete: 'set null' },
+    ),
+    passwordHash: text('password_hash').notNull(),
+    firstName: text('first_name').notNull(),
+    lastName: text('last_name').notNull(),
+    isActive: boolean('is_active').notNull().default(true),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    uniqueIndex('idx_users_employee_id_unique')
+      .on(table.employeeId)
+      .where(sql`${table.employeeId} IS NOT NULL`),
+  ],
+);
 
 export const roles = pgTable('roles', {
   id: text('id').primaryKey(),
@@ -45,6 +59,7 @@ export const userRoleAssignments = pgTable(
     assignedAt: timestamp('assigned_at', { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => [
+    index('idx_user_role_assignments_user_id').on(table.userId),
     unique('user_role_assignments_user_id_role_id_key').on(
       table.userId,
       table.roleId,
@@ -92,6 +107,7 @@ export const designations = pgTable(
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => [
+    index('idx_designations_department_id').on(table.departmentId),
     unique('designations_department_id_title_key').on(
       table.departmentId,
       table.title,
@@ -123,7 +139,10 @@ export const employees = pgTable('employees', {
   isActive: boolean('is_active').notNull().default(true),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
-});
+}, (table) => [
+  index('idx_employees_department_id').on(table.departmentId),
+  index('idx_employees_designation_id').on(table.designationId),
+]);
 
 export const locations = pgTable('locations', {
   id: text('id').primaryKey(),
@@ -160,6 +179,10 @@ export const employeeLocationAssignments = pgTable(
     releaseDate: date('release_date'),
     status: text('status').notNull().default('ACTIVE'),
   },
+  (table) => [
+    index('idx_employee_location_assignments_employee_id').on(table.employeeId),
+    index('idx_employee_location_assignments_location_id').on(table.locationId),
+  ],
 );
 
 export const attendanceRecords = pgTable(
@@ -196,6 +219,9 @@ export const attendanceRecords = pgTable(
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => [
+    index('idx_attendance_records_employee_id').on(table.employeeId),
+    index('idx_attendance_records_location_id').on(table.locationId),
+    index('idx_attendance_records_attendance_date').on(table.attendanceDate),
     unique('attendance_records_employee_id_attendance_date_key').on(
       table.employeeId,
       table.attendanceDate,
@@ -214,30 +240,38 @@ export const leaveTypes = pgTable('leave_types', {
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 });
 
-export const leaveRequests = pgTable('leave_requests', {
-  id: text('id').primaryKey(),
-  employeeId: text('employee_id')
-    .notNull()
-    .references(() => employees.id, { onDelete: 'cascade' }),
-  leaveTypeId: text('leave_type_id')
-    .notNull()
-    .references(() => leaveTypes.id, { onDelete: 'restrict' }),
-  startDate: date('start_date').notNull(),
-  endDate: date('end_date').notNull(),
-  totalDays: doublePrecision('total_days').notNull(),
-  reason: text('reason').notNull(),
-  status: text('status').notNull().default('PENDING'),
-  requestedAt: timestamp('requested_at', { withTimezone: true })
-    .notNull()
-    .defaultNow(),
-  decidedAt: timestamp('decided_at', { withTimezone: true }),
-  decidedByUserId: text('decided_by_user_id').references(() => users.id, {
-    onDelete: 'set null',
-  }),
-  decisionNotes: text('decision_notes'),
-  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
-  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
-});
+export const leaveRequests = pgTable(
+  'leave_requests',
+  {
+    id: text('id').primaryKey(),
+    employeeId: text('employee_id')
+      .notNull()
+      .references(() => employees.id, { onDelete: 'cascade' }),
+    leaveTypeId: text('leave_type_id')
+      .notNull()
+      .references(() => leaveTypes.id, { onDelete: 'restrict' }),
+    startDate: date('start_date').notNull(),
+    endDate: date('end_date').notNull(),
+    totalDays: doublePrecision('total_days').notNull(),
+    reason: text('reason').notNull(),
+    status: text('status').notNull().default('PENDING'),
+    requestedAt: timestamp('requested_at', { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    decidedAt: timestamp('decided_at', { withTimezone: true }),
+    decidedByUserId: text('decided_by_user_id').references(() => users.id, {
+      onDelete: 'set null',
+    }),
+    decisionNotes: text('decision_notes'),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    index('idx_leave_requests_employee_id').on(table.employeeId),
+    index('idx_leave_requests_leave_type_id').on(table.leaveTypeId),
+    index('idx_leave_requests_status').on(table.status),
+  ],
+);
 
 export const employeeCompensations = pgTable(
   'employee_compensations',
@@ -274,6 +308,7 @@ export const payrollPeriods = pgTable(
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => [
+    index('idx_payroll_periods_period_month').on(table.periodMonth),
     unique('payroll_periods_period_month_key').on(table.periodMonth),
   ],
 );
@@ -306,6 +341,8 @@ export const payslips = pgTable(
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => [
+    index('idx_payslips_employee_id').on(table.employeeId),
+    index('idx_payslips_payroll_period_id').on(table.payrollPeriodId),
     unique('payslips_payroll_period_id_employee_id_key').on(
       table.payrollPeriodId,
       table.employeeId,
@@ -313,34 +350,42 @@ export const payslips = pgTable(
   ],
 );
 
-export const jobRequisitions = pgTable('job_requisitions', {
-  id: text('id').primaryKey(),
-  requisitionNumber: text('requisition_number').notNull().unique(),
-  jobTitle: text('job_title').notNull(),
-  departmentId: text('department_id')
-    .notNull()
-    .references(() => departments.id, { onDelete: 'restrict' }),
-  designationId: text('designation_id').references(() => designations.id, {
-    onDelete: 'set null',
-  }),
-  positionsCount: integer('positions_count').notNull().default(1),
-  employmentType: text('employment_type').notNull().default('FULL_TIME'),
-  priority: text('priority').notNull().default('MEDIUM'),
-  status: text('status').notNull().default('OPEN'),
-  targetStartDate: date('target_start_date'),
-  salaryMin: doublePrecision('salary_min'),
-  salaryMax: doublePrecision('salary_max'),
-  currencyCode: text('currency_code').notNull().default('AED'),
-  description: text('description').notNull(),
-  requirements: text('requirements'),
-  createdByUserId: text('created_by_user_id').references(() => users.id, {
-    onDelete: 'set null',
-  }),
-  openedAt: timestamp('opened_at', { withTimezone: true }).notNull().defaultNow(),
-  closedAt: timestamp('closed_at', { withTimezone: true }),
-  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
-  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
-});
+export const jobRequisitions = pgTable(
+  'job_requisitions',
+  {
+    id: text('id').primaryKey(),
+    requisitionNumber: text('requisition_number').notNull().unique(),
+    jobTitle: text('job_title').notNull(),
+    departmentId: text('department_id')
+      .notNull()
+      .references(() => departments.id, { onDelete: 'restrict' }),
+    designationId: text('designation_id').references(() => designations.id, {
+      onDelete: 'set null',
+    }),
+    positionsCount: integer('positions_count').notNull().default(1),
+    employmentType: text('employment_type').notNull().default('FULL_TIME'),
+    priority: text('priority').notNull().default('MEDIUM'),
+    status: text('status').notNull().default('OPEN'),
+    targetStartDate: date('target_start_date'),
+    salaryMin: doublePrecision('salary_min'),
+    salaryMax: doublePrecision('salary_max'),
+    currencyCode: text('currency_code').notNull().default('AED'),
+    description: text('description').notNull(),
+    requirements: text('requirements'),
+    createdByUserId: text('created_by_user_id').references(() => users.id, {
+      onDelete: 'set null',
+    }),
+    openedAt: timestamp('opened_at', { withTimezone: true }).notNull().defaultNow(),
+    closedAt: timestamp('closed_at', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    index('idx_job_requisitions_status').on(table.status),
+    index('idx_job_requisitions_department_id').on(table.departmentId),
+    index('idx_job_requisitions_created_at').on(table.createdAt),
+  ],
+);
 
 export const recruitmentApplications = pgTable(
   'recruitment_applications',
@@ -370,6 +415,9 @@ export const recruitmentApplications = pgTable(
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => [
+    index('idx_recruitment_applications_requisition_id').on(table.requisitionId),
+    index('idx_recruitment_applications_status').on(table.status),
+    index('idx_recruitment_applications_email').on(table.email),
     unique('recruitment_applications_requisition_id_email_key').on(
       table.requisitionId,
       table.email,
@@ -397,6 +445,7 @@ export const policyDocuments = pgTable(
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => [
+    index('idx_policy_documents_status').on(table.status),
     unique('policy_documents_title_version_key').on(table.title, table.version),
   ],
 );
