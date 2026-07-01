@@ -29,7 +29,7 @@ git:
 services:
   backend:
     dockerfile: apps/backend/Dockerfile
-    context: apps/backend
+    context: .
     service_type: api
     domain: api
     health_endpoint: /health

@@ -19,8 +19,8 @@ services:
 
   backend:
     build:
-      context: ./apps/backend
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: apps/backend/Dockerfile
     container_name: hrflow-backend
     ports:
       - "${BACKEND_PORT:-4001}:4001"
