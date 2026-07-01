@@ -1,5 +1,7 @@
 import { Injectable } from '@nestjs/common';
+import { eq, sql } from 'drizzle-orm';
 import { DatabaseService } from '../database/database.service';
+import { companySettings } from '../database/drizzle/schema';
 import { UpsertCompanySettingsInput } from '../auth/auth.types';
 import { randomUUID } from 'crypto';
 
@@ -8,68 +10,55 @@ export class CompanySettingsService {
   constructor(private readonly database: DatabaseService) {}
 
   async getSettings() {
-    return this.database.one(
-      `
-        SELECT
-          id,
-          company_name AS "companyName",
-          legal_name AS "legalName",
-          timezone,
-          currency_code AS "currencyCode",
-          country_code AS "countryCode",
-          support_email AS "supportEmail",
-          support_phone AS "supportPhone"
-        FROM company_settings
-        WHERE singleton_key = 'default'
-      `,
-    );
+    const [settings] = await this.database.drizzle
+      .select(this.settingsProjection())
+      .from(companySettings)
+      .where(eq(companySettings.singletonKey, 'default'))
+      .limit(1);
+
+    return settings ?? null;
   }
 
   async upsertSettings(input: UpsertCompanySettingsInput) {
-    return this.database.one(
-      `
-        INSERT INTO company_settings (
-          id,
-          singleton_key,
-          company_name,
-          legal_name,
-          timezone,
-          currency_code,
-          country_code,
-          support_email,
-          support_phone
-        )
-        VALUES ($1, 'default', $2, $3, $4, $5, $6, $7, $8)
-        ON CONFLICT (singleton_key)
-        DO UPDATE SET
-          company_name = EXCLUDED.company_name,
-          legal_name = EXCLUDED.legal_name,
-          timezone = EXCLUDED.timezone,
-          currency_code = EXCLUDED.currency_code,
-          country_code = EXCLUDED.country_code,
-          support_email = EXCLUDED.support_email,
-          support_phone = EXCLUDED.support_phone,
-          updated_at = NOW()
-        RETURNING
-          id,
-          company_name AS "companyName",
-          legal_name AS "legalName",
-          timezone,
-          currency_code AS "currencyCode",
-          country_code AS "countryCode",
-          support_email AS "supportEmail",
-          support_phone AS "supportPhone"
-      `,
-      [
-        randomUUID(),
-        input.companyName.trim(),
-        input.legalName?.trim() ?? null,
-        input.timezone?.trim() ?? 'Asia/Dubai',
-        input.currencyCode?.trim().toUpperCase() ?? 'AED',
-        input.countryCode?.trim().toUpperCase() ?? 'AE',
-        input.supportEmail?.trim().toLowerCase() ?? null,
-        input.supportPhone?.trim() ?? null,
-      ],
-    );
+    const settings = {
+      companyName: input.companyName.trim(),
+      legalName: input.legalName?.trim() ?? null,
+      timezone: input.timezone?.trim() ?? 'Asia/Dubai',
+      currencyCode: input.currencyCode?.trim().toUpperCase() ?? 'AED',
+      countryCode: input.countryCode?.trim().toUpperCase() ?? 'AE',
+      supportEmail: input.supportEmail?.trim().toLowerCase() ?? null,
+      supportPhone: input.supportPhone?.trim() ?? null,
+    };
+
+    const [updated] = await this.database.drizzle
+      .insert(companySettings)
+      .values({
+        id: randomUUID(),
+        singletonKey: 'default',
+        ...settings,
+      })
+      .onConflictDoUpdate({
+        target: companySettings.singletonKey,
+        set: {
+          ...settings,
+          updatedAt: sql`NOW()`,
+        },
+      })
+      .returning(this.settingsProjection());
+
+    return updated;
+  }
+
+  private settingsProjection() {
+    return {
+      id: companySettings.id,
+      companyName: companySettings.companyName,
+      legalName: companySettings.legalName,
+      timezone: companySettings.timezone,
+      currencyCode: companySettings.currencyCode,
+      countryCode: companySettings.countryCode,
+      supportEmail: companySettings.supportEmail,
+      supportPhone: companySettings.supportPhone,
+    };
   }
 }

@@ -1,5 +1,7 @@
 import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
+import { and, eq, ne, or, sql } from 'drizzle-orm';
 import { DatabaseService } from '../database/database.service';
+import { departments } from '../database/drizzle/schema';
 import {
   CreateDepartmentInput,
   DeactivateDepartmentInput,
@@ -12,51 +14,56 @@ export class DepartmentService {
   constructor(private readonly database: DatabaseService) {}
 
   async findAll(includeInactive = false) {
-    return this.database.many(
-      `
-        SELECT
-          id,
-          name,
-          code,
-          description,
-          is_active AS "isActive"
-        FROM departments
-        ${includeInactive ? '' : 'WHERE is_active = TRUE'}
-        ORDER BY name ASC
-      `,
-    );
+    const query = this.database.drizzle
+      .select({
+        id: departments.id,
+        name: departments.name,
+        code: departments.code,
+        description: departments.description,
+        isActive: departments.isActive,
+      })
+      .from(departments);
+
+    if (includeInactive) {
+      return query.orderBy(departments.name);
+    }
+
+    return query
+      .where(eq(departments.isActive, true))
+      .orderBy(departments.name);
   }
 
   async create(input: CreateDepartmentInput) {
     const name = input.name.trim();
     const code = input.code.trim().toUpperCase();
 
-    const existing = await this.database.one<{ id: string }>(
-      `
-        SELECT id
-        FROM departments
-        WHERE name = $1 OR code = $2
-      `,
-      [name, code],
-    );
+    const existing = await this.database.drizzle
+      .select({ id: departments.id })
+      .from(departments)
+      .where(or(eq(departments.name, name), eq(departments.code, code)))
+      .limit(1);
 
-    if (existing) {
+    if (existing.length > 0) {
       throw new ConflictException('Department with this name or code already exists');
     }
 
-    return this.database.one(
-      `
-        INSERT INTO departments (id, name, code, description)
-        VALUES ($1, $2, $3, $4)
-        RETURNING
-          id,
-          name,
-          code,
-          description,
-          is_active AS "isActive"
-      `,
-      [randomUUID(), name, code, input.description?.trim() ?? null],
-    );
+    const [created] = await this.database.drizzle
+      .insert(departments)
+      .values({
+        id: randomUUID(),
+        name,
+        code,
+        description: input.description?.trim() ?? null,
+      })
+      .returning({
+        id: departments.id,
+        name: departments.name,
+        code: departments.code,
+        description: departments.description,
+        isActive: departments.isActive,
+      });
+
+    return created;
   }
 
   async update(input: UpdateDepartmentInput) {
@@ -64,88 +71,73 @@ export class DepartmentService {
     const name = input.name?.trim() ?? existing.name;
     const code = input.code?.trim().toUpperCase() ?? existing.code;
 
-    const duplicate = await this.database.one<{ id: string }>(
-      `
-        SELECT id
-        FROM departments
-        WHERE (name = $1 OR code = $2) AND id <> $3
-      `,
-      [name, code, input.id],
-    );
+    const duplicate = await this.database.drizzle
+      .select({ id: departments.id })
+      .from(departments)
+      .where(
+        and(
+          or(eq(departments.name, name), eq(departments.code, code)),
+          ne(departments.id, input.id),
+        ),
+      )
+      .limit(1);
 
-    if (duplicate) {
+    if (duplicate.length > 0) {
       throw new ConflictException('Department with this name or code already exists');
     }
 
-    const updated = await this.database.one(
-      `
-        UPDATE departments
-        SET
-          name = $2,
-          code = $3,
-          description = $4,
-          updated_at = NOW()
-        WHERE id = $1
-        RETURNING
-          id,
-          name,
-          code,
-          description,
-          is_active AS "isActive"
-      `,
-      [
-        input.id,
+    const [updated] = await this.database.drizzle
+      .update(departments)
+      .set({
         name,
         code,
-        input.description !== undefined
-          ? input.description?.trim() || null
-          : existing.description,
-      ],
-    );
+        description:
+          input.description !== undefined
+            ? input.description?.trim() || null
+            : existing.description,
+        updatedAt: sql`NOW()`,
+      })
+      .where(eq(departments.id, input.id))
+      .returning({
+        id: departments.id,
+        name: departments.name,
+        code: departments.code,
+        description: departments.description,
+        isActive: departments.isActive,
+      });
 
     return updated;
   }
 
   async deactivate(input: DeactivateDepartmentInput) {
     await this.findById(input.id);
-    const updated = await this.database.one(
-      `
-        UPDATE departments
-        SET is_active = FALSE, updated_at = NOW()
-        WHERE id = $1
-        RETURNING
-          id,
-          name,
-          code,
-          description,
-          is_active AS "isActive"
-      `,
-      [input.id],
-    );
+    const [updated] = await this.database.drizzle
+      .update(departments)
+      .set({ isActive: false, updatedAt: sql`NOW()` })
+      .where(eq(departments.id, input.id))
+      .returning({
+        id: departments.id,
+        name: departments.name,
+        code: departments.code,
+        description: departments.description,
+        isActive: departments.isActive,
+      });
 
     return updated;
   }
 
   private async findById(id: string) {
-    const row = await this.database.one<{
-      id: string;
-      name: string;
-      code: string;
-      description: string | null;
-      isActive: boolean;
-    }>(
-      `
-        SELECT
-          id,
-          name,
-          code,
-          description,
-          is_active AS "isActive"
-        FROM departments
-        WHERE id = $1
-      `,
-      [id],
-    );
+    const [row] = await this.database.drizzle
+      .select({
+        id: departments.id,
+        name: departments.name,
+        code: departments.code,
+        description: departments.description,
+        isActive: departments.isActive,
+      })
+      .from(departments)
+      .where(eq(departments.id, id))
+      .limit(1);
 
     if (!row) {
       throw new NotFoundException('Department not found');

@@ -3,7 +3,12 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
+import { and, asc, eq, ne, or, sql } from 'drizzle-orm';
 import { DatabaseService } from '../database/database.service';
+import {
+  departments,
+  designations,
+} from '../database/drizzle/schema';
 import {
   CreateDesignationInput,
   DeactivateDesignationInput,
@@ -19,49 +24,37 @@ export class DesignationService {
     departmentId?: string;
     includeInactive?: boolean;
   }) {
-    const values: unknown[] = [];
-    const where: string[] = [];
+    const conditions = [];
 
     if (filter?.departmentId) {
-      values.push(filter.departmentId);
-      where.push(`d.department_id = $${values.length}`);
+      conditions.push(eq(designations.departmentId, filter.departmentId));
     }
 
     if (!filter?.includeInactive) {
-      where.push(`d.is_active = TRUE`);
+      conditions.push(eq(designations.isActive, true));
     }
 
-    const rows = await this.database.many<any>(
-      `
-        SELECT
-          d.id,
-          d.title,
-          d.code,
-          d.department_id AS "departmentId",
-          d.level,
-          d.description,
-          d.is_active AS "isActive",
-          dept.id AS "departmentIdValue",
-          dept.name AS "departmentName",
-          dept.code AS "departmentCode",
-          dept.description AS "departmentDescription",
-          dept.is_active AS "departmentIsActive"
-        FROM designations d
-        INNER JOIN departments dept ON dept.id = d.department_id
-        ${where.length > 0 ? `WHERE ${where.join(' AND ')}` : ''}
-        ORDER BY d.level ASC, d.title ASC
-      `,
-      values,
-    );
+    const query = this.database.drizzle
+      .select(this.designationProjection())
+      .from(designations)
+      .innerJoin(departments, eq(departments.id, designations.departmentId));
+
+    const rows =
+      conditions.length > 0
+        ? await query
+            .where(and(...conditions))
+            .orderBy(asc(designations.level), asc(designations.title))
+        : await query.orderBy(asc(designations.level), asc(designations.title));
 
     return rows.map((row) => this.mapDesignation(row));
   }
 
   async create(input: CreateDesignationInput) {
-    const department = await this.database.one<{ id: string }>(
-      `SELECT id FROM departments WHERE id = $1`,
-      [input.departmentId],
-    );
+    const [department] = await this.database.drizzle
+      .select({ id: departments.id })
+      .from(departments)
+      .where(eq(departments.id, input.departmentId))
+      .limit(1);
 
     if (!department) {
       throw new NotFoundException('Department not found');
@@ -70,45 +63,39 @@ export class DesignationService {
     const title = input.title.trim();
     const code = input.code.trim().toUpperCase();
 
-    const existing = await this.database.one<{ id: string }>(
-      `
-        SELECT id
-        FROM designations
-        WHERE code = $1 OR (department_id = $2 AND title = $3)
-      `,
-      [code, input.departmentId, title],
-    );
+    const existing = await this.database.drizzle
+      .select({ id: designations.id })
+      .from(designations)
+      .where(
+        or(
+          eq(designations.code, code),
+          and(
+            eq(designations.departmentId, input.departmentId),
+            eq(designations.title, title),
+          ),
+        ),
+      )
+      .limit(1);
 
-    if (existing) {
+    if (existing.length > 0) {
       throw new ConflictException(
         'Designation with this code or title already exists in the department',
       );
     }
 
-    const created = await this.database.one<{ id: string }>(
-      `
-        INSERT INTO designations (
-          id,
-          title,
-          code,
-          department_id,
-          level,
-          description
-        )
-        VALUES ($1, $2, $3, $4, $5, $6)
-        RETURNING id
-      `,
-      [
-        randomUUID(),
+    const [created] = await this.database.drizzle
+      .insert(designations)
+      .values({
+        id: randomUUID(),
         title,
         code,
-        input.departmentId,
-        input.level ?? 1,
-        input.description?.trim() ?? null,
-      ],
-    );
+        departmentId: input.departmentId,
+        level: input.level ?? 1,
+        description: input.description?.trim() ?? null,
+      })
+      .returning({ id: designations.id });
 
-    return this.findById(created!.id);
+    return this.findById(created.id);
   }
 
   async update(input: UpdateDesignationInput) {
@@ -117,99 +104,97 @@ export class DesignationService {
     const title = input.title?.trim() ?? existing.title;
     const code = input.code?.trim().toUpperCase() ?? existing.code;
 
-    const department = await this.database.one<{ id: string }>(
-      `SELECT id FROM departments WHERE id = $1 AND is_active = TRUE`,
-      [departmentId],
-    );
+    const [department] = await this.database.drizzle
+      .select({ id: departments.id })
+      .from(departments)
+      .where(and(eq(departments.id, departmentId), eq(departments.isActive, true)))
+      .limit(1);
 
     if (!department) {
       throw new NotFoundException('Department not found or inactive');
     }
 
-    const duplicate = await this.database.one<{ id: string }>(
-      `
-        SELECT id
-        FROM designations
-        WHERE (code = $1 OR (department_id = $2 AND title = $3)) AND id <> $4
-      `,
-      [code, departmentId, title, input.id],
-    );
+    const duplicate = await this.database.drizzle
+      .select({ id: designations.id })
+      .from(designations)
+      .where(
+        and(
+          or(
+            eq(designations.code, code),
+            and(
+              eq(designations.departmentId, departmentId),
+              eq(designations.title, title),
+            ),
+          ),
+          ne(designations.id, input.id),
+        ),
+      )
+      .limit(1);
 
-    if (duplicate) {
+    if (duplicate.length > 0) {
       throw new ConflictException(
         'Designation with this code or title already exists in the department',
       );
     }
 
-    await this.database.query(
-      `
-        UPDATE designations
-        SET
-          title = $2,
-          code = $3,
-          department_id = $4,
-          level = $5,
-          description = $6,
-          updated_at = NOW()
-        WHERE id = $1
-      `,
-      [
-        input.id,
+    await this.database.drizzle
+      .update(designations)
+      .set({
         title,
         code,
         departmentId,
-        input.level ?? existing.level,
-        input.description !== undefined
-          ? input.description?.trim() || null
-          : existing.description,
-      ],
-    );
+        level: input.level ?? existing.level,
+        description:
+          input.description !== undefined
+            ? input.description?.trim() || null
+            : existing.description,
+        updatedAt: sql`NOW()`,
+      })
+      .where(eq(designations.id, input.id));
 
     return this.findById(input.id);
   }
 
   async deactivate(input: DeactivateDesignationInput) {
     await this.findById(input.id);
-    await this.database.query(
-      `
-        UPDATE designations
-        SET is_active = FALSE, updated_at = NOW()
-        WHERE id = $1
-      `,
-      [input.id],
-    );
+    await this.database.drizzle
+      .update(designations)
+      .set({ isActive: false, updatedAt: sql`NOW()` })
+      .where(eq(designations.id, input.id));
 
     return this.findById(input.id);
   }
 
   private async findById(id: string) {
-    const row = await this.database.one<any>(
-      `
-        SELECT
-          d.id,
-          d.title,
-          d.code,
-          d.department_id AS "departmentId",
-          d.level,
-          d.description,
-          d.is_active AS "isActive",
-          dept.id AS "departmentIdValue",
-          dept.name AS "departmentName",
-          dept.code AS "departmentCode",
-          dept.description AS "departmentDescription",
-          dept.is_active AS "departmentIsActive"
-        FROM designations d
-        INNER JOIN departments dept ON dept.id = d.department_id
-        WHERE d.id = $1
-      `,
-      [id],
-    );
+    const [row] = await this.database.drizzle
+      .select(this.designationProjection())
+      .from(designations)
+      .innerJoin(departments, eq(departments.id, designations.departmentId))
+      .where(eq(designations.id, id))
+      .limit(1);
 
     if (!row) {
       throw new NotFoundException('Designation not found');
     }
 
     return this.mapDesignation(row);
+  }
+
+  private designationProjection() {
+    return {
+      id: designations.id,
+      title: designations.title,
+      code: designations.code,
+      departmentId: designations.departmentId,
+      level: designations.level,
+      description: designations.description,
+      isActive: designations.isActive,
+      departmentIdValue: departments.id,
+      departmentName: departments.name,
+      departmentCode: departments.code,
+      departmentDescription: departments.description,
+      departmentIsActive: departments.isActive,
+    };
   }
 
   private mapDesignation(row: any) {
