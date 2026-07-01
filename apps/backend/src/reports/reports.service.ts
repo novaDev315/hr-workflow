@@ -3,14 +3,26 @@ import {
   ForbiddenException,
   Injectable,
 } from '@nestjs/common';
+import { and, asc, desc, eq, gte, lte, or, sql, SQL } from 'drizzle-orm';
 import { DatabaseService } from '../database/database.service';
 import { AuthenticatedUser } from '../common/current-user.decorator';
 import { ADMIN_ACCESS_ROLE_KEYS } from '../common/system-roles';
 import { createSimplePdf } from '../common/simple-pdf';
 import {
-  buildEmployeeVisibilityClause,
+  EmployeeVisibilityScope,
   resolveEmployeeVisibilityScope,
 } from '../common/access-control';
+import {
+  attendanceRecords,
+  departments,
+  designations,
+  employees,
+  leaveRequests,
+  leaveTypes,
+  payrollPeriods,
+  payslips,
+  policyDocuments,
+} from '../database/drizzle/schema';
 
 @Injectable()
 export class ReportsService {
@@ -22,22 +34,7 @@ export class ReportsService {
     const normalizedMonth = this.normalizePeriodMonth(periodMonth);
     const { startDate, endDate } = this.getPeriodRange(normalizedMonth);
     const scope = await resolveEmployeeVisibilityScope(this.database, currentUser);
-    const buildScope = (
-      initialValues: unknown[],
-      columns: {
-        employeeId: string;
-        departmentId: string;
-        supervisorId: string;
-      },
-    ) => {
-      const values = [...initialValues];
-      const clause = buildEmployeeVisibilityClause(values, scope, columns);
-
-      return {
-        values,
-        predicate: clause ? ` AND ${clause}` : '',
-      };
-    };
+    const visibilityCondition = this.buildEmployeeVisibilityCondition(scope);
 
     const [
       activeEmployees,
@@ -52,238 +49,17 @@ export class ReportsService {
       pendingLeaveApprovals,
       publishedPolicyRows,
     ] = await Promise.all([
-      (() => {
-        const scoped = buildScope([], {
-          employeeId: 'e.id',
-          departmentId: 'e.department_id',
-          supervisorId: 'e.supervisor_id',
-        });
-        return this.database.one<{ count: string }>(
-          `
-            SELECT COUNT(*)::text AS count
-            FROM employees e
-            WHERE e.is_active = TRUE${scoped.predicate}
-          `,
-          scoped.values,
-        );
-      })(),
-      (() => {
-        const scoped = buildScope([], {
-          employeeId: 'e.id',
-          departmentId: 'e.department_id',
-          supervisorId: 'e.supervisor_id',
-        });
-        return this.database.one<{ count: string }>(
-          `
-            SELECT COUNT(*)::text AS count
-            FROM leave_requests lr
-            INNER JOIN employees e ON e.id = lr.employee_id
-            WHERE lr.status = 'PENDING'${scoped.predicate}
-          `,
-          scoped.values,
-        );
-      })(),
-      (() => {
-        const scoped = buildScope([], {
-          employeeId: 'e.id',
-          departmentId: 'e.department_id',
-          supervisorId: 'e.supervisor_id',
-        });
-        return this.database.one<{ count: string }>(
-          `
-            SELECT COUNT(DISTINCT pp.id)::text AS count
-            FROM payroll_periods pp
-            INNER JOIN payslips ps ON ps.payroll_period_id = pp.id
-            INNER JOIN employees e ON e.id = ps.employee_id
-            WHERE pp.status IN ('PROCESSED', 'PAID')${scoped.predicate}
-          `,
-          scoped.values,
-        );
-      })(),
-      this.database.one<{ count: string }>(
-        `SELECT COUNT(*)::text AS count FROM policy_documents WHERE status = 'PUBLISHED'`,
-      ),
-      (() => {
-        const scoped = buildScope([normalizedMonth], {
-          employeeId: 'e.id',
-          departmentId: 'e.department_id',
-          supervisorId: 'e.supervisor_id',
-        });
-        return this.database.one<{ total: string }>(
-          `
-            SELECT COALESCE(SUM(ps.net_pay), 0)::text AS total
-            FROM payslips ps
-            INNER JOIN payroll_periods pp ON pp.id = ps.payroll_period_id
-            INNER JOIN employees e ON e.id = ps.employee_id
-            WHERE pp.period_month = $1${scoped.predicate}
-          `,
-          scoped.values,
-        );
-      })(),
-      (() => {
-        const scoped = buildScope([], {
-          employeeId: 'e.id',
-          departmentId: 'e.department_id',
-          supervisorId: 'e.supervisor_id',
-        });
-        return this.database.many<{ departmentName: string; employeeCount: number }>(
-          `
-            SELECT
-              d.name AS "departmentName",
-              COUNT(e.id)::int AS "employeeCount"
-            FROM departments d
-            LEFT JOIN employees e
-              ON e.department_id = d.id
-              AND e.is_active = TRUE${scoped.predicate}
-            GROUP BY d.id
-            HAVING COUNT(e.id) > 0
-            ORDER BY COUNT(e.id) DESC, d.name ASC
-          `,
-          scoped.values,
-        );
-      })(),
-      (() => {
-        const scoped = buildScope([], {
-          employeeId: 'e.id',
-          departmentId: 'e.department_id',
-          supervisorId: 'e.supervisor_id',
-        });
-        return this.database.many<{
-          employeeNumber: string;
-          fullName: string;
-          joinDate: string;
-          departmentName: string;
-          designationTitle: string;
-        }>(
-          `
-            SELECT
-              e.employee_number AS "employeeNumber",
-              CONCAT(e.first_name, ' ', e.last_name) AS "fullName",
-              e.join_date::text AS "joinDate",
-              d.name AS "departmentName",
-              des.title AS "designationTitle"
-            FROM employees e
-            INNER JOIN departments d ON d.id = e.department_id
-            INNER JOIN designations des ON des.id = e.designation_id
-            WHERE 1 = 1${scoped.predicate}
-            ORDER BY e.join_date DESC
-            LIMIT 8
-          `,
-          scoped.values,
-        );
-      })(),
-      (() => {
-        const scoped = buildScope([startDate, endDate], {
-          employeeId: 'e.id',
-          departmentId: 'e.department_id',
-          supervisorId: 'e.supervisor_id',
-        });
-        return this.database.many<{
-          employeeNumber: string;
-          fullName: string;
-          attendanceDays: number;
-          overtimeHours: number;
-        }>(
-          `
-            SELECT
-              e.employee_number AS "employeeNumber",
-              CONCAT(e.first_name, ' ', e.last_name) AS "fullName",
-              COUNT(a.id)::float AS "attendanceDays",
-              COALESCE(SUM(a.overtime_hours), 0) AS "overtimeHours"
-            FROM employees e
-            LEFT JOIN attendance_records a
-              ON a.employee_id = e.id
-              AND a.attendance_date >= $1
-              AND a.attendance_date <= $2
-              AND a.status IN ('COMPLETED', 'CLOCKED_IN')
-            WHERE e.is_active = TRUE${scoped.predicate}
-            GROUP BY e.id
-            ORDER BY COUNT(a.id) DESC, SUM(a.overtime_hours) DESC NULLS LAST, e.last_name ASC
-            LIMIT 10
-          `,
-          scoped.values,
-        );
-      })(),
-      (() => {
-        const scoped = buildScope([normalizedMonth], {
-          employeeId: 'e.id',
-          departmentId: 'e.department_id',
-          supervisorId: 'e.supervisor_id',
-        });
-        return this.database.many<{
-          departmentName: string;
-          payslipCount: number;
-          totalNetPay: number;
-        }>(
-          `
-            SELECT
-              d.name AS "departmentName",
-              COUNT(ps.id)::int AS "payslipCount",
-              COALESCE(SUM(ps.net_pay), 0) AS "totalNetPay"
-            FROM departments d
-            LEFT JOIN employees e
-              ON e.department_id = d.id${scoped.predicate}
-            LEFT JOIN payslips ps ON ps.employee_id = e.id
-            LEFT JOIN payroll_periods pp
-              ON pp.id = ps.payroll_period_id
-              AND pp.period_month = $1
-            GROUP BY d.id
-            HAVING COUNT(e.id) > 0
-            ORDER BY "totalNetPay" DESC, d.name ASC
-          `,
-          scoped.values,
-        );
-      })(),
-      (() => {
-        const scoped = buildScope([], {
-          employeeId: 'e.id',
-          departmentId: 'e.department_id',
-          supervisorId: 'e.supervisor_id',
-        });
-        return this.database.many<{
-          employeeNumber: string;
-          fullName: string;
-          leaveTypeName: string;
-          startDate: string;
-          endDate: string;
-          totalDays: number;
-        }>(
-          `
-            SELECT
-              e.employee_number AS "employeeNumber",
-              CONCAT(e.first_name, ' ', e.last_name) AS "fullName",
-              lt.name AS "leaveTypeName",
-              lr.start_date::text AS "startDate",
-              lr.end_date::text AS "endDate",
-              lr.total_days AS "totalDays"
-            FROM leave_requests lr
-            INNER JOIN employees e ON e.id = lr.employee_id
-            INNER JOIN leave_types lt ON lt.id = lr.leave_type_id
-            WHERE lr.status = 'PENDING'${scoped.predicate}
-            ORDER BY lr.requested_at ASC
-            LIMIT 10
-          `,
-          scoped.values,
-        );
-      })(),
-      this.database.many<{
-        title: string;
-        category: string;
-        version: string;
-        effectiveDate: string;
-      }>(
-        `
-          SELECT
-            title,
-            category,
-            version,
-            effective_date::text AS "effectiveDate"
-          FROM policy_documents
-          WHERE status = 'PUBLISHED'
-          ORDER BY effective_date DESC, published_at DESC NULLS LAST
-          LIMIT 6
-        `,
-      ),
+      this.countActiveEmployees(visibilityCondition),
+      this.countPendingLeaveRequests(visibilityCondition),
+      this.countProcessedPayrollPeriods(visibilityCondition),
+      this.countPublishedPolicies(),
+      this.sumMonthlyPayrollNetPay(normalizedMonth, visibilityCondition),
+      this.departmentHeadcount(visibilityCondition),
+      this.recentHires(visibilityCondition),
+      this.attendanceSummary(startDate, endDate, visibilityCondition),
+      this.payrollDepartmentCosts(normalizedMonth, visibilityCondition),
+      this.pendingLeaveApprovals(visibilityCondition),
+      this.publishedPolicyRows(),
     ]);
 
     return {
@@ -372,6 +148,238 @@ export class ReportsService {
       mimeType: 'application/pdf',
       contentBase64: pdf.toString('base64'),
     };
+  }
+
+  private async countActiveEmployees(visibilityCondition?: SQL) {
+    const [row] = await this.database.drizzle
+      .select({ count: sql<string>`COUNT(*)::text` })
+      .from(employees)
+      .where(this.combineConditions(eq(employees.isActive, true), visibilityCondition));
+
+    return row;
+  }
+
+  private async countPendingLeaveRequests(visibilityCondition?: SQL) {
+    const [row] = await this.database.drizzle
+      .select({ count: sql<string>`COUNT(*)::text` })
+      .from(leaveRequests)
+      .innerJoin(employees, eq(employees.id, leaveRequests.employeeId))
+      .where(
+        this.combineConditions(
+          eq(leaveRequests.status, 'PENDING'),
+          visibilityCondition,
+        ),
+      );
+
+    return row;
+  }
+
+  private async countProcessedPayrollPeriods(visibilityCondition?: SQL) {
+    const [row] = await this.database.drizzle
+      .select({
+        count: sql<string>`COUNT(DISTINCT ${payrollPeriods.id})::text`,
+      })
+      .from(payrollPeriods)
+      .innerJoin(payslips, eq(payslips.payrollPeriodId, payrollPeriods.id))
+      .innerJoin(employees, eq(employees.id, payslips.employeeId))
+      .where(
+        this.combineConditions(
+          or(
+            eq(payrollPeriods.status, 'PROCESSED'),
+            eq(payrollPeriods.status, 'PAID'),
+          ),
+          visibilityCondition,
+        ),
+      );
+
+    return row;
+  }
+
+  private async countPublishedPolicies() {
+    const [row] = await this.database.drizzle
+      .select({ count: sql<string>`COUNT(*)::text` })
+      .from(policyDocuments)
+      .where(eq(policyDocuments.status, 'PUBLISHED'));
+
+    return row;
+  }
+
+  private async sumMonthlyPayrollNetPay(
+    periodMonth: string,
+    visibilityCondition?: SQL,
+  ) {
+    const [row] = await this.database.drizzle
+      .select({ total: sql<string>`COALESCE(SUM(${payslips.netPay}), 0)::text` })
+      .from(payslips)
+      .innerJoin(payrollPeriods, eq(payrollPeriods.id, payslips.payrollPeriodId))
+      .innerJoin(employees, eq(employees.id, payslips.employeeId))
+      .where(
+        this.combineConditions(
+          eq(payrollPeriods.periodMonth, periodMonth),
+          visibilityCondition,
+        ),
+      );
+
+    return row;
+  }
+
+  private async departmentHeadcount(visibilityCondition?: SQL) {
+    return this.database.drizzle
+      .select({
+        departmentName: departments.name,
+        employeeCount: sql<number>`COUNT(${employees.id})::int`,
+      })
+      .from(departments)
+      .leftJoin(
+        employees,
+        and(
+          eq(employees.departmentId, departments.id),
+          eq(employees.isActive, true),
+        ),
+      )
+      .where(visibilityCondition)
+      .groupBy(departments.id)
+      .having(sql`COUNT(${employees.id}) > 0`)
+      .orderBy(sql`COUNT(${employees.id}) DESC`, asc(departments.name));
+  }
+
+  private async recentHires(visibilityCondition?: SQL) {
+    return this.database.drizzle
+      .select({
+        employeeNumber: employees.employeeNumber,
+        fullName: sql<string>`CONCAT(${employees.firstName}, ' ', ${employees.lastName})`,
+        joinDate: sql<string>`${employees.joinDate}::text`,
+        departmentName: departments.name,
+        designationTitle: designations.title,
+      })
+      .from(employees)
+      .innerJoin(departments, eq(departments.id, employees.departmentId))
+      .innerJoin(designations, eq(designations.id, employees.designationId))
+      .where(visibilityCondition)
+      .orderBy(desc(employees.joinDate))
+      .limit(8);
+  }
+
+  private async attendanceSummary(
+    startDate: string,
+    endDate: string,
+    visibilityCondition?: SQL,
+  ) {
+    return this.database.drizzle
+      .select({
+        employeeNumber: employees.employeeNumber,
+        fullName: sql<string>`CONCAT(${employees.firstName}, ' ', ${employees.lastName})`,
+        attendanceDays: sql<number>`COUNT(${attendanceRecords.id})::float`,
+        overtimeHours: sql<number>`COALESCE(SUM(${attendanceRecords.overtimeHours}), 0)`,
+      })
+      .from(employees)
+      .leftJoin(
+        attendanceRecords,
+        and(
+          eq(attendanceRecords.employeeId, employees.id),
+          gte(attendanceRecords.attendanceDate, startDate),
+          lte(attendanceRecords.attendanceDate, endDate),
+          or(
+            eq(attendanceRecords.status, 'COMPLETED'),
+            eq(attendanceRecords.status, 'CLOCKED_IN'),
+          ),
+        ),
+      )
+      .where(this.combineConditions(eq(employees.isActive, true), visibilityCondition))
+      .groupBy(employees.id)
+      .orderBy(
+        sql`COUNT(${attendanceRecords.id}) DESC`,
+        sql`SUM(${attendanceRecords.overtimeHours}) DESC NULLS LAST`,
+        asc(employees.lastName),
+      )
+      .limit(10);
+  }
+
+  private async payrollDepartmentCosts(
+    periodMonth: string,
+    visibilityCondition?: SQL,
+  ) {
+    return this.database.drizzle
+      .select({
+        departmentName: departments.name,
+        payslipCount: sql<number>`COUNT(${payslips.id})::int`,
+        totalNetPay: sql<number>`COALESCE(SUM(${payslips.netPay}), 0)`,
+      })
+      .from(departments)
+      .leftJoin(employees, eq(employees.departmentId, departments.id))
+      .leftJoin(payslips, eq(payslips.employeeId, employees.id))
+      .leftJoin(
+        payrollPeriods,
+        and(
+          eq(payrollPeriods.id, payslips.payrollPeriodId),
+          eq(payrollPeriods.periodMonth, periodMonth),
+        ),
+      )
+      .where(visibilityCondition)
+      .groupBy(departments.id)
+      .having(sql`COUNT(${employees.id}) > 0`)
+      .orderBy(sql`COALESCE(SUM(${payslips.netPay}), 0) DESC`, asc(departments.name));
+  }
+
+  private async pendingLeaveApprovals(visibilityCondition?: SQL) {
+    return this.database.drizzle
+      .select({
+        employeeNumber: employees.employeeNumber,
+        fullName: sql<string>`CONCAT(${employees.firstName}, ' ', ${employees.lastName})`,
+        leaveTypeName: leaveTypes.name,
+        startDate: sql<string>`${leaveRequests.startDate}::text`,
+        endDate: sql<string>`${leaveRequests.endDate}::text`,
+        totalDays: leaveRequests.totalDays,
+      })
+      .from(leaveRequests)
+      .innerJoin(employees, eq(employees.id, leaveRequests.employeeId))
+      .innerJoin(leaveTypes, eq(leaveTypes.id, leaveRequests.leaveTypeId))
+      .where(
+        this.combineConditions(
+          eq(leaveRequests.status, 'PENDING'),
+          visibilityCondition,
+        ),
+      )
+      .orderBy(asc(leaveRequests.requestedAt))
+      .limit(10);
+  }
+
+  private async publishedPolicyRows() {
+    return this.database.drizzle
+      .select({
+        title: policyDocuments.title,
+        category: policyDocuments.category,
+        version: policyDocuments.version,
+        effectiveDate: sql<string>`${policyDocuments.effectiveDate}::text`,
+      })
+      .from(policyDocuments)
+      .where(eq(policyDocuments.status, 'PUBLISHED'))
+      .orderBy(
+        desc(policyDocuments.effectiveDate),
+        sql`${policyDocuments.publishedAt} DESC NULLS LAST`,
+      )
+      .limit(6);
+  }
+
+  private buildEmployeeVisibilityCondition(scope: EmployeeVisibilityScope) {
+    switch (scope.kind) {
+      case 'all':
+        return undefined;
+      case 'department':
+        return eq(employees.departmentId, scope.departmentId);
+      case 'supervisor':
+        return or(
+          eq(employees.id, scope.employeeId),
+          eq(employees.supervisorId, scope.employeeId),
+        );
+      case 'self':
+        return eq(employees.id, scope.employeeId);
+    }
+  }
+
+  private combineConditions(...conditions: Array<SQL | undefined>) {
+    const present = conditions.filter(Boolean) as SQL[];
+    return present.length > 0 ? and(...present) : undefined;
   }
 
   private assertCanViewReports(roles: string[]) {
