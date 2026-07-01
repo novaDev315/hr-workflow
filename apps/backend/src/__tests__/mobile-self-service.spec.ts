@@ -266,6 +266,43 @@ describe('Mobile self-service flows', () => {
     expect(employeeAccount.createEmployeeAccount.account.employeeId).toBe(employeeId);
     expect(employeeAccount.createEmployeeAccount.account.roles).toContain('EMPLOYEE');
 
+    const employeeDirectory = await graphqlRequest<{
+      employees: Array<{
+        id: string;
+        departmentId: string;
+        linkedAccountEmail: string | null;
+        linkedAccountRoles: string[];
+      }>;
+    }>(
+      `
+        query EmployeeDirectory($filter: EmployeeFilterInput) {
+          employees(filter: $filter) {
+            id
+            departmentId
+            linkedAccountEmail
+            linkedAccountRoles
+          }
+        }
+      `,
+      {
+        filter: {
+          search: employeeEmail,
+          departmentId: ids.departmentId,
+          status: 'ACTIVE',
+        },
+      },
+      adminToken,
+    );
+
+    const directoryEmployee = employeeDirectory.employees.find(
+      (employee) => employee.id === employeeId,
+    );
+
+    expect(directoryEmployee).toBeDefined();
+    expect(directoryEmployee?.departmentId).toBe(ids.departmentId);
+    expect(directoryEmployee?.linkedAccountEmail).toBe(employeeEmail);
+    expect(directoryEmployee?.linkedAccountRoles).toEqual(['EMPLOYEE']);
+
     const employeeSession = await graphqlRequest<{
       login: {
         accessToken: string;

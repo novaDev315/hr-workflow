@@ -6,15 +6,25 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { randomUUID } from 'crypto';
+import { and, asc, desc, eq, ilike, like, or, sql, SQL } from 'drizzle-orm';
+import { alias } from 'drizzle-orm/pg-core';
 import { AuthenticatedUser } from '../common/current-user.decorator';
 import {
   assertAdminPanelAccess,
   assertAccountManagerAccess,
-  buildEmployeeVisibilityClause,
   canAccessEmployeeWithinScope,
+  EmployeeVisibilityScope,
   resolveEmployeeVisibilityScope,
 } from '../common/access-control';
 import { DatabaseService } from '../database/database.service';
+import {
+  departments,
+  designations,
+  employees,
+  roles,
+  userRoleAssignments,
+  users,
+} from '../database/drizzle/schema';
 import {
   CreateEmployeeInput,
   DeactivateEmployeeInput,
@@ -52,6 +62,8 @@ interface EmployeeRow {
   linkedAccountRoles: string[] | null;
 }
 
+const employeeSupervisors = alias(employees, 'employee_supervisors');
+
 @Injectable()
 export class EmployeeService {
   constructor(private readonly database: DatabaseService) {}
@@ -59,88 +71,35 @@ export class EmployeeService {
   async findAll(currentUser: AuthenticatedUser, filter?: EmployeeFilterInput) {
     assertAdminPanelAccess(currentUser.roles);
     const scope = await resolveEmployeeVisibilityScope(this.database, currentUser);
-    const values: unknown[] = [];
-    const where: string[] = [];
-    const scopeClause = buildEmployeeVisibilityClause(values, scope, {
-      employeeId: 'e.id',
-      departmentId: 'e.department_id',
-      supervisorId: 'e.supervisor_id',
-    });
+    const where: SQL[] = [];
+    const scopeCondition = this.buildVisibilityCondition(scope);
 
-    if (scopeClause) {
-      where.push(scopeClause);
+    if (scopeCondition) {
+      where.push(scopeCondition);
     }
 
     if (filter?.search?.trim()) {
-      const search = `%${filter.search.trim().toLowerCase()}%`;
-      values.push(search);
-      const index = values.length;
-      where.push(
-        `(
-          LOWER(e.first_name) LIKE $${index}
-          OR LOWER(e.last_name) LIKE $${index}
-          OR LOWER(e.email) LIKE $${index}
-          OR LOWER(e.employee_number) LIKE $${index}
-        )`,
+      const search = `%${filter.search.trim()}%`;
+      const searchCondition = or(
+        ilike(employees.firstName, search),
+        ilike(employees.lastName, search),
+        ilike(employees.email, search),
+        ilike(employees.employeeNumber, search),
       );
+      if (searchCondition) {
+        where.push(searchCondition);
+      }
     }
 
     if (filter?.departmentId) {
-      values.push(filter.departmentId);
-      where.push(`e.department_id = $${values.length}`);
+      where.push(eq(employees.departmentId, filter.departmentId));
     }
 
     if (filter?.status) {
-      values.push(filter.status.trim().toUpperCase());
-      where.push(`e.status = $${values.length}`);
+      where.push(eq(employees.status, filter.status.trim().toUpperCase()));
     }
 
-    const rows = await this.database.many<EmployeeRow>(
-      `
-        SELECT
-          e.id,
-          e.employee_number AS "employeeNumber",
-          e.first_name AS "firstName",
-          e.last_name AS "lastName",
-          e.email,
-          e.phone,
-          e.department_id AS "departmentId",
-          e.designation_id AS "designationId",
-          e.supervisor_id AS "supervisorId",
-          e.employment_type AS "employmentType",
-          e.join_date::text AS "joinDate",
-          e.exit_date::text AS "exitDate",
-          e.status,
-          e.is_active AS "isActive",
-          d.name AS "departmentName",
-          d.code AS "departmentCode",
-          d.description AS "departmentDescription",
-          d.is_active AS "departmentIsActive",
-          des.title AS "designationTitle",
-          des.code AS "designationCode",
-          des.level AS "designationLevel",
-          des.description AS "designationDescription",
-          des.is_active AS "designationIsActive",
-          s.first_name AS "supervisorFirstName",
-          s.last_name AS "supervisorLastName",
-          u.email AS "linkedAccountEmail",
-          linked_roles.role_keys AS "linkedAccountRoles"
-        FROM employees e
-        INNER JOIN departments d ON d.id = e.department_id
-        INNER JOIN designations des ON des.id = e.designation_id
-        LEFT JOIN employees s ON s.id = e.supervisor_id
-        LEFT JOIN users u ON u.employee_id = e.id
-        LEFT JOIN LATERAL (
-          SELECT ARRAY_AGG(r.key ORDER BY r.name ASC) AS role_keys
-          FROM user_role_assignments ura
-          INNER JOIN roles r ON r.id = ura.role_id
-          WHERE ura.user_id = u.id
-        ) linked_roles ON TRUE
-        ${where.length > 0 ? `WHERE ${where.join(' AND ')}` : ''}
-        ORDER BY e.created_at DESC, e.last_name ASC, e.first_name ASC
-      `,
-      values,
-    );
+    const rows = await this.findEmployeeRows(where);
 
     return rows.map((row) => this.mapEmployee(row));
   }
@@ -148,51 +107,7 @@ export class EmployeeService {
   async findOne(currentUser: AuthenticatedUser, id: string) {
     assertAdminPanelAccess(currentUser.roles);
     const scope = await resolveEmployeeVisibilityScope(this.database, currentUser);
-    const row = await this.database.one<EmployeeRow>(
-      `
-        SELECT
-          e.id,
-          e.employee_number AS "employeeNumber",
-          e.first_name AS "firstName",
-          e.last_name AS "lastName",
-          e.email,
-          e.phone,
-          e.department_id AS "departmentId",
-          e.designation_id AS "designationId",
-          e.supervisor_id AS "supervisorId",
-          e.employment_type AS "employmentType",
-          e.join_date::text AS "joinDate",
-          e.exit_date::text AS "exitDate",
-          e.status,
-          e.is_active AS "isActive",
-          d.name AS "departmentName",
-          d.code AS "departmentCode",
-          d.description AS "departmentDescription",
-          d.is_active AS "departmentIsActive",
-          des.title AS "designationTitle",
-          des.code AS "designationCode",
-          des.level AS "designationLevel",
-          des.description AS "designationDescription",
-          des.is_active AS "designationIsActive",
-          s.first_name AS "supervisorFirstName",
-          s.last_name AS "supervisorLastName",
-          u.email AS "linkedAccountEmail",
-          linked_roles.role_keys AS "linkedAccountRoles"
-        FROM employees e
-        INNER JOIN departments d ON d.id = e.department_id
-        INNER JOIN designations des ON des.id = e.designation_id
-        LEFT JOIN employees s ON s.id = e.supervisor_id
-        LEFT JOIN users u ON u.employee_id = e.id
-        LEFT JOIN LATERAL (
-          SELECT ARRAY_AGG(r.key ORDER BY r.name ASC) AS role_keys
-          FROM user_role_assignments ura
-          INNER JOIN roles r ON r.id = ura.role_id
-          WHERE ura.user_id = u.id
-        ) linked_roles ON TRUE
-        WHERE e.id = $1
-      `,
-      [id],
-    );
+    const [row] = await this.findEmployeeRows([eq(employees.id, id)]);
 
     if (!row) {
       throw new NotFoundException(`Employee with ID ${id} not found`);
@@ -492,22 +407,86 @@ export class EmployeeService {
   private async generateEmployeeNumber() {
     const year = new Date().getFullYear();
     const prefix = `EMP${year}`;
-    const row = await this.database.one<{ employeeNumber: string }>(
-      `
-        SELECT employee_number AS "employeeNumber"
-        FROM employees
-        WHERE employee_number LIKE $1
-        ORDER BY employee_number DESC
-        LIMIT 1
-      `,
-      [`${prefix}%`],
-    );
+    const [row] = await this.database.drizzle
+      .select({ employeeNumber: employees.employeeNumber })
+      .from(employees)
+      .where(like(employees.employeeNumber, `${prefix}%`))
+      .orderBy(desc(employees.employeeNumber))
+      .limit(1);
 
     const nextSequence = row
       ? Number.parseInt(row.employeeNumber.slice(-4), 10) + 1
       : 1;
 
     return `${prefix}${nextSequence.toString().padStart(4, '0')}`;
+  }
+
+  private async findEmployeeRows(where: SQL[]) {
+    return this.database.drizzle
+      .select({
+        id: employees.id,
+        employeeNumber: employees.employeeNumber,
+        firstName: employees.firstName,
+        lastName: employees.lastName,
+        email: employees.email,
+        phone: employees.phone,
+        departmentId: employees.departmentId,
+        designationId: employees.designationId,
+        supervisorId: employees.supervisorId,
+        employmentType: employees.employmentType,
+        joinDate: employees.joinDate,
+        exitDate: employees.exitDate,
+        status: employees.status,
+        isActive: employees.isActive,
+        departmentName: departments.name,
+        departmentCode: departments.code,
+        departmentDescription: departments.description,
+        departmentIsActive: departments.isActive,
+        designationTitle: designations.title,
+        designationCode: designations.code,
+        designationLevel: designations.level,
+        designationDescription: designations.description,
+        designationIsActive: designations.isActive,
+        supervisorFirstName: employeeSupervisors.firstName,
+        supervisorLastName: employeeSupervisors.lastName,
+        linkedAccountEmail: users.email,
+        linkedAccountRoles: sql<string[] | null>`(
+          SELECT ARRAY_AGG(${roles.key} ORDER BY ${roles.name} ASC)
+          FROM ${userRoleAssignments}
+          INNER JOIN ${roles} ON ${roles.id} = ${userRoleAssignments.roleId}
+          WHERE ${userRoleAssignments.userId} = ${users.id}
+        )`,
+      })
+      .from(employees)
+      .innerJoin(departments, eq(departments.id, employees.departmentId))
+      .innerJoin(designations, eq(designations.id, employees.designationId))
+      .leftJoin(
+        employeeSupervisors,
+        eq(employeeSupervisors.id, employees.supervisorId),
+      )
+      .leftJoin(users, eq(users.employeeId, employees.id))
+      .where(and(...where))
+      .orderBy(
+        desc(employees.createdAt),
+        asc(employees.lastName),
+        asc(employees.firstName),
+      );
+  }
+
+  private buildVisibilityCondition(scope: EmployeeVisibilityScope) {
+    switch (scope.kind) {
+      case 'all':
+        return undefined;
+      case 'department':
+        return eq(employees.departmentId, scope.departmentId);
+      case 'supervisor':
+        return or(
+          eq(employees.id, scope.employeeId),
+          eq(employees.supervisorId, scope.employeeId),
+        );
+      case 'self':
+        return eq(employees.id, scope.employeeId);
+    }
   }
 
   private mapEmployee(row: EmployeeRow) {
