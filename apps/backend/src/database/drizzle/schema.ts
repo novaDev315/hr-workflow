@@ -162,6 +162,47 @@ export const employeeLocationAssignments = pgTable(
   },
 );
 
+export const attendanceRecords = pgTable(
+  'attendance_records',
+  {
+    id: text('id').primaryKey(),
+    employeeId: text('employee_id')
+      .notNull()
+      .references(() => employees.id, { onDelete: 'cascade' }),
+    locationId: text('location_id')
+      .notNull()
+      .references(() => locations.id, { onDelete: 'restrict' }),
+    attendanceDate: date('attendance_date').notNull(),
+    clockInAt: timestamp('clock_in_at', { withTimezone: true }),
+    clockInLatitude: doublePrecision('clock_in_latitude'),
+    clockInLongitude: doublePrecision('clock_in_longitude'),
+    clockInDistance: integer('clock_in_distance'),
+    clockInPhotoUrl: text('clock_in_photo_url'),
+    clockInNotes: text('clock_in_notes'),
+    clockInGeofenceValid: boolean('clock_in_geofence_valid'),
+    clockOutAt: timestamp('clock_out_at', { withTimezone: true }),
+    clockOutLatitude: doublePrecision('clock_out_latitude'),
+    clockOutLongitude: doublePrecision('clock_out_longitude'),
+    clockOutDistance: integer('clock_out_distance'),
+    clockOutPhotoUrl: text('clock_out_photo_url'),
+    clockOutNotes: text('clock_out_notes'),
+    clockOutGeofenceValid: boolean('clock_out_geofence_valid'),
+    totalMinutes: integer('total_minutes'),
+    totalHours: doublePrecision('total_hours'),
+    regularHours: doublePrecision('regular_hours'),
+    overtimeHours: doublePrecision('overtime_hours'),
+    status: text('status').notNull().default('CLOCKED_IN'),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    unique('attendance_records_employee_id_attendance_date_key').on(
+      table.employeeId,
+      table.attendanceDate,
+    ),
+  ],
+);
+
 export const leaveTypes = pgTable('leave_types', {
   id: text('id').primaryKey(),
   code: text('code').notNull().unique(),

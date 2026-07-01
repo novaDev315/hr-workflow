@@ -5,13 +5,19 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { randomUUID } from 'crypto';
+import { and, desc, eq, gte, lte, or, sql, SQL } from 'drizzle-orm';
 import { AuthenticatedUser } from '../common/current-user.decorator';
 import {
-  buildEmployeeVisibilityClause,
   canAccessEmployeeWithinScope,
+  EmployeeVisibilityScope,
   resolveEmployeeVisibilityScope,
 } from '../common/access-control';
 import { DatabaseService } from '../database/database.service';
+import {
+  attendanceRecords,
+  employees,
+  locations,
+} from '../database/drizzle/schema';
 import { LocationService } from '../location/location.service';
 import {
   AttendanceFilterInput,
@@ -53,14 +59,19 @@ export class AttendanceService {
       input.employeeId,
     );
     const today = new Date().toISOString().slice(0, 10);
-    const existing = await this.database.one<{ id: string; clockInAt: string | null }>(
-      `
-        SELECT id, clock_in_at::text AS "clockInAt"
-        FROM attendance_records
-        WHERE employee_id = $1 AND attendance_date = $2
-      `,
-      [employeeId, today],
-    );
+    const [existing] = await this.database.drizzle
+      .select({
+        id: attendanceRecords.id,
+        clockInAt: sql<string | null>`${attendanceRecords.clockInAt}::text`,
+      })
+      .from(attendanceRecords)
+      .where(
+        and(
+          eq(attendanceRecords.employeeId, employeeId),
+          eq(attendanceRecords.attendanceDate, today),
+        ),
+      )
+      .limit(1);
 
     if (existing?.clockInAt) {
       throw new BadRequestException('Employee has already clocked in today');
@@ -76,71 +87,44 @@ export class AttendanceService {
     const now = new Date();
 
     if (existing) {
-      await this.database.query(
-        `
-          UPDATE attendance_records
-          SET
-            location_id = $2,
-            clock_in_at = $3,
-            clock_in_latitude = $4,
-            clock_in_longitude = $5,
-            clock_in_distance = $6,
-            clock_in_photo_url = $7,
-            clock_in_notes = $8,
-            clock_in_geofence_valid = TRUE,
-            status = 'CLOCKED_IN',
-            updated_at = NOW()
-          WHERE id = $1
-        `,
-        [
-          existing.id,
-          input.locationId,
-          now.toISOString(),
-          input.latitude,
-          input.longitude,
-          geofence.distance,
-          input.photoUrl?.trim() ?? null,
-          input.notes?.trim() ?? null,
-        ],
-      );
+      await this.database.drizzle
+        .update(attendanceRecords)
+        .set({
+          locationId: location.id,
+          clockInAt: now,
+          clockInLatitude: input.latitude,
+          clockInLongitude: input.longitude,
+          clockInDistance: geofence.distance,
+          clockInPhotoUrl: input.photoUrl?.trim() ?? null,
+          clockInNotes: input.notes?.trim() ?? null,
+          clockInGeofenceValid: true,
+          status: 'CLOCKED_IN',
+          updatedAt: sql`NOW()`,
+        })
+        .where(eq(attendanceRecords.id, existing.id));
 
       return this.findOne(currentUser, existing.id);
     }
 
-    const created = await this.database.one<{ id: string }>(
-      `
-        INSERT INTO attendance_records (
-          id,
-          employee_id,
-          location_id,
-          attendance_date,
-          clock_in_at,
-          clock_in_latitude,
-          clock_in_longitude,
-          clock_in_distance,
-          clock_in_photo_url,
-          clock_in_notes,
-          clock_in_geofence_valid,
-          status
-        )
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, TRUE, 'CLOCKED_IN')
-        RETURNING id
-      `,
-      [
-        randomUUID(),
+    const [created] = await this.database.drizzle
+      .insert(attendanceRecords)
+      .values({
+        id: randomUUID(),
         employeeId,
-        location.id,
-        today,
-        now.toISOString(),
-        input.latitude,
-        input.longitude,
-        geofence.distance,
-        input.photoUrl?.trim() ?? null,
-        input.notes?.trim() ?? null,
-      ],
-    );
+        locationId: location.id,
+        attendanceDate: today,
+        clockInAt: now,
+        clockInLatitude: input.latitude,
+        clockInLongitude: input.longitude,
+        clockInDistance: geofence.distance,
+        clockInPhotoUrl: input.photoUrl?.trim() ?? null,
+        clockInNotes: input.notes?.trim() ?? null,
+        clockInGeofenceValid: true,
+        status: 'CLOCKED_IN',
+      })
+      .returning({ id: attendanceRecords.id });
 
-    return this.findOne(currentUser, created!.id);
+    return this.findOne(currentUser, created.id);
   }
 
   async clockOut(currentUser: AuthenticatedUser, input: ClockOutInput) {
@@ -149,23 +133,21 @@ export class AttendanceService {
       input.employeeId,
     );
     const today = new Date().toISOString().slice(0, 10);
-    const attendance = await this.database.one<{
-      id: string;
-      locationId: string;
-      clockInAt: string | null;
-      clockOutAt: string | null;
-    }>(
-      `
-        SELECT
-          id,
-          location_id AS "locationId",
-          clock_in_at::text AS "clockInAt",
-          clock_out_at::text AS "clockOutAt"
-        FROM attendance_records
-        WHERE employee_id = $1 AND attendance_date = $2
-      `,
-      [employeeId, today],
-    );
+    const [attendance] = await this.database.drizzle
+      .select({
+        id: attendanceRecords.id,
+        locationId: attendanceRecords.locationId,
+        clockInAt: sql<string | null>`${attendanceRecords.clockInAt}::text`,
+        clockOutAt: sql<string | null>`${attendanceRecords.clockOutAt}::text`,
+      })
+      .from(attendanceRecords)
+      .where(
+        and(
+          eq(attendanceRecords.employeeId, employeeId),
+          eq(attendanceRecords.attendanceDate, today),
+        ),
+      )
+      .limit(1);
 
     if (!attendance) {
       throw new NotFoundException('No attendance record found for today');
@@ -196,39 +178,24 @@ export class AttendanceService {
     const regularHours = Number(Math.min(totalHours, 8).toFixed(2));
     const overtimeHours = Number(Math.max(totalHours - 8, 0).toFixed(2));
 
-    await this.database.query(
-      `
-        UPDATE attendance_records
-        SET
-          clock_out_at = $2,
-          clock_out_latitude = $3,
-          clock_out_longitude = $4,
-          clock_out_distance = $5,
-          clock_out_photo_url = $6,
-          clock_out_notes = $7,
-          clock_out_geofence_valid = TRUE,
-          total_minutes = $8,
-          total_hours = $9,
-          regular_hours = $10,
-          overtime_hours = $11,
-          status = 'COMPLETED',
-          updated_at = NOW()
-        WHERE id = $1
-      `,
-      [
-        attendance.id,
-        clockOutAt.toISOString(),
-        input.latitude,
-        input.longitude,
-        geofence.distance,
-        input.photoUrl?.trim() ?? null,
-        input.notes?.trim() ?? null,
+    await this.database.drizzle
+      .update(attendanceRecords)
+      .set({
+        clockOutAt,
+        clockOutLatitude: input.latitude,
+        clockOutLongitude: input.longitude,
+        clockOutDistance: geofence.distance,
+        clockOutPhotoUrl: input.photoUrl?.trim() ?? null,
+        clockOutNotes: input.notes?.trim() ?? null,
+        clockOutGeofenceValid: true,
         totalMinutes,
         totalHours,
         regularHours,
         overtimeHours,
-      ],
-    );
+        status: 'COMPLETED',
+        updatedAt: sql`NOW()`,
+      })
+      .where(eq(attendanceRecords.id, attendance.id));
 
     return this.findOne(currentUser, attendance.id);
   }
@@ -237,14 +204,9 @@ export class AttendanceService {
     currentUser: AuthenticatedUser,
     filter?: AttendanceFilterInput,
   ) {
-    const values: unknown[] = [];
-    const where: string[] = [];
+    const where: SQL[] = [];
     const scope = await resolveEmployeeVisibilityScope(this.database, currentUser);
-    const visibilityClause = buildEmployeeVisibilityClause(values, scope, {
-      employeeId: 'e.id',
-      departmentId: 'e.department_id',
-      supervisorId: 'e.supervisor_id',
-    });
+    const visibilityClause = this.buildEmployeeVisibilityCondition(scope);
 
     if (visibilityClause) {
       where.push(visibilityClause);
@@ -255,92 +217,47 @@ export class AttendanceService {
         currentUser,
         filter.employeeId,
       );
-      values.push(scopedEmployeeId);
-      where.push(`a.employee_id = $${values.length}`);
+      where.push(eq(attendanceRecords.employeeId, scopedEmployeeId));
     }
 
     if (filter?.locationId) {
-      values.push(filter.locationId);
-      where.push(`a.location_id = $${values.length}`);
+      where.push(eq(attendanceRecords.locationId, filter.locationId));
     }
 
     if (filter?.fromDate) {
-      values.push(filter.fromDate);
-      where.push(`a.attendance_date >= $${values.length}`);
+      where.push(gte(attendanceRecords.attendanceDate, filter.fromDate));
     }
 
     if (filter?.toDate) {
-      values.push(filter.toDate);
-      where.push(`a.attendance_date <= $${values.length}`);
+      where.push(lte(attendanceRecords.attendanceDate, filter.toDate));
     }
 
     if (filter?.status) {
-      values.push(filter.status.trim().toUpperCase());
-      where.push(`a.status = $${values.length}`);
+      where.push(eq(attendanceRecords.status, filter.status.trim().toUpperCase()));
     }
 
-    const rows = await this.database.many<AttendanceRow>(
-      `
-        SELECT
-          a.id,
-          a.employee_id AS "employeeId",
-          a.location_id AS "locationId",
-          a.attendance_date::text AS "attendanceDate",
-          a.clock_in_at::text AS "clockInAt",
-          a.clock_out_at::text AS "clockOutAt",
-          a.clock_in_distance AS "clockInDistance",
-          a.clock_out_distance AS "clockOutDistance",
-          a.total_hours AS "totalHours",
-          a.regular_hours AS "regularHours",
-          a.overtime_hours AS "overtimeHours",
-          a.status,
-          e.employee_number AS "employeeNumber",
-          CONCAT(e.first_name, ' ', e.last_name) AS "employeeName",
-          e.department_id AS "departmentId",
-          e.supervisor_id AS "supervisorId",
-          l.code AS "locationCode",
-          l.name AS "locationName"
-        FROM attendance_records a
-        INNER JOIN employees e ON e.id = a.employee_id
-        INNER JOIN locations l ON l.id = a.location_id
-        ${where.length > 0 ? `WHERE ${where.join(' AND ')}` : ''}
-        ORDER BY a.attendance_date DESC, a.clock_in_at DESC NULLS LAST
-      `,
-      values,
-    );
+    const rows = await this.database.drizzle
+      .select(this.attendanceSelectFields())
+      .from(attendanceRecords)
+      .innerJoin(employees, eq(employees.id, attendanceRecords.employeeId))
+      .innerJoin(locations, eq(locations.id, attendanceRecords.locationId))
+      .where(where.length > 0 ? and(...where) : undefined)
+      .orderBy(
+        desc(attendanceRecords.attendanceDate),
+        sql`${attendanceRecords.clockInAt} DESC NULLS LAST`,
+      );
 
     return rows.map((row) => this.mapAttendance(row));
   }
 
   async findOne(currentUser: AuthenticatedUser, id: string) {
-    const row = await this.database.one<AttendanceRow>(
-      `
-        SELECT
-          a.id,
-          a.employee_id AS "employeeId",
-          a.location_id AS "locationId",
-          a.attendance_date::text AS "attendanceDate",
-          a.clock_in_at::text AS "clockInAt",
-          a.clock_out_at::text AS "clockOutAt",
-          a.clock_in_distance AS "clockInDistance",
-          a.clock_out_distance AS "clockOutDistance",
-          a.total_hours AS "totalHours",
-          a.regular_hours AS "regularHours",
-          a.overtime_hours AS "overtimeHours",
-          a.status,
-          e.employee_number AS "employeeNumber",
-          CONCAT(e.first_name, ' ', e.last_name) AS "employeeName",
-          e.department_id AS "departmentId",
-          e.supervisor_id AS "supervisorId",
-          l.code AS "locationCode",
-          l.name AS "locationName"
-        FROM attendance_records a
-        INNER JOIN employees e ON e.id = a.employee_id
-        INNER JOIN locations l ON l.id = a.location_id
-        WHERE a.id = $1
-      `,
-      [id],
-    );
+    const [row] = await this.database.drizzle
+      .select(this.attendanceSelectFields())
+      .from(attendanceRecords)
+      .innerJoin(employees, eq(employees.id, attendanceRecords.employeeId))
+      .innerJoin(locations, eq(locations.id, attendanceRecords.locationId))
+      .where(eq(attendanceRecords.id, id))
+      .limit(1);
 
     if (!row) {
       throw new NotFoundException(`Attendance record ${id} not found`);
@@ -368,21 +285,15 @@ export class AttendanceService {
   ) {
     const normalizedEmployeeId = employeeId.trim();
     const scope = await resolveEmployeeVisibilityScope(this.database, currentUser);
-    const employee = await this.database.one<{
-      id: string;
-      departmentId: string | null;
-      supervisorId: string | null;
-    }>(
-      `
-        SELECT
-          id,
-          department_id AS "departmentId",
-          supervisor_id AS "supervisorId"
-        FROM employees
-        WHERE id = $1
-      `,
-      [normalizedEmployeeId],
-    );
+    const [employee] = await this.database.drizzle
+      .select({
+        id: employees.id,
+        departmentId: employees.departmentId,
+        supervisorId: employees.supervisorId,
+      })
+      .from(employees)
+      .where(eq(employees.id, normalizedEmployeeId))
+      .limit(1);
 
     if (
       !employee ||
@@ -398,6 +309,45 @@ export class AttendanceService {
     }
 
     return employee.id;
+  }
+
+  private buildEmployeeVisibilityCondition(scope: EmployeeVisibilityScope) {
+    switch (scope.kind) {
+      case 'all':
+        return undefined;
+      case 'department':
+        return eq(employees.departmentId, scope.departmentId);
+      case 'supervisor':
+        return or(
+          eq(attendanceRecords.employeeId, scope.employeeId),
+          eq(employees.supervisorId, scope.employeeId),
+        );
+      case 'self':
+        return eq(attendanceRecords.employeeId, scope.employeeId);
+    }
+  }
+
+  private attendanceSelectFields() {
+    return {
+      id: attendanceRecords.id,
+      employeeId: attendanceRecords.employeeId,
+      locationId: attendanceRecords.locationId,
+      attendanceDate: sql<string>`${attendanceRecords.attendanceDate}::text`,
+      clockInAt: sql<string | null>`${attendanceRecords.clockInAt}::text`,
+      clockOutAt: sql<string | null>`${attendanceRecords.clockOutAt}::text`,
+      clockInDistance: attendanceRecords.clockInDistance,
+      clockOutDistance: attendanceRecords.clockOutDistance,
+      totalHours: attendanceRecords.totalHours,
+      regularHours: attendanceRecords.regularHours,
+      overtimeHours: attendanceRecords.overtimeHours,
+      status: attendanceRecords.status,
+      employeeNumber: employees.employeeNumber,
+      employeeName: sql<string>`CONCAT(${employees.firstName}, ' ', ${employees.lastName})`,
+      departmentId: employees.departmentId,
+      supervisorId: employees.supervisorId,
+      locationCode: locations.code,
+      locationName: locations.name,
+    };
   }
 
   private mapAttendance(row: AttendanceRow) {
