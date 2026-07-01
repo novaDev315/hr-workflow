@@ -14,8 +14,9 @@
     "test": "jest --config jest.config.js --passWithNoTests",
     "test:integration": "jest --config jest.config.js --passWithNoTests",
     "test:unit": "jest --config jest.unit.config.js --runInBand",
-    "drizzle:check": "drizzle-kit check --config drizzle.config.ts",
+    "drizzle:check": "drizzle-kit export --config drizzle.config.ts",
     "drizzle:generate": "drizzle-kit generate --config drizzle.config.ts",
+    "drizzle:migration-check": "drizzle-kit check --config drizzle.config.ts",
     "drizzle:pull": "drizzle-kit pull --config drizzle.config.ts",
     "lint": "eslint \"{src,apps,libs,test}/**/*.ts\" --fix"
   },

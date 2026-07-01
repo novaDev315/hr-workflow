@@ -7,7 +7,16 @@ import {
   UnauthorizedException,
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
+import { asc, count, eq } from 'drizzle-orm';
 import { DatabaseService } from '../database/database.service';
+import {
+  departments,
+  designations,
+  employees,
+  roles,
+  userRoleAssignments,
+  users,
+} from '../database/drizzle/schema';
 import { AuthenticatedUser } from '../common/current-user.decorator';
 import {
   BootstrapAdminInput,
@@ -62,10 +71,10 @@ export class AuthService {
   ) {}
 
   async getBootstrapStatus() {
-    const countRow = await this.database.one<{ count: string }>(
-      `SELECT COUNT(*)::text AS count FROM users`,
-    );
-    const accountCount = Number(countRow?.count ?? '0');
+    const [countRow] = await this.database.drizzle
+      .select({ count: count() })
+      .from(users);
+    const accountCount = Number(countRow?.count ?? 0);
 
     return {
       bootstrapRequired: accountCount === 0,
@@ -506,22 +515,24 @@ export class AuthService {
   }
 
   private async getUserWithRolesByEmail(email: string, client?: any) {
-    const user = await this.database.one<UserRow>(
-      `
-        SELECT
-          id,
-          email,
-          employee_id AS "employeeId",
-          password_hash AS "passwordHash",
-          first_name AS "firstName",
-          last_name AS "lastName",
-          is_active AS "isActive"
-        FROM users
-        WHERE email = $1
-      `,
-      [email],
-      client,
-    );
+    const user = client
+      ? await this.database.one<UserRow>(
+          `
+            SELECT
+              id,
+              email,
+              employee_id AS "employeeId",
+              password_hash AS "passwordHash",
+              first_name AS "firstName",
+              last_name AS "lastName",
+              is_active AS "isActive"
+            FROM users
+            WHERE email = $1
+          `,
+          [email],
+          client,
+        )
+      : await this.findUserByEmail(email);
 
     if (!user) {
       return null;
@@ -531,22 +542,24 @@ export class AuthService {
   }
 
   private async getUserWithRolesById(id: string, client?: any) {
-    const user = await this.database.one<UserRow>(
-      `
-        SELECT
-          id,
-          email,
-          employee_id AS "employeeId",
-          password_hash AS "passwordHash",
-          first_name AS "firstName",
-          last_name AS "lastName",
-          is_active AS "isActive"
-        FROM users
-        WHERE id = $1
-      `,
-      [id],
-      client,
-    );
+    const user = client
+      ? await this.database.one<UserRow>(
+          `
+            SELECT
+              id,
+              email,
+              employee_id AS "employeeId",
+              password_hash AS "passwordHash",
+              first_name AS "firstName",
+              last_name AS "lastName",
+              is_active AS "isActive"
+            FROM users
+            WHERE id = $1
+          `,
+          [id],
+          client,
+        )
+      : await this.findUserById(id);
 
     if (!user) {
       return null;
@@ -555,49 +568,124 @@ export class AuthService {
     return this.attachRoles(user, client);
   }
 
-  private async attachRoles(user: UserRow, client?: any): Promise<UserWithRoles> {
-    const roles = await this.database.many<RoleRow>(
-      `
-        SELECT r.key AS key
-        FROM roles r
-        INNER JOIN user_role_assignments ura ON ura.role_id = r.id
-        WHERE ura.user_id = $1
-        ORDER BY r.name ASC
-      `,
-      [user.id],
-      client,
-    );
+  private async findUserByEmail(email: string) {
+    const [user] = await this.database.drizzle
+      .select({
+        id: users.id,
+        email: users.email,
+        employeeId: users.employeeId,
+        passwordHash: users.passwordHash,
+        firstName: users.firstName,
+        lastName: users.lastName,
+        isActive: users.isActive,
+      })
+      .from(users)
+      .where(eq(users.email, email))
+      .limit(1);
 
-    const employeeProfile = await this.database.one<{
-      employeeId: string | null;
-      employeeNumber: string | null;
-      departmentName: string | null;
-      designationTitle: string | null;
-      employeeStatus: string | null;
-    }>(
-      `
-        SELECT
-          e.id AS "employeeId",
-          e.employee_number AS "employeeNumber",
-          d.name AS "departmentName",
-          des.title AS "designationTitle",
-          e.status AS "employeeStatus"
-        FROM employees e
-        INNER JOIN departments d ON d.id = e.department_id
-        INNER JOIN designations des ON des.id = e.designation_id
-        WHERE e.id = $1
-        LIMIT 1
-      `,
-      [user.employeeId ?? null],
-      client,
-    );
+    return user ?? null;
+  }
+
+  private async findUserById(id: string) {
+    const [user] = await this.database.drizzle
+      .select({
+        id: users.id,
+        email: users.email,
+        employeeId: users.employeeId,
+        passwordHash: users.passwordHash,
+        firstName: users.firstName,
+        lastName: users.lastName,
+        isActive: users.isActive,
+      })
+      .from(users)
+      .where(eq(users.id, id))
+      .limit(1);
+
+    return user ?? null;
+  }
+
+  private async attachRoles(user: UserRow, client?: any): Promise<UserWithRoles> {
+    const roleRows = client
+      ? await this.database.many<RoleRow>(
+          `
+            SELECT r.key AS key
+            FROM roles r
+            INNER JOIN user_role_assignments ura ON ura.role_id = r.id
+            WHERE ura.user_id = $1
+            ORDER BY r.name ASC
+          `,
+          [user.id],
+          client,
+        )
+      : await this.findRolesForUser(user.id);
+
+    const employeeProfile = client
+      ? await this.database.one<{
+          employeeId: string | null;
+          employeeNumber: string | null;
+          departmentName: string | null;
+          designationTitle: string | null;
+          employeeStatus: string | null;
+        }>(
+          `
+            SELECT
+              e.id AS "employeeId",
+              e.employee_number AS "employeeNumber",
+              d.name AS "departmentName",
+              des.title AS "designationTitle",
+              e.status AS "employeeStatus"
+            FROM employees e
+            INNER JOIN departments d ON d.id = e.department_id
+            INNER JOIN designations des ON des.id = e.designation_id
+            WHERE e.id = $1
+            LIMIT 1
+          `,
+          [user.employeeId ?? null],
+          client,
+        )
+      : await this.findEmployeeProfile(user.employeeId ?? null);
 
     return {
       ...user,
       employeeProfile: employeeProfile ?? undefined,
-      roleAssignments: roles.map((role) => ({
+      roleAssignments: roleRows.map((role) => ({
         role,
       })),
     };
+  }
+
+  private async findRolesForUser(userId: string): Promise<RoleRow[]> {
+    const rows = await this.database.drizzle
+      .select({ key: roles.key })
+      .from(roles)
+      .innerJoin(userRoleAssignments, eq(userRoleAssignments.roleId, roles.id))
+      .where(eq(userRoleAssignments.userId, userId))
+      .orderBy(asc(roles.name));
+
+    return rows.map((role) => ({
+      key: role.key as SystemRoleKey,
+    }));
+  }
+
+  private async findEmployeeProfile(employeeId: string | null) {
+    if (!employeeId) {
+      return null;
+    }
+
+    const [profile] = await this.database.drizzle
+      .select({
+        employeeId: employees.id,
+        employeeNumber: employees.employeeNumber,
+        departmentName: departments.name,
+        designationTitle: designations.title,
+        employeeStatus: employees.status,
+      })
+      .from(employees)
+      .innerJoin(departments, eq(departments.id, employees.departmentId))
+      .innerJoin(designations, eq(designations.id, employees.designationId))
+      .where(eq(employees.id, employeeId))
+      .limit(1);
+
+    return profile ?? null;
   }
 }

@@ -46,6 +46,7 @@ Backend scripts:
 ```bash
 bun run --cwd apps/backend drizzle:check
 bun run --cwd apps/backend drizzle:generate
+bun run --cwd apps/backend drizzle:migration-check
 bun run --cwd apps/backend drizzle:pull
 ```
 
@@ -57,6 +58,11 @@ apps/backend/drizzle.config.ts
 
 The current Drizzle schema is intentionally partial. It should expand only when
 a backend domain is actually migrated and proven.
+
+`drizzle:check` currently validates that the sidecar schema can be exported as
+Postgres DDL. `drizzle:migration-check` requires committed Drizzle migration
+metadata under `apps/backend/drizzle/`, so it is reserved for the later
+versioned-migration phase.
 
 ## Migration Rules
 

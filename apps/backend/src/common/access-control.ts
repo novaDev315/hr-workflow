@@ -1,6 +1,8 @@
 import { ForbiddenException } from '@nestjs/common';
+import { eq } from 'drizzle-orm';
 import { AuthenticatedUser } from './current-user.decorator';
 import { DatabaseService } from '../database/database.service';
+import { employees, users } from '../database/drizzle/schema';
 import {
   ACCOUNT_MANAGER_ROLE_KEYS,
   ADMIN_ACCESS_ROLE_KEYS,
@@ -167,17 +169,15 @@ async function getLinkedEmployeeContext(
   database: DatabaseService,
   userId: string,
 ): Promise<LinkedEmployeeContext> {
-  const row = await database.one<LinkedEmployeeContext>(
-    `
-      SELECT
-        u.employee_id AS "employeeId",
-        e.department_id AS "departmentId"
-      FROM users u
-      LEFT JOIN employees e ON e.id = u.employee_id
-      WHERE u.id = $1
-    `,
-    [userId],
-  );
+  const [row] = await database.drizzle
+    .select({
+      employeeId: users.employeeId,
+      departmentId: employees.departmentId,
+    })
+    .from(users)
+    .leftJoin(employees, eq(employees.id, users.employeeId))
+    .where(eq(users.id, userId))
+    .limit(1);
 
   return {
     employeeId: row?.employeeId ?? null,
