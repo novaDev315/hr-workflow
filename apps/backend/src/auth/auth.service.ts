@@ -7,7 +7,7 @@ import {
   UnauthorizedException,
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
-import { asc, count, eq } from 'drizzle-orm';
+import { and, asc, count, eq, sql } from 'drizzle-orm';
 import { DatabaseService } from '../database/database.service';
 import {
   departments,
@@ -86,13 +86,9 @@ export class AuthService {
     const normalizedEmail = input.email.trim().toLowerCase();
     const passwordHash = await bcrypt.hash(input.password, 10);
 
-    const createdUser = await this.database.transaction(async (tx) => {
-      const countRow = await this.database.one<{ count: string }>(
-        `SELECT COUNT(*)::text AS count FROM users`,
-        [],
-        tx,
-      );
-      const userCount = Number(countRow?.count ?? '0');
+    const createdUser = await this.database.drizzle.transaction(async (tx) => {
+      const [countRow] = await tx.select({ count: count() }).from(users);
+      const userCount = Number(countRow?.count ?? 0);
 
       if (userCount > 0) {
         throw new ForbiddenException(
@@ -102,40 +98,30 @@ export class AuthService {
 
       const adminRole = await this.ensureRole(DEFAULT_ADMIN_ROLE, tx);
 
-      const user = await this.database.one<{ id: string }>(
-        `
-          INSERT INTO users (
-            id,
-            email,
-            employee_id,
-            password_hash,
-            first_name,
-            last_name
-          )
-          VALUES ($1, $2, $3, $4, $5, $6)
-          RETURNING id
-        `,
-        [
-          randomUUID(),
-          normalizedEmail,
-          null,
+      const [user] = await tx
+        .insert(users)
+        .values({
+          id: randomUUID(),
+          email: normalizedEmail,
+          employeeId: null,
           passwordHash,
-          input.firstName.trim(),
-          input.lastName.trim(),
-        ],
-        tx,
-      );
+          firstName: input.firstName.trim(),
+          lastName: input.lastName.trim(),
+        })
+        .returning({ id: users.id });
 
-      await this.database.query(
-        `
-          INSERT INTO user_role_assignments (id, user_id, role_id)
-          VALUES ($1, $2, $3)
-        `,
-        [randomUUID(), user!.id, adminRole.id],
-        tx,
-      );
+      await tx.insert(userRoleAssignments).values({
+        id: randomUUID(),
+        userId: user.id,
+        roleId: adminRole.id,
+      });
 
-      return this.getUserWithRolesById(user!.id, tx);
+      const userWithRoles = await this.getUserWithRolesById(user.id, tx);
+      if (!userWithRoles) {
+        throw new NotFoundException('Bootstrap account could not be loaded');
+      }
+
+      return userWithRoles;
     });
 
     return this.buildAuthPayload(createdUser);
@@ -180,28 +166,32 @@ export class AuthService {
     name: string;
     description?: string;
   }) {
-    const existing = await this.database.one<{ id: string }>(
-      `SELECT id FROM roles WHERE key = $1`,
-      [data.key],
-    );
+    const [existing] = await this.database.drizzle
+      .select({ id: roles.id })
+      .from(roles)
+      .where(eq(roles.key, data.key))
+      .limit(1);
 
     if (existing) {
       throw new ConflictException(`Role ${data.key} already exists`);
     }
 
-    return this.database.one<{
-      id: string;
-      key: string;
-      name: string;
-      description: string | null;
-    }>(
-      `
-        INSERT INTO roles (id, key, name, description)
-        VALUES ($1, $2, $3, $4)
-        RETURNING id, key, name, description
-      `,
-      [randomUUID(), data.key, data.name.trim(), data.description?.trim() ?? null],
-    );
+    const [created] = await this.database.drizzle
+      .insert(roles)
+      .values({
+        id: randomUUID(),
+        key: data.key,
+        name: data.name.trim(),
+        description: data.description?.trim() ?? null,
+      })
+      .returning({
+        id: roles.id,
+        key: roles.key,
+        name: roles.name,
+        description: roles.description,
+      });
+
+    return created;
   }
 
   async createEmployeeAccount(
@@ -212,45 +202,37 @@ export class AuthService {
     const employeeId = input.employeeId.trim();
     const passwordHash = await bcrypt.hash(input.password, 10);
 
-    const createdUser = await this.database.transaction(async (tx) => {
-      const employee = await this.database.one<{
-        id: string;
-        email: string;
-        firstName: string;
-        lastName: string;
-      }>(
-        `
-          SELECT
-            id,
-            email,
-            first_name AS "firstName",
-            last_name AS "lastName"
-          FROM employees
-          WHERE id = $1 AND is_active = TRUE
-        `,
-        [employeeId],
-        tx,
-      );
+    const createdUser = await this.database.drizzle.transaction(async (tx) => {
+      const [employee] = await tx
+        .select({
+          id: employees.id,
+          email: employees.email,
+          firstName: employees.firstName,
+          lastName: employees.lastName,
+        })
+        .from(employees)
+        .where(and(eq(employees.id, employeeId), eq(employees.isActive, true)))
+        .limit(1);
 
       if (!employee) {
         throw new NotFoundException('Employee not found or inactive');
       }
 
-      const linkedUser = await this.database.one<{ id: string }>(
-        `SELECT id FROM users WHERE employee_id = $1`,
-        [employeeId],
-        tx,
-      );
+      const [linkedUser] = await tx
+        .select({ id: users.id })
+        .from(users)
+        .where(eq(users.employeeId, employeeId))
+        .limit(1);
 
       if (linkedUser) {
         throw new ConflictException('This employee already has a linked account');
       }
 
-      const existingEmailUser = await this.database.one<{ id: string }>(
-        `SELECT id FROM users WHERE LOWER(email) = LOWER($1)`,
-        [employee.email],
-        tx,
-      );
+      const [existingEmailUser] = await tx
+        .select({ id: users.id })
+        .from(users)
+        .where(sql`LOWER(${users.email}) = LOWER(${employee.email})`)
+        .limit(1);
 
       if (existingEmailUser) {
         throw new ConflictException(
@@ -260,40 +242,30 @@ export class AuthService {
 
       const employeeRole = await this.ensureRole('EMPLOYEE', tx);
 
-      const user = await this.database.one<{ id: string }>(
-        `
-          INSERT INTO users (
-            id,
-            email,
-            employee_id,
-            password_hash,
-            first_name,
-            last_name
-          )
-          VALUES ($1, $2, $3, $4, $5, $6)
-          RETURNING id
-        `,
-        [
-          randomUUID(),
-          employee.email.trim().toLowerCase(),
-          employee.id,
+      const [user] = await tx
+        .insert(users)
+        .values({
+          id: randomUUID(),
+          email: employee.email.trim().toLowerCase(),
+          employeeId: employee.id,
           passwordHash,
-          employee.firstName,
-          employee.lastName,
-        ],
-        tx,
-      );
+          firstName: employee.firstName,
+          lastName: employee.lastName,
+        })
+        .returning({ id: users.id });
 
-      await this.database.query(
-        `
-          INSERT INTO user_role_assignments (id, user_id, role_id)
-          VALUES ($1, $2, $3)
-        `,
-        [randomUUID(), user!.id, employeeRole.id],
-        tx,
-      );
+      await tx.insert(userRoleAssignments).values({
+        id: randomUUID(),
+        userId: user.id,
+        roleId: employeeRole.id,
+      });
 
-      return this.getUserWithRolesById(user!.id, tx);
+      const userWithRoles = await this.getUserWithRolesById(user.id, tx);
+      if (!userWithRoles) {
+        throw new NotFoundException('Employee account could not be loaded');
+      }
+
+      return userWithRoles;
     });
 
     return this.buildAuthPayload(createdUser);
@@ -314,25 +286,17 @@ export class AuthService {
       );
     }
 
-    return this.database.transaction(async (tx) => {
-      const employee = await this.database.one<{
-        id: string;
-        email: string;
-        firstName: string;
-        lastName: string;
-      }>(
-        `
-          SELECT
-            id,
-            email,
-            first_name AS "firstName",
-            last_name AS "lastName"
-          FROM employees
-          WHERE id = $1 AND is_active = TRUE
-        `,
-        [employeeId],
-        tx,
-      );
+    return this.database.drizzle.transaction(async (tx) => {
+      const [employee] = await tx
+        .select({
+          id: employees.id,
+          email: employees.email,
+          firstName: employees.firstName,
+          lastName: employees.lastName,
+        })
+        .from(employees)
+        .where(and(eq(employees.id, employeeId), eq(employees.isActive, true)))
+        .limit(1);
 
       if (!employee) {
         throw new NotFoundException('Employee not found or inactive');
@@ -341,11 +305,11 @@ export class AuthService {
       const employeeRole = await this.ensureRole('EMPLOYEE', tx);
       const staffRole = await this.ensureRole(roleKey, tx);
 
-      let account = await this.database.one<{ id: string }>(
-        `SELECT id FROM users WHERE employee_id = $1`,
-        [employeeId],
-        tx,
-      );
+      let [account] = await tx
+        .select({ id: users.id })
+        .from(users)
+        .where(eq(users.employeeId, employeeId))
+        .limit(1);
 
       if (!account) {
         if (!input.password?.trim()) {
@@ -354,11 +318,11 @@ export class AuthService {
           );
         }
 
-        const existingEmailAccount = await this.database.one<{ id: string }>(
-          `SELECT id FROM users WHERE LOWER(email) = LOWER($1)`,
-          [employee.email],
-          tx,
-        );
+        const [existingEmailAccount] = await tx
+          .select({ id: users.id })
+          .from(users)
+          .where(sql`LOWER(${users.email}) = LOWER(${employee.email})`)
+          .limit(1);
 
         if (existingEmailAccount) {
           throw new ConflictException(
@@ -366,29 +330,18 @@ export class AuthService {
           );
         }
 
-        account = await this.database.one<{ id: string }>(
-          `
-            INSERT INTO users (
-              id,
-              email,
-              employee_id,
-              password_hash,
-              first_name,
-              last_name
-            )
-            VALUES ($1, $2, $3, $4, $5, $6)
-            RETURNING id
-          `,
-          [
-            randomUUID(),
-            employee.email.trim().toLowerCase(),
-            employee.id,
-            await bcrypt.hash(input.password.trim(), 10),
-            employee.firstName,
-            employee.lastName,
-          ],
-          tx,
-        );
+        const [createdAccount] = await tx
+          .insert(users)
+          .values({
+            id: randomUUID(),
+            email: employee.email.trim().toLowerCase(),
+            employeeId: employee.id,
+            passwordHash: await bcrypt.hash(input.password.trim(), 10),
+            firstName: employee.firstName,
+            lastName: employee.lastName,
+          })
+          .returning({ id: users.id });
+        account = createdAccount;
       }
 
       await this.assignRoleIfMissing(account.id, employeeRole.id, tx);
@@ -460,12 +413,12 @@ export class AuthService {
     );
   }
 
-  private async ensureRole(key: SystemRoleKey, client?: any) {
-    const existingRole = await this.database.one<{ id: string }>(
-      `SELECT id FROM roles WHERE key = $1`,
-      [key],
-      client,
-    );
+  private async ensureRole(key: SystemRoleKey, db: any = this.database.drizzle) {
+    const [existingRole] = await db
+      .select({ id: roles.id })
+      .from(roles)
+      .where(eq(roles.key, key))
+      .limit(1);
 
     if (existingRole) {
       return existingRole;
@@ -473,103 +426,79 @@ export class AuthService {
 
     const details = SYSTEM_ROLE_DETAILS[key];
 
-    return this.database.one<{ id: string }>(
-      `
-        INSERT INTO roles (id, key, name, description)
-        VALUES ($1, $2, $3, $4)
-        RETURNING id
-      `,
-      [randomUUID(), key, details.name, details.description],
-      client,
-    );
+    const [createdRole] = await db
+      .insert(roles)
+      .values({
+        id: randomUUID(),
+        key,
+        name: details.name,
+        description: details.description,
+      })
+      .returning({ id: roles.id });
+
+    return createdRole;
   }
 
   private async assignRoleIfMissing(
     accountId: string,
     roleId: string,
-    client?: any,
+    db: any = this.database.drizzle,
   ) {
-    const existingAssignment = await this.database.one<{ id: string }>(
-      `
-        SELECT id
-        FROM user_role_assignments
-        WHERE user_id = $1 AND role_id = $2
-      `,
-      [accountId, roleId],
-      client,
-    );
+    const [existingAssignment] = await db
+      .select({ id: userRoleAssignments.id })
+      .from(userRoleAssignments)
+      .where(
+        and(
+          eq(userRoleAssignments.userId, accountId),
+          eq(userRoleAssignments.roleId, roleId),
+        ),
+      )
+      .limit(1);
 
     if (existingAssignment) {
       return existingAssignment;
     }
 
-    return this.database.one<{ id: string }>(
-      `
-        INSERT INTO user_role_assignments (id, user_id, role_id)
-        VALUES ($1, $2, $3)
-        RETURNING id
-      `,
-      [randomUUID(), accountId, roleId],
-      client,
-    );
+    const [createdAssignment] = await db
+      .insert(userRoleAssignments)
+      .values({
+        id: randomUUID(),
+        userId: accountId,
+        roleId,
+      })
+      .returning({ id: userRoleAssignments.id });
+
+    return createdAssignment;
   }
 
-  private async getUserWithRolesByEmail(email: string, client?: any) {
-    const user = client
-      ? await this.database.one<UserRow>(
-          `
-            SELECT
-              id,
-              email,
-              employee_id AS "employeeId",
-              password_hash AS "passwordHash",
-              first_name AS "firstName",
-              last_name AS "lastName",
-              is_active AS "isActive"
-            FROM users
-            WHERE email = $1
-          `,
-          [email],
-          client,
-        )
-      : await this.findUserByEmail(email);
+  private async getUserWithRolesByEmail(
+    email: string,
+    db: any = this.database.drizzle,
+  ) {
+    const user = await this.findUserByEmail(email, db);
 
     if (!user) {
       return null;
     }
 
-    return this.attachRoles(user, client);
+    return this.attachRoles(user, db);
   }
 
-  private async getUserWithRolesById(id: string, client?: any) {
-    const user = client
-      ? await this.database.one<UserRow>(
-          `
-            SELECT
-              id,
-              email,
-              employee_id AS "employeeId",
-              password_hash AS "passwordHash",
-              first_name AS "firstName",
-              last_name AS "lastName",
-              is_active AS "isActive"
-            FROM users
-            WHERE id = $1
-          `,
-          [id],
-          client,
-        )
-      : await this.findUserById(id);
+  private async getUserWithRolesById(
+    id: string,
+    db: any = this.database.drizzle,
+  ) {
+    const user = await this.findUserById(id, db);
 
     if (!user) {
       return null;
     }
 
-    return this.attachRoles(user, client);
+    return this.attachRoles(user, db);
   }
 
-  private async findUserByEmail(email: string) {
-    const [user] = await this.database.drizzle
+  private async findUserByEmail(email: string, db: any = this.database.drizzle) {
+    const [user] = await db
       .select({
         id: users.id,
         email: users.email,
@@ -586,8 +515,8 @@ export class AuthService {
     return user ?? null;
   }
 
-  private async findUserById(id: string) {
-    const [user] = await this.database.drizzle
+  private async findUserById(id: string, db: any = this.database.drizzle) {
+    const [user] = await db
       .select({
         id: users.id,
         email: users.email,
@@ -604,46 +533,15 @@ export class AuthService {
     return user ?? null;
   }
 
-  private async attachRoles(user: UserRow, client?: any): Promise<UserWithRoles> {
-    const roleRows = client
-      ? await this.database.many<RoleRow>(
-          `
-            SELECT r.key AS key
-            FROM roles r
-            INNER JOIN user_role_assignments ura ON ura.role_id = r.id
-            WHERE ura.user_id = $1
-            ORDER BY r.name ASC
-          `,
-          [user.id],
-          client,
-        )
-      : await this.findRolesForUser(user.id);
-
-    const employeeProfile = client
-      ? await this.database.one<{
-          employeeId: string | null;
-          employeeNumber: string | null;
-          departmentName: string | null;
-          designationTitle: string | null;
-          employeeStatus: string | null;
-        }>(
-          `
-            SELECT
-              e.id AS "employeeId",
-              e.employee_number AS "employeeNumber",
-              d.name AS "departmentName",
-              des.title AS "designationTitle",
-              e.status AS "employeeStatus"
-            FROM employees e
-            INNER JOIN departments d ON d.id = e.department_id
-            INNER JOIN designations des ON des.id = e.designation_id
-            WHERE e.id = $1
-            LIMIT 1
-          `,
-          [user.employeeId ?? null],
-          client,
-        )
-      : await this.findEmployeeProfile(user.employeeId ?? null);
+  private async attachRoles(
+    user: UserRow,
+    db: any = this.database.drizzle,
+  ): Promise<UserWithRoles> {
+    const roleRows = await this.findRolesForUser(user.id, db);
+    const employeeProfile = await this.findEmployeeProfile(
+      user.employeeId ?? null,
+      db,
+    );
 
     return {
       ...user,
@@ -654,8 +552,11 @@ export class AuthService {
     };
   }
 
-  private async findRolesForUser(userId: string): Promise<RoleRow[]> {
-    const rows = await this.database.drizzle
+  private async findRolesForUser(
+    userId: string,
+    db: any = this.database.drizzle,
+  ): Promise<RoleRow[]> {
+    const rows = await db
       .select({ key: roles.key })
       .from(roles)
       .innerJoin(userRoleAssignments, eq(userRoleAssignments.roleId, roles.id))
@@ -667,12 +568,15 @@ export class AuthService {
     }));
   }
 
-  private async findEmployeeProfile(employeeId: string | null) {
+  private async findEmployeeProfile(
+    employeeId: string | null,
+    db: any = this.database.drizzle,
+  ) {
     if (!employeeId) {
       return null;
     }
 
-    const [profile] = await this.database.drizzle
+    const [profile] = await db
       .select({
         employeeId: employees.id,
         employeeNumber: employees.employeeNumber,
