@@ -1,7 +1,8 @@
 # Rakss Phased Refactor And Migration Plan
 
-Status: planned
+Status: repo-verified through Phase 11; Phase 12 deferred
 Date: 2026-06-30
+Last updated: 2026-07-01
 Owner repo: `/home/nova/projects/work/rakss`
 Primary owner: Rakss product repository
 
@@ -73,6 +74,10 @@ rewrite. The migration should:
 - Runtime database behavior goes through
   `apps/backend/src/database/database.service.ts` with raw `pg` SQL plus
   explicit schema and seed modules.
+- Prisma migration checkpoint was completed on 2026-07-01. The checkpoint
+  concluded that `schema.prisma` is incomplete and column-incompatible with the
+  current snake_case Postgres schema, so Phase 12 is deferred. See
+  `docs/PRISMA_MIGRATION_CHECKPOINT.md`.
 - Prior proof showed web-admin build/lint, backend build, mobile typecheck, and
   backend integration tests can pass. Backend integration tests need access to
   the configured test Postgres host.
@@ -587,6 +592,8 @@ Stop gate:
 
 ### Phase 11: Prisma Migration Checkpoint
 
+Status: completed on 2026-07-01. See `docs/PRISMA_MIGRATION_CHECKPOINT.md`.
+
 Purpose: decide whether a real Prisma migration is worth starting.
 
 Required artifact before mutation:
@@ -614,6 +621,9 @@ Stop gate:
 - Explicit user approval required before Phase 12.
 
 ### Phase 12: Optional Prisma Migration
+
+Status: deferred by the 2026-07-01 checkpoint. Do not start until a later
+approval accepts the schema, service rewrite, backup, and rollout risks.
 
 Purpose: migrate to true Prisma ownership only if Phase 11 is approved.
 
