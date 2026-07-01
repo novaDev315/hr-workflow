@@ -1,43 +1,76 @@
 # Drizzle Migration
 
-Status: first backend slice implemented
+Status: runtime service migration complete
 Date: 2026-07-01
 
 ## Decision
 
-Rakss is moving toward Drizzle incrementally, not through a big-bang database
-rewrite.
+Rakss now uses Drizzle as the backend runtime query layer on top of the existing
+`pg` pool exposed by `DatabaseService.drizzle`.
 
-Raw SQL/Postgres remains the runtime schema owner for now:
+Raw SQL/Postgres remains the schema and seed owner until a separate versioned
+migration phase is approved:
 
 - `apps/backend/src/database/schema.ts`
 - `apps/backend/src/database/seeds.ts`
 - `apps/backend/src/database/database.service.ts`
 
-Drizzle is introduced as a sidecar query layer on the existing `pg` pool through
-`DatabaseService.drizzle`. This keeps raw SQL available for complex domains while
-allowing low-risk service methods to migrate one domain at a time.
+The old parked Prisma schema and unused Prisma backend packages were removed.
+Prisma is no longer a backend runtime dependency.
 
-## Implemented Slice
+## Migrated Runtime Domains
 
-The first migrated domain is org-reference:
+Runtime service reads, writes, joins, aggregates, and transactions now use
+Drizzle for:
 
-- `apps/backend/src/database/drizzle/schema.ts`
-- `apps/backend/src/org-reference/company-settings.service.ts`
-- `apps/backend/src/org-reference/department.service.ts`
-- `apps/backend/src/org-reference/designation.service.ts`
-- `apps/backend/src/__tests__/org-reference-drizzle.spec.ts`
+- org reference
+- auth/accounts
+- employee directory
+- locations and employee location assignments
+- attendance
+- leave
+- policy documents
+- recruitment
+- payroll
+- reports
+- health check
 
-This slice proves:
+Drizzle table mappings live in:
 
-- snake_case database columns mapped to TypeScript-friendly Drizzle fields
-- select/query filtering
-- insert with returning
-- update with `NOW()`
-- upsert with conflict handling
-- joins from designations to departments
-- duplicate conflict checks
-- real central-DB integration proof
+```text
+apps/backend/src/database/drizzle/schema.ts
+```
+
+## Remaining Raw SQL Boundary
+
+The remaining raw SQL is intentional infrastructure/schema ownership, not
+service query ownership:
+
+- startup schema creation in `schema.ts`
+- seed data in `seeds.ts`
+- the low-level `pg` helper methods retained on `DatabaseService`
+- integration-test fixture setup/cleanup where direct SQL is still used
+
+Application runtime services should not call:
+
+```text
+database.query(...)
+database.one(...)
+database.many(...)
+database.transaction(...)
+```
+
+Use this audit:
+
+```bash
+rg -n "database\.(query|one|many|transaction)\(" apps/backend/src \
+  --glob '!database/database.service.ts' \
+  --glob '!database/schema.ts' \
+  --glob '!database/seeds.ts' \
+  --glob '!**/__tests__/*.spec.ts'
+```
+
+Expected result: no matches.
 
 ## Tooling
 
@@ -56,42 +89,25 @@ Config:
 apps/backend/drizzle.config.ts
 ```
 
-The current Drizzle schema is intentionally partial. It should expand only when
-a backend domain is actually migrated and proven.
-
-`drizzle:check` currently validates that the sidecar schema can be exported as
-Postgres DDL. `drizzle:migration-check` requires committed Drizzle migration
-metadata under `apps/backend/drizzle/`, so it is reserved for the later
-versioned-migration phase.
-
-## Migration Rules
-
-- Keep `DatabaseService.query`, `one`, `many`, and `transaction` until all
-  domains that need them are migrated or consciously left as SQL.
-- Keep runtime schema creation in `schema.ts` until versioned migrations are
-  introduced as a separate phase.
-- Migrate one domain per slice.
-- Add or extend integration proof for each migrated domain.
-- Do not migrate reports/payroll first; they rely heavily on aggregate SQL and
-  should move only after simpler CRUD domains have established the pattern.
-
-Suggested next order:
-
-1. Auth role lookup helpers, excluding login/session mutation paths.
-2. Employee read helpers.
-3. Location assignment CRUD.
-4. Leave type CRUD.
-5. Recruitment read/query helpers.
-6. Payroll/reporting only after the simpler domains are stable.
+`drizzle:check` validates that the mapped schema can be exported as Postgres
+DDL. `drizzle:migration-check` is reserved for the later versioned-migration
+phase.
 
 ## Proof
 
-Minimum proof for each slice:
+Proof used during the migration:
 
 ```bash
 bun run build:backend
 bun run --cwd apps/backend test:unit
-bun run test:backend
+bun run --cwd apps/backend drizzle:check
+NODE_ENV=test bun run --cwd apps/backend test -- mobile-self-service.spec.ts --runInBand
+NODE_ENV=test bun run --cwd apps/backend test -- recruitment-drizzle.spec.ts --runInBand
+NODE_ENV=test bun run --cwd apps/backend test -- policy-drizzle.spec.ts --runInBand
+NODE_ENV=test bun run --cwd apps/backend test -- reports-drizzle.spec.ts --runInBand
 ```
 
-For deployable backend changes, run the live admin lifecycle sweep after deploy.
+The full mobile suite is still the broadest central-DB proof, but it is
+infrastructure-bound and can time out in `AppModule`/GraphQL setup when the
+central database is slow. Focused service integration specs exist for narrower
+Drizzle migration proof.

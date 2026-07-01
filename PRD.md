@@ -1546,7 +1546,7 @@ backend:
   microservices:
     language: "Node.js / TypeScript"
     framework: "NestJS"
-    orm: "Prisma"
+    orm: "Drizzle ORM over pg"
     message_queue: "RabbitMQ"
 
   database:

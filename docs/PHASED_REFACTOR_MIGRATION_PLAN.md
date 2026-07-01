@@ -69,15 +69,14 @@ rewrite. The migration should:
 - Existing UI primitives include `button`, `card`, `form-drawer`, `input`,
   `label`, `metric-card`, `notice`, and `status-badge`.
 - Backend package now exposes raw SQL/Postgres schema verification scripts and
-  still keeps `apps/backend/prisma/schema.prisma` parked for the later Prisma
-  checkpoint.
+  Drizzle runtime query tooling. The parked Prisma schema was removed after the
+  Drizzle migration.
 - Runtime database behavior goes through
   `apps/backend/src/database/database.service.ts` with raw `pg` SQL plus
   explicit schema and seed modules.
-- Prisma migration checkpoint was completed on 2026-07-01. The checkpoint
-  concluded that `schema.prisma` is incomplete and column-incompatible with the
-  current snake_case Postgres schema, so Phase 12 is deferred. See
-  `docs/PRISMA_MIGRATION_CHECKPOINT.md`.
+- Prisma migration checkpoint was completed on 2026-07-01 and later superseded
+  by the Drizzle runtime query migration. See
+  `docs/PRISMA_MIGRATION_CHECKPOINT.md` and `docs/DRIZZLE_MIGRATION.md`.
 - Prior proof showed web-admin build/lint, backend build, mobile typecheck, and
   backend integration tests can pass. Backend integration tests need access to
   the configured test Postgres host.
@@ -188,10 +187,10 @@ user approval.
 - RAKSS-P8: Backend | Fast unit test lane | risk=low |
   parallel=no | actions=edit/test | proof=fast unit command and existing
   integration command | stop=unit setup conflicts with integration setup
-- RAKSS-P9: Backend | Prisma migration checkpoint | risk=high |
+- RAKSS-P9: Backend | Historical Prisma migration checkpoint | risk=high |
   parallel=no | actions=inspect/plan first | proof=schema diff and migration
   risk review | stop=needs explicit approval
-- RAKSS-P10: Backend | Optional Prisma migration | risk=high |
+- RAKSS-P10: Backend | Superseded Prisma migration option | risk=high |
   parallel=no | actions=edit/test only after approval | proof=module-by-module
   build/test/integration proof | stop=any service regression
 
@@ -211,7 +210,7 @@ Files to inspect:
 - `apps/backend/src/database/database.service.ts`
 - `apps/backend/src/database/schema.ts`
 - `apps/backend/src/database/seeds.ts`
-- `apps/backend/prisma/schema.prisma`
+- former `apps/backend/prisma/schema.prisma`
 - `docs/IMPLEMENTATION_STATUS.md`
 - `scripts/e2e/run-rakss-ui-lifecycle.mjs`
 - `scripts/e2e/rakss-ui-lifecycle-sweep.js`
@@ -600,7 +599,7 @@ Required artifact before mutation:
 
 - A schema comparison showing:
   - current raw SQL tables/columns/indexes/constraints/seeds
-  - current `schema.prisma` coverage
+  - former `schema.prisma` coverage
   - missing Prisma models/enums/relations
   - service modules that would need query rewrites
   - migration/deploy risk
@@ -622,21 +621,23 @@ Stop gate:
 
 ### Phase 12: Optional Prisma Migration
 
-Status: deferred by the 2026-07-01 checkpoint. Do not start until a later
-approval accepts the schema, service rewrite, backup, and rollout risks.
+Status: superseded by the 2026-07-01 Drizzle runtime query migration. Do not
+start until a later approval accepts the schema, service rewrite, backup, and
+rollout risks.
 
-Purpose: migrate to true Prisma ownership only if Phase 11 is approved.
+Purpose: historical optional path for true Prisma ownership. This path is no
+longer active because the approved migration went to Drizzle instead.
 
 Execution rules:
 
-- Migrate one backend domain at a time.
-- Keep raw SQL fallback until the migrated domain passes tests.
-- Do not combine Prisma migration with UI page splits.
-- Commit each domain separately if commits are requested.
+- Do not execute from the current tree.
+- Reintroduce Prisma only through a new, separately approved plan.
+- Keep Drizzle as the runtime query layer unless that new plan explicitly
+  replaces it.
 
-Suggested order:
+Historical suggested order, now replaced by the Drizzle migration:
 
-1. Auth/users/roles, because schema.prisma already partially models this area.
+1. Auth/users/roles.
 2. Org reference: company settings, departments, designations.
 3. Employee.
 4. Location/attendance.
@@ -676,8 +677,8 @@ Potential API changes:
 
 Potential filesystem/interface changes:
 
-- Backend database service/module imports change from `prisma` naming to
-  `database` naming.
+- Backend database service/module imports changed from historical `prisma`
+  naming to `database` naming.
 - Web-admin route pages become wrappers around feature modules.
 - Feature-local GraphQL files become the standard import source for operations.
 
@@ -698,7 +699,7 @@ payload capabilities -> feature modules with local GraphQL/types/hooks -> pages
 as thin route wrappers
 ```
 
-Optional later Prisma target:
+Historical optional Prisma target, not active after the Drizzle migration:
 
 ```text
 Prisma schema + generated client -> service domains -> GraphQL resolvers ->

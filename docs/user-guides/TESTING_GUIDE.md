@@ -245,17 +245,18 @@ open coverage/index.html
 ```typescript
 import { Test, TestingModule } from '@nestjs/testing';
 import { YourService } from './your.service';
-import { PrismaService } from '../prisma/prisma.service';
+import { DatabaseService } from '../database/database.service';
 
 describe('YourService', () => {
   let service: YourService;
-  let prismaService: PrismaService;
+  let database: DatabaseService;
 
-  const mockPrismaService = {
-    model: {
-      create: jest.fn(),
-      findUnique: jest.fn(),
-      findMany: jest.fn(),
+  const mockDatabaseService = {
+    drizzle: {
+      select: jest.fn(),
+      insert: jest.fn(),
+      update: jest.fn(),
+      delete: jest.fn(),
     },
   };
 
@@ -264,23 +265,28 @@ describe('YourService', () => {
       providers: [
         YourService,
         {
-          provide: PrismaService,
-          useValue: mockPrismaService,
+          provide: DatabaseService,
+          useValue: mockDatabaseService,
         },
       ],
     }).compile();
 
     service = module.get<YourService>(YourService);
-    prismaService = module.get<PrismaService>(PrismaService);
+    database = module.get<DatabaseService>(DatabaseService);
   });
 
   it('should be defined', () => {
     expect(service).toBeDefined();
+    expect(database).toBe(mockDatabaseService);
   });
 
   describe('methodName', () => {
     it('should do something', async () => {
-      mockPrismaService.model.create.mockResolvedValue({ id: '123' });
+      mockDatabaseService.drizzle.insert.mockReturnValue({
+        values: jest.fn().mockReturnValue({
+          returning: jest.fn().mockResolvedValue([{ id: '123' }]),
+        }),
+      });
       const result = await service.methodName();
       expect(result).toEqual({ id: '123' });
     });

@@ -1,29 +1,34 @@
 # Prisma Migration Checkpoint
 
-Status: completed checkpoint; Phase 12 migration deferred
+Status: superseded by Drizzle runtime migration
 Date: 2026-07-01
 Owner repo: `/home/nova/projects/work/rakss`
 
 ## Verdict
 
-Do not start the optional Prisma ownership migration from the current tree.
+Do not start the optional Prisma ownership migration from this tree.
+
+This checkpoint is now historical. The later Drizzle migration removed the
+parked Prisma schema and unused Prisma backend packages. Drizzle is the backend
+runtime query layer; raw SQL/Postgres remains the schema and seed owner until a
+separate versioned-migration phase is approved.
 
 The current runtime database owner is explicit raw SQL/Postgres through
-`DatabaseService`, `schema.ts`, and `seeds.ts`. The parked Prisma schema is not
-ready to become runtime truth: it covers only auth and org-reference tables, it
-does not map the real snake_case column names, and it does not model most of the
-tables currently used by the backend.
+`DatabaseService`, `schema.ts`, and `seeds.ts`. The former parked Prisma schema
+was not ready to become runtime truth: it covered only auth and org-reference
+tables, did not map the real snake_case column names, and did not model most of
+the tables currently used by the backend.
 
-Phase 12 is therefore closed as deferred, not executed. A future Prisma attempt
-needs a separate domain-by-domain migration plan, backups, and proof after each
-domain.
+Phase 12 is therefore closed as superseded, not executed. A future Prisma
+attempt would need to reintroduce Prisma deliberately with a separate
+domain-by-domain migration plan, backups, and proof after each domain.
 
 ## Sources Inspected
 
 - `apps/backend/src/database/database.service.ts`
 - `apps/backend/src/database/schema.ts`
 - `apps/backend/src/database/seeds.ts`
-- `apps/backend/prisma/schema.prisma`
+- former `apps/backend/prisma/schema.prisma` checkpoint state
 - Backend service modules under `apps/backend/src/**`
 - `apps/backend/package.json`
 - `package.json`
@@ -67,7 +72,7 @@ Seed data is not represented by Prisma migrations:
 
 ## Prisma Schema Coverage Gaps
 
-`apps/backend/prisma/schema.prisma` currently defines:
+The removed `apps/backend/prisma/schema.prisma` checkpoint state defined:
 
 - `SystemRoleKey`
 - `User`
@@ -93,7 +98,7 @@ Examples:
   Postgres has `department_id`.
 - Raw SQL has `users.employee_id`; Prisma `User` has no employee relation.
 
-The parked schema can validate syntactically but is not a usable generated
+That parked schema could validate syntactically but was not a usable generated
 client contract for the existing database.
 
 ## Service Rewrite Surface
@@ -145,22 +150,22 @@ Risk is high for the current tree because:
 
 ## Phase 12 Decision
 
-Phase 12 is not executed from this checkpoint.
+Phase 12 is not executed from this checkpoint and was superseded by the Drizzle
+runtime query migration.
 
-The safe closeout for the original phased plan is:
+The safe closeout for the original phased plan became:
 
-1. Keep raw SQL/Postgres ownership as the runtime truth.
-2. Keep `schema.prisma` parked as a non-runtime reference until a separate
-   Prisma effort is approved.
-3. Do not introduce a Prisma client into backend services in the same work item
-   as this checkpoint.
+1. Keep raw SQL/Postgres ownership as schema and seed truth.
+2. Use Drizzle for backend runtime service queries.
+3. Remove the parked Prisma schema and unused Prisma backend packages.
+4. Do not reintroduce Prisma without a new approval and migration plan.
 
 ## Future Prisma Start Gate
 
 A future Prisma migration can start only after these are true:
 
-- `schema.prisma` fully covers all raw SQL tables, indexes, constraints, and
-  relations with correct `@map(...)` and `@@map(...)` annotations.
+- A new `schema.prisma` fully covers all raw SQL tables, indexes, constraints,
+  and relations with correct `@map(...)` and `@@map(...)` annotations.
 - Seed behavior has an explicit Prisma-compatible owner or remains clearly owned
   by raw SQL.
 - A Prisma client service/module exists without changing existing runtime

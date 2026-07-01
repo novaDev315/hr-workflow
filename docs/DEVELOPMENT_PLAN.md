@@ -5,6 +5,11 @@
 **Project Duration**: 24 weeks (6 months)
 **Target Deployment**: Q2 2026
 
+> Status note, 2026-07-01: Prisma-oriented package lists and sample service
+> snippets in this historical plan are superseded by the Drizzle runtime
+> migration. Current backend database ownership is documented in
+> `docs/DRIZZLE_MIGRATION.md`.
+
 ## Table of Contents
 
 1. [Executive Summary](#executive-summary)
@@ -388,7 +393,7 @@ Employee Service (Core - No Dependencies)
     "typeorm": "^0.3.17",
     "pg": "^8.11.0",
 
-    "@prisma/client": "^5.7.0",
+    "drizzle-orm": "^0.45.0",
 
     "@nestjs/config": "^3.1.0",
     "joi": "^17.11.0",
@@ -407,7 +412,7 @@ Employee Service (Core - No Dependencies)
     "date-fns": "^3.0.0"
   },
   "devDependencies": {
-    "prisma": "^5.7.0",
+    "drizzle-kit": "^0.31.0",
     "@types/node": "^20.10.0",
     "typescript": "^5.3.0"
   }
@@ -416,7 +421,7 @@ Employee Service (Core - No Dependencies)
 
 **Key Features**:
 - NestJS for enterprise-grade architecture
-- Prisma ORM for type-safe database queries
+- Drizzle ORM for type-safe database queries
 - RabbitMQ for event-driven communication
 - Bull for job queues
 - Redis for caching and session management
@@ -2854,9 +2859,9 @@ jobs:
 - **Rationale**: On-premise deployment requirement, simpler operations
 - **Consequences**: Limited auto-scaling, manual orchestration
 
-**ADR-004: Prisma as ORM**
-- **Decision**: Use Prisma instead of TypeORM
-- **Rationale**: Better TypeScript support, type safety, migration tooling
+**ADR-004: Drizzle as Runtime Query Layer**
+- **Decision**: Use Drizzle over the PostgreSQL `pg` pool instead of Prisma or TypeORM
+- **Rationale**: Better fit for the existing snake_case schema and incremental service migration
 - **Consequences**: Learning curve for team
 
 **ADR-005: React 19 for Web CP**

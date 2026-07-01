@@ -50,7 +50,7 @@ The modular monolith direction optimizes for:
 - `apps/backend`
   - Single NestJS backend
   - Single GraphQL endpoint
-  - Single Prisma client and migration path
+  - Single Drizzle runtime query layer over PostgreSQL
   - One auth model
   - Bounded modules inside one process
 - `apps/web-admin`
@@ -81,7 +81,7 @@ Recommended internal module layout:
 
 - `src/auth`
 - `src/common`
-- `src/prisma`
+- `src/database`
 - `src/org-reference`
 - `src/employee`
 - `src/location`
@@ -329,21 +329,22 @@ Required behavior:
 
 ## Data Model Strategy
 
-## Single Prisma Ownership
+## Single Database Ownership
 
-The rebuild uses one Prisma schema for the entire backend.
+The rebuild uses one PostgreSQL schema owner and one Drizzle runtime query layer
+for the entire backend.
 
 Recommended approach:
 
-- create one new schema in `apps/backend/prisma/schema.prisma`
-- do not preserve the current service-by-service Prisma ownership model
+- keep schema and seed ownership centralized in `apps/backend/src/database`
+- keep service queries on Drizzle through `DatabaseService.drizzle`
 - do not preserve the current multi-schema database split as a product requirement
 
 ### Migration Rules
 
 - one migration command
 - one seed path
-- one Prisma client
+- one Drizzle database mapping
 - one test database setup flow
 
 ### Required Core Models
