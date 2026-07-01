@@ -6,7 +6,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { randomUUID } from 'crypto';
-import { and, asc, desc, eq, ilike, like, or, sql, SQL } from 'drizzle-orm';
+import { and, asc, desc, eq, ilike, like, ne, or, sql, SQL } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/pg-core';
 import { AuthenticatedUser } from '../common/current-user.decorator';
 import {
@@ -131,32 +131,39 @@ export class EmployeeService {
   async create(currentUser: AuthenticatedUser, input: CreateEmployeeInput) {
     assertAccountManagerAccess(currentUser.roles);
     const normalizedEmail = input.email.trim().toLowerCase();
-    const existing = await this.database.one<{ id: string }>(
-      `SELECT id FROM employees WHERE email = $1`,
-      [normalizedEmail],
-    );
+    const [existing] = await this.database.drizzle
+      .select({ id: employees.id })
+      .from(employees)
+      .where(eq(employees.email, normalizedEmail))
+      .limit(1);
 
     if (existing) {
       throw new ConflictException('Employee with this email already exists');
     }
 
-    const department = await this.database.one<{ id: string }>(
-      `SELECT id FROM departments WHERE id = $1 AND is_active = TRUE`,
-      [input.departmentId],
-    );
+    const [department] = await this.database.drizzle
+      .select({ id: departments.id })
+      .from(departments)
+      .where(and(eq(departments.id, input.departmentId), eq(departments.isActive, true)))
+      .limit(1);
 
     if (!department) {
       throw new BadRequestException('Department not found or inactive');
     }
 
-    const designation = await this.database.one<{ id: string; departmentId: string }>(
-      `
-        SELECT id, department_id AS "departmentId"
-        FROM designations
-        WHERE id = $1 AND is_active = TRUE
-      `,
-      [input.designationId],
-    );
+    const [designation] = await this.database.drizzle
+      .select({
+        id: designations.id,
+        departmentId: designations.departmentId,
+      })
+      .from(designations)
+      .where(
+        and(
+          eq(designations.id, input.designationId),
+          eq(designations.isActive, true),
+        ),
+      )
+      .limit(1);
 
     if (!designation) {
       throw new BadRequestException('Designation not found or inactive');
@@ -169,10 +176,11 @@ export class EmployeeService {
     }
 
     if (input.supervisorId) {
-      const supervisor = await this.database.one<{ id: string }>(
-        `SELECT id FROM employees WHERE id = $1`,
-        [input.supervisorId],
-      );
+      const [supervisor] = await this.database.drizzle
+        .select({ id: employees.id })
+        .from(employees)
+        .where(eq(employees.id, input.supervisorId))
+        .limit(1);
 
       if (!supervisor) {
         throw new BadRequestException('Supervisor not found');
@@ -180,44 +188,26 @@ export class EmployeeService {
     }
 
     const employeeNumber = await this.generateEmployeeNumber();
-    const created = await this.database.one<{ id: string }>(
-      `
-        INSERT INTO employees (
-          id,
-          employee_number,
-          first_name,
-          last_name,
-          email,
-          phone,
-          department_id,
-          designation_id,
-          supervisor_id,
-          employment_type,
-          join_date,
-          status,
-          is_active
-        )
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
-        RETURNING id
-      `,
-      [
-        randomUUID(),
+    const [created] = await this.database.drizzle
+      .insert(employees)
+      .values({
+        id: randomUUID(),
         employeeNumber,
-        input.firstName.trim(),
-        input.lastName.trim(),
-        normalizedEmail,
-        input.phone?.trim() ?? null,
-        input.departmentId,
-        input.designationId,
-        input.supervisorId ?? null,
-        input.employmentType?.trim().toUpperCase() ?? 'FULL_TIME',
-        input.joinDate?.trim() ?? new Date().toISOString().slice(0, 10),
-        input.status?.trim().toUpperCase() ?? 'ACTIVE',
-        true,
-      ],
-    );
+        firstName: input.firstName.trim(),
+        lastName: input.lastName.trim(),
+        email: normalizedEmail,
+        phone: input.phone?.trim() ?? null,
+        departmentId: input.departmentId,
+        designationId: input.designationId,
+        supervisorId: input.supervisorId ?? null,
+        employmentType: input.employmentType?.trim().toUpperCase() ?? 'FULL_TIME',
+        joinDate: input.joinDate?.trim() ?? new Date().toISOString().slice(0, 10),
+        status: input.status?.trim().toUpperCase() ?? 'ACTIVE',
+        isActive: true,
+      })
+      .returning({ id: employees.id });
 
-    return this.findOne(currentUser, created!.id);
+    return this.findOne(currentUser, created.id);
   }
 
   async update(currentUser: AuthenticatedUser, input: UpdateEmployeeInput) {
@@ -229,10 +219,11 @@ export class EmployeeService {
     const designationId = input.designationId ?? existing.designationId;
 
     if (normalizedEmail !== existing.email) {
-      const duplicate = await this.database.one<{ id: string }>(
-        `SELECT id FROM employees WHERE email = $1 AND id <> $2`,
-        [normalizedEmail, input.id],
-      );
+      const [duplicate] = await this.database.drizzle
+        .select({ id: employees.id })
+        .from(employees)
+        .where(and(eq(employees.email, normalizedEmail), ne(employees.id, input.id)))
+        .limit(1);
 
       if (duplicate) {
         throw new ConflictException('Employee with this email already exists');
@@ -242,38 +233,30 @@ export class EmployeeService {
     await this.assertDepartmentAndDesignation(departmentId, designationId);
     await this.assertSupervisor(input.supervisorId ?? existing.supervisorId, input.id);
 
-    await this.database.query(
-      `
-        UPDATE employees
-        SET
-          first_name = $2,
-          last_name = $3,
-          email = $4,
-          phone = $5,
-          department_id = $6,
-          designation_id = $7,
-          supervisor_id = $8,
-          employment_type = $9,
-          join_date = $10,
-          status = $11,
-          is_active = CASE WHEN $11 = 'INACTIVE' THEN FALSE ELSE is_active END,
-          updated_at = NOW()
-        WHERE id = $1
-      `,
-      [
-        input.id,
-        input.firstName?.trim() ?? existing.firstName,
-        input.lastName?.trim() ?? existing.lastName,
-        normalizedEmail,
-        input.phone !== undefined ? input.phone?.trim() || null : existing.phone,
+    const status = input.status?.trim().toUpperCase() ?? existing.status;
+
+    await this.database.drizzle
+      .update(employees)
+      .set({
+        firstName: input.firstName?.trim() ?? existing.firstName,
+        lastName: input.lastName?.trim() ?? existing.lastName,
+        email: normalizedEmail,
+        phone:
+          input.phone !== undefined ? input.phone?.trim() || null : existing.phone,
         departmentId,
         designationId,
-        input.supervisorId !== undefined ? input.supervisorId || null : existing.supervisorId,
-        input.employmentType?.trim().toUpperCase() ?? existing.employmentType,
-        input.joinDate?.trim() ?? existing.joinDate,
-        input.status?.trim().toUpperCase() ?? existing.status,
-      ],
-    );
+        supervisorId:
+          input.supervisorId !== undefined
+            ? input.supervisorId || null
+            : existing.supervisorId,
+        employmentType:
+          input.employmentType?.trim().toUpperCase() ?? existing.employmentType,
+        joinDate: input.joinDate?.trim() ?? existing.joinDate,
+        status,
+        isActive: status === 'INACTIVE' ? false : existing.isActive,
+        updatedAt: sql`NOW()`,
+      })
+      .where(eq(employees.id, input.id));
 
     return this.findOne(currentUser, input.id);
   }
@@ -283,67 +266,45 @@ export class EmployeeService {
     await this.findRawEmployee(input.id);
     const exitDate = input.exitDate?.trim() || new Date().toISOString().slice(0, 10);
 
-    await this.database.transaction(async (client) => {
-      await this.database.query(
-        `
-          UPDATE employees
-          SET
-            status = 'INACTIVE',
-            is_active = FALSE,
-            exit_date = $2,
-            updated_at = NOW()
-          WHERE id = $1
-        `,
-        [input.id, exitDate],
-        client,
-      );
+    await this.database.drizzle.transaction(async (tx) => {
+      await tx
+        .update(employees)
+        .set({
+          status: 'INACTIVE',
+          isActive: false,
+          exitDate,
+          updatedAt: sql`NOW()`,
+        })
+        .where(eq(employees.id, input.id));
 
-      await this.database.query(
-        `
-          UPDATE users
-          SET is_active = FALSE, updated_at = NOW()
-          WHERE employee_id = $1
-        `,
-        [input.id],
-        client,
-      );
+      await tx
+        .update(users)
+        .set({ isActive: false, updatedAt: sql`NOW()` })
+        .where(eq(users.employeeId, input.id));
     });
 
     return this.findOne(currentUser, input.id);
   }
 
   private async findRawEmployee(id: string) {
-    const employee = await this.database.one<{
-      id: string;
-      firstName: string;
-      lastName: string;
-      email: string;
-      phone: string | null;
-      departmentId: string;
-      designationId: string;
-      supervisorId: string | null;
-      employmentType: string;
-      joinDate: string;
-      status: string;
-    }>(
-      `
-        SELECT
-          id,
-          first_name AS "firstName",
-          last_name AS "lastName",
-          email,
-          phone,
-          department_id AS "departmentId",
-          designation_id AS "designationId",
-          supervisor_id AS "supervisorId",
-          employment_type AS "employmentType",
-          join_date::text AS "joinDate",
-          status
-        FROM employees
-        WHERE id = $1
-      `,
-      [id],
-    );
+    const [employee] = await this.database.drizzle
+      .select({
+        id: employees.id,
+        firstName: employees.firstName,
+        lastName: employees.lastName,
+        email: employees.email,
+        phone: employees.phone,
+        departmentId: employees.departmentId,
+        designationId: employees.designationId,
+        supervisorId: employees.supervisorId,
+        employmentType: employees.employmentType,
+        joinDate: sql<string>`${employees.joinDate}::text`,
+        status: employees.status,
+        isActive: employees.isActive,
+      })
+      .from(employees)
+      .where(eq(employees.id, id))
+      .limit(1);
 
     if (!employee) {
       throw new NotFoundException(`Employee with ID ${id} not found`);
@@ -356,23 +317,26 @@ export class EmployeeService {
     departmentId: string,
     designationId: string,
   ) {
-    const department = await this.database.one<{ id: string }>(
-      `SELECT id FROM departments WHERE id = $1 AND is_active = TRUE`,
-      [departmentId],
-    );
+    const [department] = await this.database.drizzle
+      .select({ id: departments.id })
+      .from(departments)
+      .where(and(eq(departments.id, departmentId), eq(departments.isActive, true)))
+      .limit(1);
 
     if (!department) {
       throw new BadRequestException('Department not found or inactive');
     }
 
-    const designation = await this.database.one<{ id: string; departmentId: string }>(
-      `
-        SELECT id, department_id AS "departmentId"
-        FROM designations
-        WHERE id = $1 AND is_active = TRUE
-      `,
-      [designationId],
-    );
+    const [designation] = await this.database.drizzle
+      .select({
+        id: designations.id,
+        departmentId: designations.departmentId,
+      })
+      .from(designations)
+      .where(
+        and(eq(designations.id, designationId), eq(designations.isActive, true)),
+      )
+      .limit(1);
 
     if (!designation) {
       throw new BadRequestException('Designation not found or inactive');
@@ -394,10 +358,11 @@ export class EmployeeService {
       throw new BadRequestException('Employee cannot supervise themselves');
     }
 
-    const supervisor = await this.database.one<{ id: string }>(
-      `SELECT id FROM employees WHERE id = $1 AND is_active = TRUE`,
-      [supervisorId],
-    );
+    const [supervisor] = await this.database.drizzle
+      .select({ id: employees.id })
+      .from(employees)
+      .where(and(eq(employees.id, supervisorId), eq(employees.isActive, true)))
+      .limit(1);
 
     if (!supervisor) {
       throw new BadRequestException('Supervisor not found or inactive');
