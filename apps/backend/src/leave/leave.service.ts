@@ -6,16 +6,35 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { randomUUID } from 'crypto';
+import {
+  and,
+  asc,
+  desc,
+  eq,
+  gte,
+  inArray,
+  lte,
+  ne,
+  or,
+  sql,
+  SQL,
+} from 'drizzle-orm';
+import { alias } from 'drizzle-orm/pg-core';
 import { DatabaseService } from '../database/database.service';
+import {
+  employees,
+  leaveRequests as leaveRequestsTable,
+  leaveTypes as leaveTypesTable,
+  users,
+} from '../database/drizzle/schema';
 import { AuthenticatedUser } from '../common/current-user.decorator';
 import {
   ACCOUNT_MANAGER_ROLE_KEYS,
   ADMIN_ACCESS_ROLE_KEYS,
 } from '../common/system-roles';
 import {
-  buildEmployeeVisibilityClause,
   canAccessEmployeeWithinScope,
-  hasGlobalAdminAccess,
+  EmployeeVisibilityScope,
   resolveEmployeeVisibilityScope,
 } from '../common/access-control';
 import {
@@ -65,25 +84,18 @@ interface LeaveBalanceRow extends LeaveTypeRow {
   usedDays: number | null;
 }
 
+const leaveReviewers = alias(users, 'leave_reviewers');
+
 @Injectable()
 export class LeaveService {
   constructor(private readonly database: DatabaseService) {}
 
   async leaveTypes() {
-    const rows = await this.database.many<LeaveTypeRow>(
-      `
-        SELECT
-          id,
-          code,
-          name,
-          default_days AS "defaultDays",
-          description,
-          is_active AS "isActive"
-        FROM leave_types
-        WHERE is_active = TRUE
-        ORDER BY name ASC
-      `,
-    );
+    const rows = await this.database.drizzle
+      .select(this.leaveTypeSelectFields())
+      .from(leaveTypesTable)
+      .where(eq(leaveTypesTable.isActive, true))
+      .orderBy(asc(leaveTypesTable.name));
 
     return rows.map((row) => this.mapLeaveType(row));
   }
@@ -102,38 +114,34 @@ export class LeaveService {
       throw new BadRequestException('Default days must be greater than zero');
     }
 
-    const existing = await this.database.one<{ id: string }>(
-      `SELECT id FROM leave_types WHERE code = $1 OR LOWER(name) = LOWER($2)`,
-      [code, name],
-    );
+    const [existing] = await this.database.drizzle
+      .select({ id: leaveTypesTable.id })
+      .from(leaveTypesTable)
+      .where(
+        or(
+          eq(leaveTypesTable.code, code),
+          sql`LOWER(${leaveTypesTable.name}) = LOWER(${name})`,
+        ),
+      )
+      .limit(1);
 
     if (existing) {
       throw new ConflictException('A leave type with this code or name already exists');
     }
 
-    const created = await this.database.one<{ id: string }>(
-      `
-        INSERT INTO leave_types (
-          id,
-          code,
-          name,
-          default_days,
-          description,
-          is_active
-        )
-        VALUES ($1, $2, $3, $4, $5, TRUE)
-        RETURNING id
-      `,
-      [
-        randomUUID(),
+    const [created] = await this.database.drizzle
+      .insert(leaveTypesTable)
+      .values({
+        id: randomUUID(),
         code,
         name,
         defaultDays,
-        input.description?.trim() ?? null,
-      ],
-    );
+        description: input.description?.trim() ?? null,
+        isActive: true,
+      })
+      .returning({ id: leaveTypesTable.id });
 
-    return this.findLeaveType(created!.id);
+    return this.findLeaveType(created.id);
   }
 
   async updateLeaveType(
@@ -151,40 +159,37 @@ export class LeaveService {
       throw new BadRequestException('Default days must be greater than zero');
     }
 
-    const duplicate = await this.database.one<{ id: string }>(
-      `
-        SELECT id
-        FROM leave_types
-        WHERE (code = $1 OR LOWER(name) = LOWER($2)) AND id <> $3
-      `,
-      [code, name, input.id],
-    );
+    const [duplicate] = await this.database.drizzle
+      .select({ id: leaveTypesTable.id })
+      .from(leaveTypesTable)
+      .where(
+        and(
+          or(
+            eq(leaveTypesTable.code, code),
+            sql`LOWER(${leaveTypesTable.name}) = LOWER(${name})`,
+          ),
+          ne(leaveTypesTable.id, input.id),
+        ),
+      )
+      .limit(1);
 
     if (duplicate) {
       throw new ConflictException('A leave type with this code or name already exists');
     }
 
-    await this.database.query(
-      `
-        UPDATE leave_types
-        SET
-          code = $2,
-          name = $3,
-          default_days = $4,
-          description = $5,
-          updated_at = NOW()
-        WHERE id = $1
-      `,
-      [
-        input.id,
+    await this.database.drizzle
+      .update(leaveTypesTable)
+      .set({
         code,
         name,
         defaultDays,
-        input.description !== undefined
-          ? input.description?.trim() || null
-          : existing.description,
-      ],
-    );
+        description:
+          input.description !== undefined
+            ? input.description?.trim() || null
+            : existing.description,
+        updatedAt: sql`NOW()`,
+      })
+      .where(eq(leaveTypesTable.id, input.id));
 
     return this.findLeaveType(input.id);
   }
@@ -196,14 +201,10 @@ export class LeaveService {
     this.assertCanManageLeavePolicies(currentUser.roles);
     await this.findLeaveType(input.id);
 
-    await this.database.query(
-      `
-        UPDATE leave_types
-        SET is_active = FALSE, updated_at = NOW()
-        WHERE id = $1
-      `,
-      [input.id],
-    );
+    await this.database.drizzle
+      .update(leaveTypesTable)
+      .set({ isActive: false, updatedAt: sql`NOW()` })
+      .where(eq(leaveTypesTable.id, input.id));
 
     return this.findLeaveType(input.id);
   }
@@ -220,46 +221,43 @@ export class LeaveService {
       throw new BadRequestException('End date must be on or after start date');
     }
 
-    const leaveType = await this.database.one<LeaveTypeRow>(
-      `
-        SELECT
-          id,
-          code,
-          name,
-          default_days AS "defaultDays",
-          description,
-          is_active AS "isActive"
-        FROM leave_types
-        WHERE id = $1 AND is_active = TRUE
-      `,
-      [input.leaveTypeId],
-    );
+    const [leaveType] = await this.database.drizzle
+      .select(this.leaveTypeSelectFields())
+      .from(leaveTypesTable)
+      .where(
+        and(
+          eq(leaveTypesTable.id, input.leaveTypeId),
+          eq(leaveTypesTable.isActive, true),
+        ),
+      )
+      .limit(1);
 
     if (!leaveType) {
       throw new NotFoundException('Leave type not found or inactive');
     }
 
-    const employee = await this.database.one<{ id: string }>(
-      `SELECT id FROM employees WHERE id = $1 AND is_active = TRUE`,
-      [employeeId],
-    );
+    const [employee] = await this.database.drizzle
+      .select({ id: employees.id })
+      .from(employees)
+      .where(and(eq(employees.id, employeeId), eq(employees.isActive, true)))
+      .limit(1);
 
     if (!employee) {
       throw new NotFoundException('Employee not found or inactive');
     }
 
-    const overlapping = await this.database.one<{ id: string }>(
-      `
-        SELECT id
-        FROM leave_requests
-        WHERE employee_id = $1
-          AND status IN ('PENDING', 'APPROVED')
-          AND daterange(start_date, end_date, '[]')
-            && daterange($2::date, $3::date, '[]')
-        LIMIT 1
-      `,
-      [employeeId, this.formatDate(startDate), this.formatDate(endDate)],
-    );
+    const [overlapping] = await this.database.drizzle
+      .select({ id: leaveRequestsTable.id })
+      .from(leaveRequestsTable)
+      .where(
+        and(
+          eq(leaveRequestsTable.employeeId, employeeId),
+          inArray(leaveRequestsTable.status, ['PENDING', 'APPROVED']),
+          sql`daterange(${leaveRequestsTable.startDate}, ${leaveRequestsTable.endDate}, '[]')
+            && daterange(${this.formatDate(startDate)}::date, ${this.formatDate(endDate)}::date, '[]')`,
+        ),
+      )
+      .limit(1);
 
     if (overlapping) {
       throw new ConflictException(
@@ -268,34 +266,22 @@ export class LeaveService {
     }
 
     const totalDays = this.calculateTotalDays(startDate, endDate);
-    const created = await this.database.one<{ id: string }>(
-      `
-        INSERT INTO leave_requests (
-          id,
-          employee_id,
-          leave_type_id,
-          start_date,
-          end_date,
-          total_days,
-          reason,
-          status,
-          requested_at
-        )
-        VALUES ($1, $2, $3, $4, $5, $6, $7, 'PENDING', NOW())
-        RETURNING id
-      `,
-      [
-        randomUUID(),
+    const [created] = await this.database.drizzle
+      .insert(leaveRequestsTable)
+      .values({
+        id: randomUUID(),
         employeeId,
-        input.leaveTypeId,
-        this.formatDate(startDate),
-        this.formatDate(endDate),
+        leaveTypeId: input.leaveTypeId,
+        startDate: this.formatDate(startDate),
+        endDate: this.formatDate(endDate),
         totalDays,
-        input.reason.trim(),
-      ],
-    );
+        reason: input.reason.trim(),
+        status: 'PENDING',
+        requestedAt: sql`NOW()`,
+      })
+      .returning({ id: leaveRequestsTable.id });
 
-    return this.findRequest(created!.id);
+    return this.findRequest(created.id);
   }
 
   async reviewLeaveRequest(
@@ -309,26 +295,18 @@ export class LeaveService {
       throw new BadRequestException('Review status must be APPROVED or REJECTED');
     }
 
-    const existing = await this.database.one<{
-      id: string;
-      status: string;
-      employeeId: string;
-      departmentId: string | null;
-      supervisorId: string | null;
-    }>(
-      `
-        SELECT
-          lr.id,
-          lr.status,
-          lr.employee_id AS "employeeId",
-          e.department_id AS "departmentId",
-          e.supervisor_id AS "supervisorId"
-        FROM leave_requests lr
-        INNER JOIN employees e ON e.id = lr.employee_id
-        WHERE lr.id = $1
-      `,
-      [input.requestId],
-    );
+    const [existing] = await this.database.drizzle
+      .select({
+        id: leaveRequestsTable.id,
+        status: leaveRequestsTable.status,
+        employeeId: leaveRequestsTable.employeeId,
+        departmentId: employees.departmentId,
+        supervisorId: employees.supervisorId,
+      })
+      .from(leaveRequestsTable)
+      .innerJoin(employees, eq(employees.id, leaveRequestsTable.employeeId))
+      .where(eq(leaveRequestsTable.id, input.requestId))
+      .limit(1);
 
     if (!existing) {
       throw new NotFoundException('Leave request not found');
@@ -351,24 +329,16 @@ export class LeaveService {
       );
     }
 
-    await this.database.query(
-      `
-        UPDATE leave_requests
-        SET
-          status = $2,
-          decision_notes = $3,
-          decided_by_user_id = $4,
-          decided_at = NOW(),
-          updated_at = NOW()
-        WHERE id = $1
-      `,
-      [
-        input.requestId,
+    await this.database.drizzle
+      .update(leaveRequestsTable)
+      .set({
         status,
-        input.decisionNotes?.trim() ?? null,
-        currentUser.userId,
-      ],
-    );
+        decisionNotes: input.decisionNotes?.trim() ?? null,
+        decidedByUserId: currentUser.userId,
+        decidedAt: sql`NOW()`,
+        updatedAt: sql`NOW()`,
+      })
+      .where(eq(leaveRequestsTable.id, input.requestId));
 
     return this.findRequest(input.requestId);
   }
@@ -378,14 +348,8 @@ export class LeaveService {
     filter?: LeaveRequestFilterInput,
   ) {
     const scope = await resolveEmployeeVisibilityScope(this.database, currentUser);
-    const values: unknown[] = [];
-    const where: string[] = [];
-
-    const visibilityClause = buildEmployeeVisibilityClause(values, scope, {
-      employeeId: 'e.id',
-      departmentId: 'e.department_id',
-      supervisorId: 'e.supervisor_id',
-    });
+    const where: SQL[] = [];
+    const visibilityClause = this.buildEmployeeVisibilityCondition(scope);
 
     if (visibilityClause) {
       where.push(visibilityClause);
@@ -396,61 +360,22 @@ export class LeaveService {
         currentUser,
         filter.employeeId,
       );
-      values.push(scopedEmployeeId);
-      where.push(`lr.employee_id = $${values.length}`);
+      where.push(eq(leaveRequestsTable.employeeId, scopedEmployeeId));
     }
 
     if (filter?.status) {
-      values.push(filter.status.trim().toUpperCase());
-      where.push(`lr.status = $${values.length}`);
+      where.push(eq(leaveRequestsTable.status, filter.status.trim().toUpperCase()));
     }
 
     if (filter?.fromDate) {
-      values.push(filter.fromDate);
-      where.push(`lr.start_date >= $${values.length}`);
+      where.push(gte(leaveRequestsTable.startDate, filter.fromDate));
     }
 
     if (filter?.toDate) {
-      values.push(filter.toDate);
-      where.push(`lr.end_date <= $${values.length}`);
+      where.push(lte(leaveRequestsTable.endDate, filter.toDate));
     }
 
-    const rows = await this.database.many<LeaveRequestRow>(
-      `
-        SELECT
-          lr.id,
-          lr.employee_id AS "employeeId",
-          e.department_id AS "departmentId",
-          e.supervisor_id AS "supervisorId",
-          lr.leave_type_id AS "leaveTypeId",
-          lr.start_date::text AS "startDate",
-          lr.end_date::text AS "endDate",
-          lr.total_days AS "totalDays",
-          lr.status,
-          lr.reason,
-          lr.requested_at::text AS "requestedAt",
-          lr.decided_at::text AS "decidedAt",
-          lr.decision_notes AS "decisionNotes",
-          e.employee_number AS "employeeNumber",
-          CONCAT(e.first_name, ' ', e.last_name) AS "employeeName",
-          lt.code AS "leaveTypeCode",
-          lt.name AS "leaveTypeName",
-          lt.default_days AS "leaveTypeDefaultDays",
-          lt.description AS "leaveTypeDescription",
-          lt.is_active AS "leaveTypeIsActive",
-          CASE
-            WHEN reviewer.id IS NULL THEN NULL
-            ELSE CONCAT(reviewer.first_name, ' ', reviewer.last_name)
-          END AS "reviewedByName"
-        FROM leave_requests lr
-        INNER JOIN employees e ON e.id = lr.employee_id
-        INNER JOIN leave_types lt ON lt.id = lr.leave_type_id
-        LEFT JOIN users reviewer ON reviewer.id = lr.decided_by_user_id
-        ${where.length > 0 ? `WHERE ${where.join(' AND ')}` : ''}
-        ORDER BY lr.requested_at DESC, lr.start_date DESC
-      `,
-      values,
-    );
+    const rows = await this.findRequestRows(where);
 
     return rows.map((row) => this.mapLeaveRequest(row));
   }
@@ -461,31 +386,27 @@ export class LeaveService {
       employeeId,
     );
     const currentYear = new Date().getUTCFullYear();
-    const rows = await this.database.many<LeaveBalanceRow>(
-      `
-        SELECT
-          lt.id AS "leaveTypeId",
-          lt.id,
-          lt.code,
-          lt.name,
-          lt.default_days AS "defaultDays",
-          lt.description,
-          lt.is_active AS "isActive",
-          usage.used_days AS "usedDays"
-        FROM leave_types lt
-        LEFT JOIN LATERAL (
-          SELECT COALESCE(SUM(lr.total_days), 0) AS used_days
-          FROM leave_requests lr
-          WHERE lr.leave_type_id = lt.id
-            AND lr.employee_id = $1
-            AND lr.status = 'APPROVED'
-            AND DATE_PART('year', lr.start_date) = $2
-        ) usage ON TRUE
-        WHERE lt.is_active = TRUE
-        ORDER BY lt.name ASC
-      `,
-      [scopedEmployeeId, currentYear],
-    );
+    const rows = await this.database.drizzle
+      .select({
+        leaveTypeId: leaveTypesTable.id,
+        id: leaveTypesTable.id,
+        code: leaveTypesTable.code,
+        name: leaveTypesTable.name,
+        defaultDays: leaveTypesTable.defaultDays,
+        description: leaveTypesTable.description,
+        isActive: leaveTypesTable.isActive,
+        usedDays: sql<number | null>`(
+          SELECT COALESCE(SUM(${leaveRequestsTable.totalDays}), 0)
+          FROM ${leaveRequestsTable}
+          WHERE ${leaveRequestsTable.leaveTypeId} = ${leaveTypesTable.id}
+            AND ${leaveRequestsTable.employeeId} = ${scopedEmployeeId}
+            AND ${leaveRequestsTable.status} = 'APPROVED'
+            AND DATE_PART('year', ${leaveRequestsTable.startDate}) = ${currentYear}
+        )`,
+      })
+      .from(leaveTypesTable)
+      .where(eq(leaveTypesTable.isActive, true))
+      .orderBy(asc(leaveTypesTable.name));
 
     return rows.map((row) => ({
       leaveTypeId: row.leaveTypeId,
@@ -497,20 +418,11 @@ export class LeaveService {
   }
 
   private async findLeaveType(id: string) {
-    const row = await this.database.one<LeaveTypeRow>(
-      `
-        SELECT
-          id,
-          code,
-          name,
-          default_days AS "defaultDays",
-          description,
-          is_active AS "isActive"
-        FROM leave_types
-        WHERE id = $1
-      `,
-      [id],
-    );
+    const [row] = await this.database.drizzle
+      .select(this.leaveTypeSelectFields())
+      .from(leaveTypesTable)
+      .where(eq(leaveTypesTable.id, id))
+      .limit(1);
 
     if (!row) {
       throw new NotFoundException('Leave type not found');
@@ -520,41 +432,7 @@ export class LeaveService {
   }
 
   private async findRequest(id: string) {
-    const row = await this.database.one<LeaveRequestRow>(
-      `
-        SELECT
-          lr.id,
-          lr.employee_id AS "employeeId",
-          e.department_id AS "departmentId",
-          e.supervisor_id AS "supervisorId",
-          lr.leave_type_id AS "leaveTypeId",
-          lr.start_date::text AS "startDate",
-          lr.end_date::text AS "endDate",
-          lr.total_days AS "totalDays",
-          lr.status,
-          lr.reason,
-          lr.requested_at::text AS "requestedAt",
-          lr.decided_at::text AS "decidedAt",
-          lr.decision_notes AS "decisionNotes",
-          e.employee_number AS "employeeNumber",
-          CONCAT(e.first_name, ' ', e.last_name) AS "employeeName",
-          lt.code AS "leaveTypeCode",
-          lt.name AS "leaveTypeName",
-          lt.default_days AS "leaveTypeDefaultDays",
-          lt.description AS "leaveTypeDescription",
-          lt.is_active AS "leaveTypeIsActive",
-          CASE
-            WHEN reviewer.id IS NULL THEN NULL
-            ELSE CONCAT(reviewer.first_name, ' ', reviewer.last_name)
-          END AS "reviewedByName"
-        FROM leave_requests lr
-        INNER JOIN employees e ON e.id = lr.employee_id
-        INNER JOIN leave_types lt ON lt.id = lr.leave_type_id
-        LEFT JOIN users reviewer ON reviewer.id = lr.decided_by_user_id
-        WHERE lr.id = $1
-      `,
-      [id],
-    );
+    const [row] = await this.findRequestRows([eq(leaveRequestsTable.id, id)]);
 
     if (!row) {
       throw new NotFoundException('Leave request not found');
@@ -572,21 +450,15 @@ export class LeaveService {
       throw new BadRequestException('Employee is required');
     }
     const scope = await resolveEmployeeVisibilityScope(this.database, currentUser);
-    const employee = await this.database.one<{
-      id: string;
-      departmentId: string | null;
-      supervisorId: string | null;
-    }>(
-      `
-        SELECT
-          id,
-          department_id AS "departmentId",
-          supervisor_id AS "supervisorId"
-        FROM employees
-        WHERE id = $1
-      `,
-      [normalizedEmployeeId],
-    );
+    const [employee] = await this.database.drizzle
+      .select({
+        id: employees.id,
+        departmentId: employees.departmentId,
+        supervisorId: employees.supervisorId,
+      })
+      .from(employees)
+      .where(eq(employees.id, normalizedEmployeeId))
+      .limit(1);
 
     if (
       !employee ||
@@ -602,6 +474,69 @@ export class LeaveService {
     }
 
     return employee.id;
+  }
+
+  private leaveTypeSelectFields() {
+    return {
+      id: leaveTypesTable.id,
+      code: leaveTypesTable.code,
+      name: leaveTypesTable.name,
+      defaultDays: leaveTypesTable.defaultDays,
+      description: leaveTypesTable.description,
+      isActive: leaveTypesTable.isActive,
+    };
+  }
+
+  private async findRequestRows(where: SQL[]): Promise<LeaveRequestRow[]> {
+    return this.database.drizzle
+      .select({
+        id: leaveRequestsTable.id,
+        employeeId: leaveRequestsTable.employeeId,
+        departmentId: employees.departmentId,
+        supervisorId: employees.supervisorId,
+        leaveTypeId: leaveRequestsTable.leaveTypeId,
+        startDate: sql<string>`${leaveRequestsTable.startDate}::text`,
+        endDate: sql<string>`${leaveRequestsTable.endDate}::text`,
+        totalDays: leaveRequestsTable.totalDays,
+        status: leaveRequestsTable.status,
+        reason: leaveRequestsTable.reason,
+        requestedAt: sql<string>`${leaveRequestsTable.requestedAt}::text`,
+        decidedAt: sql<string | null>`${leaveRequestsTable.decidedAt}::text`,
+        decisionNotes: leaveRequestsTable.decisionNotes,
+        employeeNumber: employees.employeeNumber,
+        employeeName: sql<string>`CONCAT(${employees.firstName}, ' ', ${employees.lastName})`,
+        leaveTypeCode: leaveTypesTable.code,
+        leaveTypeName: leaveTypesTable.name,
+        leaveTypeDefaultDays: leaveTypesTable.defaultDays,
+        leaveTypeDescription: leaveTypesTable.description,
+        leaveTypeIsActive: leaveTypesTable.isActive,
+        reviewedByName: sql<string | null>`CASE
+          WHEN ${leaveReviewers.id} IS NULL THEN NULL
+          ELSE CONCAT(${leaveReviewers.firstName}, ' ', ${leaveReviewers.lastName})
+        END`,
+      })
+      .from(leaveRequestsTable)
+      .innerJoin(employees, eq(employees.id, leaveRequestsTable.employeeId))
+      .innerJoin(leaveTypesTable, eq(leaveTypesTable.id, leaveRequestsTable.leaveTypeId))
+      .leftJoin(leaveReviewers, eq(leaveReviewers.id, leaveRequestsTable.decidedByUserId))
+      .where(and(...where))
+      .orderBy(desc(leaveRequestsTable.requestedAt), desc(leaveRequestsTable.startDate));
+  }
+
+  private buildEmployeeVisibilityCondition(scope: EmployeeVisibilityScope) {
+    switch (scope.kind) {
+      case 'all':
+        return undefined;
+      case 'department':
+        return eq(employees.departmentId, scope.departmentId);
+      case 'supervisor':
+        return or(
+          eq(employees.id, scope.employeeId),
+          eq(employees.supervisorId, scope.employeeId),
+        );
+      case 'self':
+        return eq(employees.id, scope.employeeId);
+    }
   }
 
   private assertCanManageLeavePolicies(roles: string[]) {

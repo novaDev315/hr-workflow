@@ -161,3 +161,39 @@ export const employeeLocationAssignments = pgTable(
     status: text('status').notNull().default('ACTIVE'),
   },
 );
+
+export const leaveTypes = pgTable('leave_types', {
+  id: text('id').primaryKey(),
+  code: text('code').notNull().unique(),
+  name: text('name').notNull().unique(),
+  defaultDays: doublePrecision('default_days').notNull(),
+  description: text('description'),
+  isActive: boolean('is_active').notNull().default(true),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+});
+
+export const leaveRequests = pgTable('leave_requests', {
+  id: text('id').primaryKey(),
+  employeeId: text('employee_id')
+    .notNull()
+    .references(() => employees.id, { onDelete: 'cascade' }),
+  leaveTypeId: text('leave_type_id')
+    .notNull()
+    .references(() => leaveTypes.id, { onDelete: 'restrict' }),
+  startDate: date('start_date').notNull(),
+  endDate: date('end_date').notNull(),
+  totalDays: doublePrecision('total_days').notNull(),
+  reason: text('reason').notNull(),
+  status: text('status').notNull().default('PENDING'),
+  requestedAt: timestamp('requested_at', { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+  decidedAt: timestamp('decided_at', { withTimezone: true }),
+  decidedByUserId: text('decided_by_user_id').references(() => users.id, {
+    onDelete: 'set null',
+  }),
+  decisionNotes: text('decision_notes'),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+});
