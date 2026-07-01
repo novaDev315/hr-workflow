@@ -239,6 +239,80 @@ export const leaveRequests = pgTable('leave_requests', {
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 });
 
+export const employeeCompensations = pgTable(
+  'employee_compensations',
+  {
+    id: text('id').primaryKey(),
+    employeeId: text('employee_id')
+      .notNull()
+      .references(() => employees.id, { onDelete: 'cascade' }),
+    baseSalary: doublePrecision('base_salary').notNull(),
+    allowanceAmount: doublePrecision('allowance_amount').notNull().default(0),
+    deductionAmount: doublePrecision('deduction_amount').notNull().default(0),
+    currencyCode: text('currency_code').notNull().default('AED'),
+    effectiveFrom: date('effective_from').notNull(),
+    notes: text('notes'),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    unique('employee_compensations_employee_id_key').on(table.employeeId),
+  ],
+);
+
+export const payrollPeriods = pgTable(
+  'payroll_periods',
+  {
+    id: text('id').primaryKey(),
+    periodMonth: text('period_month').notNull(),
+    startDate: date('start_date').notNull(),
+    endDate: date('end_date').notNull(),
+    status: text('status').notNull().default('OPEN'),
+    processedAt: timestamp('processed_at', { withTimezone: true }),
+    paidAt: timestamp('paid_at', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    unique('payroll_periods_period_month_key').on(table.periodMonth),
+  ],
+);
+
+export const payslips = pgTable(
+  'payslips',
+  {
+    id: text('id').primaryKey(),
+    payrollPeriodId: text('payroll_period_id')
+      .notNull()
+      .references(() => payrollPeriods.id, { onDelete: 'cascade' }),
+    employeeId: text('employee_id')
+      .notNull()
+      .references(() => employees.id, { onDelete: 'cascade' }),
+    expectedWorkdays: integer('expected_workdays').notNull(),
+    attendedDays: doublePrecision('attended_days').notNull().default(0),
+    approvedLeaveDays: doublePrecision('approved_leave_days').notNull().default(0),
+    paidDays: doublePrecision('paid_days').notNull().default(0),
+    unpaidDays: doublePrecision('unpaid_days').notNull().default(0),
+    baseSalary: doublePrecision('base_salary').notNull(),
+    proratedBaseSalary: doublePrecision('prorated_base_salary').notNull(),
+    allowanceAmount: doublePrecision('allowance_amount').notNull().default(0),
+    deductionAmount: doublePrecision('deduction_amount').notNull().default(0),
+    attendanceDeduction: doublePrecision('attendance_deduction').notNull().default(0),
+    grossPay: doublePrecision('gross_pay').notNull(),
+    netPay: doublePrecision('net_pay').notNull(),
+    currencyCode: text('currency_code').notNull().default('AED'),
+    status: text('status').notNull().default('GENERATED'),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    unique('payslips_payroll_period_id_employee_id_key').on(
+      table.payrollPeriodId,
+      table.employeeId,
+    ),
+  ],
+);
+
 export const jobRequisitions = pgTable('job_requisitions', {
   id: text('id').primaryKey(),
   requisitionNumber: text('requisition_number').notNull().unique(),

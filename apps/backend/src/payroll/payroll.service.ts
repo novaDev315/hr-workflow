@@ -6,6 +6,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { randomUUID } from 'crypto';
+import { and, asc, desc, eq, gte, lte, or, sql, SQL } from 'drizzle-orm';
 import { DatabaseService } from '../database/database.service';
 import { AuthenticatedUser } from '../common/current-user.decorator';
 import {
@@ -21,6 +22,16 @@ import {
 } from './payroll.types';
 import { createSimplePdf } from '../common/simple-pdf';
 import { hasAccountManagerAccess } from '../common/access-control';
+import {
+  attendanceRecords,
+  companySettings,
+  employeeCompensations,
+  employees as employeesTable,
+  leaveRequests,
+  payrollPeriods as payrollPeriodsTable,
+  payslips as payslipsTable,
+  users,
+} from '../database/drizzle/schema';
 
 interface EmployeeCompensationRow {
   id: string;
@@ -82,24 +93,11 @@ export class PayrollService {
 
   async employeeCompensations(currentUser: AuthenticatedUser) {
     this.assertCanManagePayroll(currentUser.roles);
-    const rows = await this.database.many<EmployeeCompensationRow>(
-      `
-        SELECT
-          ec.id,
-          ec.employee_id AS "employeeId",
-          ec.base_salary AS "baseSalary",
-          ec.allowance_amount AS "allowanceAmount",
-          ec.deduction_amount AS "deductionAmount",
-          ec.currency_code AS "currencyCode",
-          ec.effective_from::text AS "effectiveFrom",
-          ec.notes,
-          e.employee_number AS "employeeNumber",
-          CONCAT(e.first_name, ' ', e.last_name) AS "employeeName"
-        FROM employee_compensations ec
-        INNER JOIN employees e ON e.id = ec.employee_id
-        ORDER BY e.last_name ASC, e.first_name ASC
-      `,
-    );
+    const rows = await this.database.drizzle
+      .select(this.employeeCompensationSelectFields())
+      .from(employeeCompensations)
+      .innerJoin(employeesTable, eq(employeesTable.id, employeeCompensations.employeeId))
+      .orderBy(asc(employeesTable.lastName), asc(employeesTable.firstName));
 
     return rows.map((row) => this.mapEmployeeCompensation(row));
   }
@@ -110,10 +108,16 @@ export class PayrollService {
   ) {
     this.assertCanManagePayroll(currentUser.roles);
 
-    const employee = await this.database.one<{ id: string }>(
-      `SELECT id FROM employees WHERE id = $1 AND is_active = TRUE`,
-      [input.employeeId],
-    );
+    const [employee] = await this.database.drizzle
+      .select({ id: employeesTable.id })
+      .from(employeesTable)
+      .where(
+        and(
+          eq(employeesTable.id, input.employeeId),
+          eq(employeesTable.isActive, true),
+        ),
+      )
+      .limit(1);
 
     if (!employee) {
       throw new NotFoundException('Employee not found or inactive');
@@ -122,89 +126,57 @@ export class PayrollService {
     const effectiveFrom = input.effectiveFrom?.trim() || new Date().toISOString().slice(0, 10);
     const currencyCode = input.currencyCode?.trim().toUpperCase() || 'AED';
 
-    const existing = await this.database.one<{ id: string }>(
-      `SELECT id FROM employee_compensations WHERE employee_id = $1`,
-      [input.employeeId],
-    );
+    const [existing] = await this.database.drizzle
+      .select({ id: employeeCompensations.id })
+      .from(employeeCompensations)
+      .where(eq(employeeCompensations.employeeId, input.employeeId))
+      .limit(1);
 
     if (existing) {
-      await this.database.query(
-        `
-          UPDATE employee_compensations
-          SET
-            base_salary = $2,
-            allowance_amount = $3,
-            deduction_amount = $4,
-            currency_code = $5,
-            effective_from = $6,
-            notes = $7,
-            updated_at = NOW()
-          WHERE employee_id = $1
-        `,
-        [
-          input.employeeId,
-          input.baseSalary,
-          input.allowanceAmount ?? 0,
-          input.deductionAmount ?? 0,
+      await this.database.drizzle
+        .update(employeeCompensations)
+        .set({
+          baseSalary: input.baseSalary,
+          allowanceAmount: input.allowanceAmount ?? 0,
+          deductionAmount: input.deductionAmount ?? 0,
           currencyCode,
           effectiveFrom,
-          input.notes?.trim() ?? null,
-        ],
-      );
+          notes: input.notes?.trim() ?? null,
+          updatedAt: sql`NOW()`,
+        })
+        .where(eq(employeeCompensations.employeeId, input.employeeId));
 
       return this.findEmployeeCompensationByEmployeeId(input.employeeId);
     }
 
-    const created = await this.database.one<{ id: string }>(
-      `
-        INSERT INTO employee_compensations (
-          id,
-          employee_id,
-          base_salary,
-          allowance_amount,
-          deduction_amount,
-          currency_code,
-          effective_from,
-          notes
-        )
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-        RETURNING id
-      `,
-      [
-        randomUUID(),
-        input.employeeId,
-        input.baseSalary,
-        input.allowanceAmount ?? 0,
-        input.deductionAmount ?? 0,
+    const [created] = await this.database.drizzle
+      .insert(employeeCompensations)
+      .values({
+        id: randomUUID(),
+        employeeId: input.employeeId,
+        baseSalary: input.baseSalary,
+        allowanceAmount: input.allowanceAmount ?? 0,
+        deductionAmount: input.deductionAmount ?? 0,
         currencyCode,
         effectiveFrom,
-        input.notes?.trim() ?? null,
-      ],
-    );
+        notes: input.notes?.trim() ?? null,
+      })
+      .returning({ id: employeeCompensations.id });
 
-    return this.findEmployeeCompensation(created!.id);
+    return this.findEmployeeCompensation(created.id);
   }
 
   async payrollPeriods(currentUser: AuthenticatedUser) {
     this.assertCanManagePayroll(currentUser.roles);
-    const rows = await this.database.many<PayrollPeriodRow>(
-      `
-        SELECT
-          pp.id,
-          pp.period_month AS "periodMonth",
-          pp.start_date::text AS "startDate",
-          pp.end_date::text AS "endDate",
-          pp.status,
-          pp.processed_at::text AS "processedAt",
-          pp.paid_at::text AS "paidAt",
-          COUNT(ps.id)::int AS "payslipCount",
-          COALESCE(SUM(ps.net_pay), 0) AS "totalNetPay"
-        FROM payroll_periods pp
-        LEFT JOIN payslips ps ON ps.payroll_period_id = pp.id
-        GROUP BY pp.id
-        ORDER BY pp.period_month DESC
-      `,
-    );
+    const rows = await this.database.drizzle
+      .select(this.payrollPeriodSelectFields())
+      .from(payrollPeriodsTable)
+      .leftJoin(
+        payslipsTable,
+        eq(payslipsTable.payrollPeriodId, payrollPeriodsTable.id),
+      )
+      .groupBy(payrollPeriodsTable.id)
+      .orderBy(desc(payrollPeriodsTable.periodMonth));
 
     return rows.map((row) => this.mapPayrollPeriod(row));
   }
@@ -216,31 +188,28 @@ export class PayrollService {
     this.assertCanManagePayroll(currentUser.roles);
 
     const { startDate, endDate } = this.getPeriodRange(input.periodMonth);
-    const existing = await this.database.one<{ id: string }>(
-      `SELECT id FROM payroll_periods WHERE period_month = $1`,
-      [input.periodMonth],
-    );
+    const [existing] = await this.database.drizzle
+      .select({ id: payrollPeriodsTable.id })
+      .from(payrollPeriodsTable)
+      .where(eq(payrollPeriodsTable.periodMonth, input.periodMonth))
+      .limit(1);
 
     if (existing) {
       throw new ConflictException('Payroll period already exists for this month');
     }
 
-    const created = await this.database.one<{ id: string }>(
-      `
-        INSERT INTO payroll_periods (
-          id,
-          period_month,
-          start_date,
-          end_date,
-          status
-        )
-        VALUES ($1, $2, $3, $4, 'OPEN')
-        RETURNING id
-      `,
-      [randomUUID(), input.periodMonth, startDate, endDate],
-    );
+    const [created] = await this.database.drizzle
+      .insert(payrollPeriodsTable)
+      .values({
+        id: randomUUID(),
+        periodMonth: input.periodMonth,
+        startDate,
+        endDate,
+        status: 'OPEN',
+      })
+      .returning({ id: payrollPeriodsTable.id });
 
-    return this.findPayrollPeriod(created!.id);
+    return this.findPayrollPeriod(created.id);
   }
 
   async processPayrollPeriod(
@@ -254,34 +223,26 @@ export class PayrollService {
       throw new BadRequestException('Paid payroll periods cannot be reprocessed');
     }
 
-    const employees = await this.database.many<{
-      compensationId: string;
-      employeeId: string;
-      baseSalary: number;
-      allowanceAmount: number;
-      deductionAmount: number;
-      currencyCode: string;
-      employeeNumber: string;
-      employeeName: string;
-    }>(
-      `
-        SELECT
-          ec.id AS "compensationId",
-          ec.employee_id AS "employeeId",
-          ec.base_salary AS "baseSalary",
-          ec.allowance_amount AS "allowanceAmount",
-          ec.deduction_amount AS "deductionAmount",
-          ec.currency_code AS "currencyCode",
-          e.employee_number AS "employeeNumber",
-          CONCAT(e.first_name, ' ', e.last_name) AS "employeeName"
-        FROM employee_compensations ec
-        INNER JOIN employees e ON e.id = ec.employee_id
-        WHERE e.is_active = TRUE
-        ORDER BY e.last_name ASC, e.first_name ASC
-      `,
-    );
+    const compensatedEmployees = await this.database.drizzle
+      .select({
+        compensationId: employeeCompensations.id,
+        employeeId: employeeCompensations.employeeId,
+        baseSalary: employeeCompensations.baseSalary,
+        allowanceAmount: employeeCompensations.allowanceAmount,
+        deductionAmount: employeeCompensations.deductionAmount,
+        currencyCode: employeeCompensations.currencyCode,
+        employeeNumber: employeesTable.employeeNumber,
+        employeeName: sql<string>`CONCAT(${employeesTable.firstName}, ' ', ${employeesTable.lastName})`,
+      })
+      .from(employeeCompensations)
+      .innerJoin(
+        employeesTable,
+        eq(employeesTable.id, employeeCompensations.employeeId),
+      )
+      .where(eq(employeesTable.isActive, true))
+      .orderBy(asc(employeesTable.lastName), asc(employeesTable.firstName));
 
-    if (employees.length === 0) {
+    if (compensatedEmployees.length === 0) {
       throw new BadRequestException(
         'At least one employee compensation profile is required before processing payroll',
       );
@@ -289,42 +250,42 @@ export class PayrollService {
 
     const expectedWorkdays = this.countWeekdays(period.startDate, period.endDate);
 
-    await this.database.transaction(async (tx) => {
-      await this.database.query(
-        `
-          DELETE FROM payslips
-          WHERE payroll_period_id = $1
-        `,
-        [period.id],
-        tx,
-      );
+    await this.database.drizzle.transaction(async (tx) => {
+      await tx
+        .delete(payslipsTable)
+        .where(eq(payslipsTable.payrollPeriodId, period.id));
 
-      for (const employee of employees) {
-        const attendance = await this.database.one<{ attendedDays: string }>(
-          `
-            SELECT COUNT(*)::text AS "attendedDays"
-            FROM attendance_records
-            WHERE employee_id = $1
-              AND attendance_date >= $2
-              AND attendance_date <= $3
-              AND status IN ('COMPLETED', 'CLOCKED_IN')
-          `,
-          [employee.employeeId, period.startDate, period.endDate],
-          tx,
-        );
+      for (const employee of compensatedEmployees) {
+        const [attendance] = await tx
+          .select({
+            attendedDays: sql<string>`COUNT(*)::text`,
+          })
+          .from(attendanceRecords)
+          .where(
+            and(
+              eq(attendanceRecords.employeeId, employee.employeeId),
+              gte(attendanceRecords.attendanceDate, period.startDate),
+              lte(attendanceRecords.attendanceDate, period.endDate),
+              or(
+                eq(attendanceRecords.status, 'COMPLETED'),
+                eq(attendanceRecords.status, 'CLOCKED_IN'),
+              ),
+            ),
+          );
 
-        const approvedLeave = await this.database.one<{ approvedLeaveDays: string }>(
-          `
-            SELECT COALESCE(SUM(total_days), 0)::text AS "approvedLeaveDays"
-            FROM leave_requests
-            WHERE employee_id = $1
-              AND status = 'APPROVED'
-              AND start_date <= $3
-              AND end_date >= $2
-          `,
-          [employee.employeeId, period.startDate, period.endDate],
-          tx,
-        );
+        const [approvedLeave] = await tx
+          .select({
+            approvedLeaveDays: sql<string>`COALESCE(SUM(${leaveRequests.totalDays}), 0)::text`,
+          })
+          .from(leaveRequests)
+          .where(
+            and(
+              eq(leaveRequests.employeeId, employee.employeeId),
+              eq(leaveRequests.status, 'APPROVED'),
+              lte(leaveRequests.startDate, period.endDate),
+              gte(leaveRequests.endDate, period.startDate),
+            ),
+          );
 
         const attendedDays = Number(attendance?.attendedDays ?? '0');
         const approvedLeaveDays = Number(approvedLeave?.approvedLeaveDays ?? '0');
@@ -348,66 +309,35 @@ export class PayrollService {
           ),
         );
 
-        await this.database.query(
-          `
-            INSERT INTO payslips (
-              id,
-              payroll_period_id,
-              employee_id,
-              expected_workdays,
-              attended_days,
-              approved_leave_days,
-              paid_days,
-              unpaid_days,
-              base_salary,
-              prorated_base_salary,
-              allowance_amount,
-              deduction_amount,
-              attendance_deduction,
-              gross_pay,
-              net_pay,
-              currency_code,
-              status
-            )
-            VALUES (
-              $1, $2, $3, $4, $5, $6, $7, $8,
-              $9, $10, $11, $12, $13, $14, $15, $16, 'GENERATED'
-            )
-          `,
-          [
-            randomUUID(),
-            period.id,
-            employee.employeeId,
-            expectedWorkdays,
-            attendedDays,
-            approvedLeaveDays,
-            paidDays,
-            unpaidDays,
-            employee.baseSalary,
-            proratedBaseSalary,
-            employee.allowanceAmount,
-            employee.deductionAmount,
-            attendanceDeduction,
-            grossPay,
-            netPay,
-            employee.currencyCode,
-          ],
-          tx,
-        );
+        await tx.insert(payslipsTable).values({
+          id: randomUUID(),
+          payrollPeriodId: period.id,
+          employeeId: employee.employeeId,
+          expectedWorkdays,
+          attendedDays,
+          approvedLeaveDays,
+          paidDays,
+          unpaidDays,
+          baseSalary: employee.baseSalary,
+          proratedBaseSalary,
+          allowanceAmount: employee.allowanceAmount,
+          deductionAmount: employee.deductionAmount,
+          attendanceDeduction,
+          grossPay,
+          netPay,
+          currencyCode: employee.currencyCode,
+          status: 'GENERATED',
+        });
       }
 
-      await this.database.query(
-        `
-          UPDATE payroll_periods
-          SET
-            status = 'PROCESSED',
-            processed_at = NOW(),
-            updated_at = NOW()
-          WHERE id = $1
-        `,
-        [period.id],
-        tx,
-      );
+      await tx
+        .update(payrollPeriodsTable)
+        .set({
+          status: 'PROCESSED',
+          processedAt: sql`NOW()`,
+          updatedAt: sql`NOW()`,
+        })
+        .where(eq(payrollPeriodsTable.id, period.id));
     });
 
     return this.findPayrollPeriod(period.id);
@@ -424,29 +354,20 @@ export class PayrollService {
       throw new BadRequestException('Only processed payroll periods can be marked as paid');
     }
 
-    await this.database.transaction(async (tx) => {
-      await this.database.query(
-        `
-          UPDATE payroll_periods
-          SET
-            status = 'PAID',
-            paid_at = NOW(),
-            updated_at = NOW()
-          WHERE id = $1
-        `,
-        [period.id],
-        tx,
-      );
+    await this.database.drizzle.transaction(async (tx) => {
+      await tx
+        .update(payrollPeriodsTable)
+        .set({
+          status: 'PAID',
+          paidAt: sql`NOW()`,
+          updatedAt: sql`NOW()`,
+        })
+        .where(eq(payrollPeriodsTable.id, period.id));
 
-      await this.database.query(
-        `
-          UPDATE payslips
-          SET status = 'PAID'
-          WHERE payroll_period_id = $1
-        `,
-        [period.id],
-        tx,
-      );
+      await tx
+        .update(payslipsTable)
+        .set({ status: 'PAID' })
+        .where(eq(payslipsTable.payrollPeriodId, period.id));
     });
 
     return this.findPayrollPeriod(period.id);
@@ -463,17 +384,13 @@ export class PayrollService {
       throw new BadRequestException('Paid payroll periods cannot be deleted');
     }
 
-    await this.database.transaction(async (tx) => {
-      await this.database.query(
-        `DELETE FROM payslips WHERE payroll_period_id = $1`,
-        [period.id],
-        tx,
-      );
-      await this.database.query(
-        `DELETE FROM payroll_periods WHERE id = $1`,
-        [period.id],
-        tx,
-      );
+    await this.database.drizzle.transaction(async (tx) => {
+      await tx
+        .delete(payslipsTable)
+        .where(eq(payslipsTable.payrollPeriodId, period.id));
+      await tx
+        .delete(payrollPeriodsTable)
+        .where(eq(payrollPeriodsTable.id, period.id));
     });
 
     return true;
@@ -485,93 +402,45 @@ export class PayrollService {
       filter?.employeeId,
     );
 
-    const values: unknown[] = [];
-    const where: string[] = [];
+    const where: SQL[] = [];
 
     if (scopedEmployeeId) {
-      values.push(scopedEmployeeId);
-      where.push(`ps.employee_id = $${values.length}`);
+      where.push(eq(payslipsTable.employeeId, scopedEmployeeId));
     }
 
     if (filter?.payrollPeriodId) {
-      values.push(filter.payrollPeriodId);
-      where.push(`ps.payroll_period_id = $${values.length}`);
+      where.push(eq(payslipsTable.payrollPeriodId, filter.payrollPeriodId));
     }
 
-    const rows = await this.database.many<PayslipRow>(
-      `
-        SELECT
-          ps.id,
-          ps.payroll_period_id AS "payrollPeriodId",
-          ps.employee_id AS "employeeId",
-          pp.period_month AS "periodMonth",
-          ps.expected_workdays AS "expectedWorkdays",
-          ps.attended_days AS "attendedDays",
-          ps.approved_leave_days AS "approvedLeaveDays",
-          ps.paid_days AS "paidDays",
-          ps.unpaid_days AS "unpaidDays",
-          ps.base_salary AS "baseSalary",
-          ps.prorated_base_salary AS "proratedBaseSalary",
-          ps.allowance_amount AS "allowanceAmount",
-          ps.deduction_amount AS "deductionAmount",
-          ps.attendance_deduction AS "attendanceDeduction",
-          ps.gross_pay AS "grossPay",
-          ps.net_pay AS "netPay",
-          ps.currency_code AS "currencyCode",
-          ps.status,
-          e.employee_number AS "employeeNumber",
-          CONCAT(e.first_name, ' ', e.last_name) AS "employeeName"
-        FROM payslips ps
-        INNER JOIN payroll_periods pp ON pp.id = ps.payroll_period_id
-        INNER JOIN employees e ON e.id = ps.employee_id
-        ${where.length > 0 ? `WHERE ${where.join(' AND ')}` : ''}
-        ORDER BY pp.period_month DESC, e.last_name ASC, e.first_name ASC
-      `,
-      values,
-    );
+    const rows = await this.database.drizzle
+      .select(this.payslipSelectFields())
+      .from(payslipsTable)
+      .innerJoin(
+        payrollPeriodsTable,
+        eq(payrollPeriodsTable.id, payslipsTable.payrollPeriodId),
+      )
+      .innerJoin(employeesTable, eq(employeesTable.id, payslipsTable.employeeId))
+      .where(where.length > 0 ? and(...where) : undefined)
+      .orderBy(
+        desc(payrollPeriodsTable.periodMonth),
+        asc(employeesTable.lastName),
+        asc(employeesTable.firstName),
+      );
 
     return rows.map((row) => this.mapPayslip(row));
   }
 
   async exportPayslipPdf(currentUser: AuthenticatedUser, payslipId: string) {
-    const row = await this.database.one<PayslipExportRow>(
-      `
-        SELECT
-          ps.id,
-          ps.payroll_period_id AS "payrollPeriodId",
-          ps.employee_id AS "employeeId",
-          pp.period_month AS "periodMonth",
-          pp.start_date::text AS "startDate",
-          pp.end_date::text AS "endDate",
-          ps.expected_workdays AS "expectedWorkdays",
-          ps.attended_days AS "attendedDays",
-          ps.approved_leave_days AS "approvedLeaveDays",
-          ps.paid_days AS "paidDays",
-          ps.unpaid_days AS "unpaidDays",
-          ps.base_salary AS "baseSalary",
-          ps.prorated_base_salary AS "proratedBaseSalary",
-          ps.allowance_amount AS "allowanceAmount",
-          ps.deduction_amount AS "deductionAmount",
-          ps.attendance_deduction AS "attendanceDeduction",
-          ps.gross_pay AS "grossPay",
-          ps.net_pay AS "netPay",
-          ps.currency_code AS "currencyCode",
-          ps.status,
-          e.employee_number AS "employeeNumber",
-          CONCAT(e.first_name, ' ', e.last_name) AS "employeeName",
-          (
-            SELECT company_name
-            FROM company_settings
-            WHERE singleton_key = 'primary'
-            LIMIT 1
-          ) AS "companyName"
-        FROM payslips ps
-        INNER JOIN payroll_periods pp ON pp.id = ps.payroll_period_id
-        INNER JOIN employees e ON e.id = ps.employee_id
-        WHERE ps.id = $1
-      `,
-      [payslipId],
-    );
+    const [row] = await this.database.drizzle
+      .select(this.payslipExportSelectFields())
+      .from(payslipsTable)
+      .innerJoin(
+        payrollPeriodsTable,
+        eq(payrollPeriodsTable.id, payslipsTable.payrollPeriodId),
+      )
+      .innerJoin(employeesTable, eq(employeesTable.id, payslipsTable.employeeId))
+      .where(eq(payslipsTable.id, payslipId))
+      .limit(1);
 
     if (!row) {
       throw new NotFoundException('Payslip not found');
@@ -625,25 +494,12 @@ export class PayrollService {
   }
 
   private async findEmployeeCompensation(id: string) {
-    const row = await this.database.one<EmployeeCompensationRow>(
-      `
-        SELECT
-          ec.id,
-          ec.employee_id AS "employeeId",
-          ec.base_salary AS "baseSalary",
-          ec.allowance_amount AS "allowanceAmount",
-          ec.deduction_amount AS "deductionAmount",
-          ec.currency_code AS "currencyCode",
-          ec.effective_from::text AS "effectiveFrom",
-          ec.notes,
-          e.employee_number AS "employeeNumber",
-          CONCAT(e.first_name, ' ', e.last_name) AS "employeeName"
-        FROM employee_compensations ec
-        INNER JOIN employees e ON e.id = ec.employee_id
-        WHERE ec.id = $1
-      `,
-      [id],
-    );
+    const [row] = await this.database.drizzle
+      .select(this.employeeCompensationSelectFields())
+      .from(employeeCompensations)
+      .innerJoin(employeesTable, eq(employeesTable.id, employeeCompensations.employeeId))
+      .where(eq(employeeCompensations.id, id))
+      .limit(1);
 
     if (!row) {
       throw new NotFoundException('Employee compensation not found');
@@ -653,25 +509,12 @@ export class PayrollService {
   }
 
   private async findEmployeeCompensationByEmployeeId(employeeId: string) {
-    const row = await this.database.one<EmployeeCompensationRow>(
-      `
-        SELECT
-          ec.id,
-          ec.employee_id AS "employeeId",
-          ec.base_salary AS "baseSalary",
-          ec.allowance_amount AS "allowanceAmount",
-          ec.deduction_amount AS "deductionAmount",
-          ec.currency_code AS "currencyCode",
-          ec.effective_from::text AS "effectiveFrom",
-          ec.notes,
-          e.employee_number AS "employeeNumber",
-          CONCAT(e.first_name, ' ', e.last_name) AS "employeeName"
-        FROM employee_compensations ec
-        INNER JOIN employees e ON e.id = ec.employee_id
-        WHERE ec.employee_id = $1
-      `,
-      [employeeId],
-    );
+    const [row] = await this.database.drizzle
+      .select(this.employeeCompensationSelectFields())
+      .from(employeeCompensations)
+      .innerJoin(employeesTable, eq(employeesTable.id, employeeCompensations.employeeId))
+      .where(eq(employeeCompensations.employeeId, employeeId))
+      .limit(1);
 
     if (!row) {
       throw new NotFoundException('Employee compensation not found');
@@ -681,25 +524,16 @@ export class PayrollService {
   }
 
   private async getRawPayrollPeriod(id: string) {
-    const row = await this.database.one<PayrollPeriodRow>(
-      `
-        SELECT
-          pp.id,
-          pp.period_month AS "periodMonth",
-          pp.start_date::text AS "startDate",
-          pp.end_date::text AS "endDate",
-          pp.status,
-          pp.processed_at::text AS "processedAt",
-          pp.paid_at::text AS "paidAt",
-          COUNT(ps.id)::int AS "payslipCount",
-          COALESCE(SUM(ps.net_pay), 0) AS "totalNetPay"
-        FROM payroll_periods pp
-        LEFT JOIN payslips ps ON ps.payroll_period_id = pp.id
-        WHERE pp.id = $1
-        GROUP BY pp.id
-      `,
-      [id],
-    );
+    const [row] = await this.database.drizzle
+      .select(this.payrollPeriodSelectFields())
+      .from(payrollPeriodsTable)
+      .leftJoin(
+        payslipsTable,
+        eq(payslipsTable.payrollPeriodId, payrollPeriodsTable.id),
+      )
+      .where(eq(payrollPeriodsTable.id, id))
+      .groupBy(payrollPeriodsTable.id)
+      .limit(1);
 
     if (!row) {
       throw new NotFoundException('Payroll period not found');
@@ -736,10 +570,11 @@ export class PayrollService {
       return requestedEmployeeId?.trim() || null;
     }
 
-    const account = await this.database.one<{ employeeId: string | null }>(
-      `SELECT employee_id AS "employeeId" FROM users WHERE id = $1`,
-      [currentUser.userId],
-    );
+    const [account] = await this.database.drizzle
+      .select({ employeeId: users.employeeId })
+      .from(users)
+      .where(eq(users.id, currentUser.userId))
+      .limit(1);
 
     if (!account?.employeeId) {
       throw new ForbiddenException(
@@ -752,6 +587,74 @@ export class PayrollService {
     }
 
     return account.employeeId;
+  }
+
+  private employeeCompensationSelectFields() {
+    return {
+      id: employeeCompensations.id,
+      employeeId: employeeCompensations.employeeId,
+      baseSalary: employeeCompensations.baseSalary,
+      allowanceAmount: employeeCompensations.allowanceAmount,
+      deductionAmount: employeeCompensations.deductionAmount,
+      currencyCode: employeeCompensations.currencyCode,
+      effectiveFrom: sql<string>`${employeeCompensations.effectiveFrom}::text`,
+      notes: employeeCompensations.notes,
+      employeeNumber: employeesTable.employeeNumber,
+      employeeName: sql<string>`CONCAT(${employeesTable.firstName}, ' ', ${employeesTable.lastName})`,
+    };
+  }
+
+  private payrollPeriodSelectFields() {
+    return {
+      id: payrollPeriodsTable.id,
+      periodMonth: payrollPeriodsTable.periodMonth,
+      startDate: sql<string>`${payrollPeriodsTable.startDate}::text`,
+      endDate: sql<string>`${payrollPeriodsTable.endDate}::text`,
+      status: payrollPeriodsTable.status,
+      processedAt: sql<string | null>`${payrollPeriodsTable.processedAt}::text`,
+      paidAt: sql<string | null>`${payrollPeriodsTable.paidAt}::text`,
+      payslipCount: sql<number>`COUNT(${payslipsTable.id})::int`,
+      totalNetPay: sql<number>`COALESCE(SUM(${payslipsTable.netPay}), 0)`,
+    };
+  }
+
+  private payslipSelectFields() {
+    return {
+      id: payslipsTable.id,
+      payrollPeriodId: payslipsTable.payrollPeriodId,
+      employeeId: payslipsTable.employeeId,
+      periodMonth: payrollPeriodsTable.periodMonth,
+      expectedWorkdays: payslipsTable.expectedWorkdays,
+      attendedDays: payslipsTable.attendedDays,
+      approvedLeaveDays: payslipsTable.approvedLeaveDays,
+      paidDays: payslipsTable.paidDays,
+      unpaidDays: payslipsTable.unpaidDays,
+      baseSalary: payslipsTable.baseSalary,
+      proratedBaseSalary: payslipsTable.proratedBaseSalary,
+      allowanceAmount: payslipsTable.allowanceAmount,
+      deductionAmount: payslipsTable.deductionAmount,
+      attendanceDeduction: payslipsTable.attendanceDeduction,
+      grossPay: payslipsTable.grossPay,
+      netPay: payslipsTable.netPay,
+      currencyCode: payslipsTable.currencyCode,
+      status: payslipsTable.status,
+      employeeNumber: employeesTable.employeeNumber,
+      employeeName: sql<string>`CONCAT(${employeesTable.firstName}, ' ', ${employeesTable.lastName})`,
+    };
+  }
+
+  private payslipExportSelectFields() {
+    return {
+      ...this.payslipSelectFields(),
+      startDate: sql<string>`${payrollPeriodsTable.startDate}::text`,
+      endDate: sql<string>`${payrollPeriodsTable.endDate}::text`,
+      companyName: sql<string | null>`(
+        SELECT ${companySettings.companyName}
+        FROM ${companySettings}
+        WHERE ${companySettings.singletonKey} = 'primary'
+        LIMIT 1
+      )`,
+    };
   }
 
   private getPeriodRange(periodMonth: string) {
