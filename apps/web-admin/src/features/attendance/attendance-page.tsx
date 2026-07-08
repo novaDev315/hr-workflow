@@ -1,5 +1,4 @@
 import { FormEvent, useEffect, useState } from 'react'
-import { useMutation, useQuery } from '@apollo/client'
 import { AdminHero } from '@/components/admin/admin-hero'
 import { AdminTable, AdminTableEmpty, AdminTableRow } from '@/components/admin/admin-table'
 import { PageFeedback } from '@/components/admin/page-feedback'
@@ -20,16 +19,7 @@ import { Clock3, MapPin, Pencil, Settings2, XCircle } from 'lucide-react'
 import { MetricCard } from '@/components/ui/metric-card'
 import { Notice } from '@/components/ui/notice'
 import { StatusBadge } from '@/components/ui/status-badge'
-import {
-  ASSIGN_EMPLOYEE_LOCATION_MUTATION,
-  ATTENDANCE_WORKSPACE_QUERY,
-  CLOCK_IN_MUTATION,
-  CLOCK_OUT_MUTATION,
-  CREATE_LOCATION_MUTATION,
-  DEACTIVATE_LOCATION_MUTATION,
-  EMPLOYEE_LOCATIONS_QUERY,
-  UPDATE_LOCATION_MUTATION,
-} from './graphql'
+import { useAttendanceWorkspaceGraphql } from './hooks'
 import {
   assignmentFormDefaults,
   attendanceActionDefaults,
@@ -53,40 +43,24 @@ export function AttendancePage() {
     loading,
     error,
     refetch,
-  } = useQuery(ATTENDANCE_WORKSPACE_QUERY, {
-    variables: {
-      filter: attendanceFilterEmployeeId
-        ? {
-            employeeId: attendanceFilterEmployeeId,
-          }
-        : null,
-    },
+    assignmentsData,
+    refetchAssignments,
+    createLocation,
+    creatingLocation,
+    updateLocation,
+    updatingLocation,
+    deactivateLocation,
+    deactivatingLocation,
+    assignEmployeeLocation,
+    assigningLocation,
+    clockIn,
+    clockingIn,
+    clockOut,
+    clockingOut,
+  } = useAttendanceWorkspaceGraphql({
+    assignmentEmployeeId: assignmentForm.employeeId,
+    attendanceFilterEmployeeId,
   })
-
-  const {
-    data: assignmentsData,
-    refetch: refetchAssignments,
-  } = useQuery(EMPLOYEE_LOCATIONS_QUERY, {
-    variables: {
-      employeeId: assignmentForm.employeeId,
-    },
-    skip: !assignmentForm.employeeId,
-  })
-
-  const [createLocation, { loading: creatingLocation }] = useMutation(
-    CREATE_LOCATION_MUTATION
-  )
-  const [updateLocation, { loading: updatingLocation }] = useMutation(
-    UPDATE_LOCATION_MUTATION
-  )
-  const [deactivateLocation, { loading: deactivatingLocation }] = useMutation(
-    DEACTIVATE_LOCATION_MUTATION
-  )
-  const [assignEmployeeLocation, { loading: assigningLocation }] = useMutation(
-    ASSIGN_EMPLOYEE_LOCATION_MUTATION
-  )
-  const [clockIn, { loading: clockingIn }] = useMutation(CLOCK_IN_MUTATION)
-  const [clockOut, { loading: clockingOut }] = useMutation(CLOCK_OUT_MUTATION)
 
   const employees = data?.employees ?? []
   const locations = data?.locations ?? []

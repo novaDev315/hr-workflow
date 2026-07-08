@@ -1,5 +1,4 @@
-import { FormEvent, useMemo, useState } from 'react'
-import { useMutation, useQuery } from '@apollo/client'
+import { FormEvent, useState } from 'react'
 import { AdminHero } from '@/components/admin/admin-hero'
 import { AdminTableEmpty } from '@/components/admin/admin-table'
 import { PageFeedback } from '@/components/admin/page-feedback'
@@ -31,15 +30,7 @@ import {
 import { StatusBadge } from '@/components/ui/status-badge'
 import { Textarea } from '@/components/ui/textarea'
 import { canManageAccounts, readStoredAdminAccount } from '@/lib/auth-session'
-import {
-  ADVANCE_RECRUITMENT_APPLICATION_MUTATION,
-  CHANGE_JOB_REQUISITION_STATUS_MUTATION,
-  CREATE_JOB_REQUISITION_MUTATION,
-  CREATE_RECRUITMENT_APPLICATION_MUTATION,
-  RECRUITMENT_PAGE_QUERY,
-  UPDATE_JOB_REQUISITION_MUTATION,
-  UPDATE_RECRUITMENT_APPLICATION_MUTATION,
-} from './graphql'
+import { useRecruitmentWorkspaceGraphql } from './hooks'
 import {
   applicationFormDefaults,
   requisitionFormDefaults,
@@ -78,46 +69,30 @@ export function RecruitmentPage() {
   const [statusMessage, setStatusMessage] = useState<string | null>(null)
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
 
-  const queryVariables = useMemo(
-    () => ({
-      requisitionFilter: {
-        ...(searchQuery.trim() ? { search: searchQuery.trim() } : {}),
-        ...(statusFilter ? { status: statusFilter } : {}),
-      },
-      applicationFilter: {
-        ...(searchQuery.trim() ? { search: searchQuery.trim() } : {}),
-        ...(applicationStatusFilter ? { status: applicationStatusFilter } : {}),
-        ...(selectedRequisitionFilter
-          ? { requisitionId: selectedRequisitionFilter }
-          : {}),
-      },
-    }),
-    [
-      applicationStatusFilter,
-      searchQuery,
-      selectedRequisitionFilter,
-      statusFilter,
-    ],
-  )
-
-  const { data, loading, error, refetch } = useQuery(RECRUITMENT_PAGE_QUERY, {
-    skip: !canManageRecruitment,
-    variables: queryVariables,
+  const {
+    data,
+    loading,
+    error,
+    refetch,
+    createJobRequisition,
+    creatingRequisition,
+    updateJobRequisition,
+    updatingRequisition,
+    changeJobRequisitionStatus,
+    changingRequisitionStatus,
+    createRecruitmentApplication,
+    creatingApplication,
+    updateRecruitmentApplication,
+    updatingApplication,
+    advanceRecruitmentApplication,
+    advancingApplication,
+  } = useRecruitmentWorkspaceGraphql({
+    applicationStatusFilter,
+    canManageRecruitment,
+    searchQuery,
+    selectedRequisitionFilter,
+    statusFilter,
   })
-  const [createJobRequisition, { loading: creatingRequisition }] = useMutation(
-    CREATE_JOB_REQUISITION_MUTATION,
-  )
-  const [updateJobRequisition, { loading: updatingRequisition }] = useMutation(
-    UPDATE_JOB_REQUISITION_MUTATION,
-  )
-  const [changeJobRequisitionStatus, { loading: changingRequisitionStatus }] =
-    useMutation(CHANGE_JOB_REQUISITION_STATUS_MUTATION)
-  const [createRecruitmentApplication, { loading: creatingApplication }] =
-    useMutation(CREATE_RECRUITMENT_APPLICATION_MUTATION)
-  const [updateRecruitmentApplication, { loading: updatingApplication }] =
-    useMutation(UPDATE_RECRUITMENT_APPLICATION_MUTATION)
-  const [advanceRecruitmentApplication, { loading: advancingApplication }] =
-    useMutation(ADVANCE_RECRUITMENT_APPLICATION_MUTATION)
 
   const departments: Department[] = data?.departments ?? []
   const designations: Designation[] = data?.designations ?? []
