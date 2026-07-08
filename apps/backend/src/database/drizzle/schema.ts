@@ -17,7 +17,7 @@ export const users = pgTable(
   'users',
   {
     id: text('id').primaryKey(),
-    email: text('email').notNull().unique(),
+    email: text('email').notNull(),
     employeeId: text('employee_id').references(
       (): AnyPgColumn => employees.id,
       { onDelete: 'set null' },
@@ -30,6 +30,7 @@ export const users = pgTable(
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => [
+    unique('users_email_key').on(table.email),
     uniqueIndex('idx_users_employee_id_unique')
       .on(table.employeeId)
       .where(sql`${table.employeeId} IS NOT NULL`),
