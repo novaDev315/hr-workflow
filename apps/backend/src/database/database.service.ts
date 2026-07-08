@@ -18,12 +18,16 @@ export class DatabaseService implements OnModuleInit, OnModuleDestroy {
   });
 
   async onModuleInit() {
-    await this.drizzle.execute(sql`SELECT 1`);
+    await this.verifyConnection();
     await this.ensureSeedData();
   }
 
   async onModuleDestroy() {
     await this.pool.end();
+  }
+
+  async verifyConnection() {
+    await this.drizzle.execute(sql`SELECT 1`);
   }
 
   async ensureSeedData() {

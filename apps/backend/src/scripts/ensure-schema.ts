@@ -5,7 +5,8 @@ async function main() {
   const database = new DatabaseService();
 
   try {
-    await database.onModuleInit();
+    await database.verifyConnection();
+    await database.ensureSeedData();
     console.log('Database connection and seed data verified successfully.');
   } finally {
     await database.onModuleDestroy();

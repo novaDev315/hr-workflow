@@ -89,12 +89,43 @@ Config:
 apps/backend/drizzle.config.ts
 ```
 
-`schema:ensure` runs Drizzle schema sync first, then verifies the connection and
-seed data through the compiled backend script. `drizzle:check` validates that
-the mapped schema can be exported as Postgres DDL.
+`schema:ensure` runs Drizzle schema sync first, then the compiled backend script
+calls `DatabaseService.verifyConnection()` and `DatabaseService.ensureSeedData()`
+directly. Backend startup uses the same explicit methods during Nest module
+initialization, but migration verification does not depend on calling the
+lifecycle method as an API. `drizzle:check` validates that the mapped schema can
+be exported as Postgres DDL.
 
 Generated SQL migrations are not enabled yet. `drizzle:migration-check` remains
 reserved for a later versioned-migration phase.
+
+## Versioned Migration Lane
+
+The current production lane is explicit Drizzle push-sync. It is acceptable for
+the completed bootstrap migration, but future structural changes should move to
+reviewed SQL migration files before they touch production.
+
+Adopt the versioned lane in a separate phase with this gate:
+
+1. Prove the current schema export is clean:
+   `bun run --cwd apps/backend drizzle:check`.
+2. Generate migration SQL from the Drizzle schema:
+   `bun run --cwd apps/backend drizzle:generate`.
+3. Review the generated files under `apps/backend/drizzle/`; do not accept
+   destructive SQL without a named rollback or restore plan.
+4. In that same phase, switch `migrate:deploy` from `schema:ensure` to a
+   reviewed generated-migration command such as
+   `drizzle-kit migrate --config drizzle.config.ts`, followed by seed
+   verification.
+5. Rehearse the switched command against the NexOS test environment:
+   `nexos secrets exec --project /home/nova/projects/work/rakss --env test -- bun run --cwd apps/backend migrate:deploy`.
+6. Back up production before live migration:
+   `nexos secrets exec --project /home/nova/projects/work/rakss --env production -- <backup command>`.
+7. Ship through Homelab so deploy and migration use the same NexOS-rendered
+   production environment.
+
+Do not replace the production migration command with generated migrations until
+the test rehearsal and backup path are proven in the same phase.
 
 ## Proof
 

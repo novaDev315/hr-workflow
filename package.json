@@ -29,7 +29,7 @@
     "typecheck:mobile": "bunx tsc --noEmit -p apps/mobile/tsconfig.json",
     "db:schema:ensure": "bun run --cwd apps/backend schema:ensure",
     "migrate:up": "bun run build:backend && bun run --cwd apps/backend migrate:deploy",
-    "migrate:down": "echo 'Raw SQL startup migrations are forward-only. Restore from backup or add an explicit rollback script for the target change.'",
+    "migrate:down": "echo 'Current Drizzle push-sync migrations are forward-only. Restore from backup or add an explicit rollback script for the target change.'",
     "migrate:status": "echo 'Drizzle schema sync is explicit via migrate:up; generated SQL migrations are not enabled yet.'"
   },
   "devDependencies": {
