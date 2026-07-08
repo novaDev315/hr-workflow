@@ -81,12 +81,14 @@ The main backend settings are:
 - `VITE_GRAPHQL_ENDPOINT`
 - `EXPO_PUBLIC_GRAPHQL_ENDPOINT`
 
-See [.env.example](/home/nova/projects/work/rakss/.env.example) for a working local template.
+See [.env.example](./.env.example) for a working local template.
 
-Test runs can also use a separate `.env.test` file. This repository now supports central homelab Postgres provisioning for test isolation:
+Homelab runtime and test secrets are resolved through the project contract in
+[.nexos/env.yaml](./.nexos/env.yaml). Do not commit or depend on `.env.*` files
+for deploys or shared test runs; use NexOS to render the target environment:
 
 ```bash
-homelab apps database create rakss --service backend --db-type postgres --mode central --db-name rakss_backend_test --env-file .env.test
+nexos secrets exec --project /home/nova/projects/work/rakss --env test -- bun run test:backend
 ```
 
 ## Implemented Modules

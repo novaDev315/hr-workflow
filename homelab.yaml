@@ -34,8 +34,6 @@ services:
     domain: api
     health_endpoint: /health
     port: 4001
-    deploy:
-      env_file: .env.production
     dependencies:
       database:
         type: postgres
@@ -46,7 +44,6 @@ services:
         enabled: true
         command: bun run migrate:deploy
         required_for_ship: true
-        env_file: .env.production
   web-admin:
     dockerfile: apps/web-admin/Dockerfile
     context: apps/web-admin

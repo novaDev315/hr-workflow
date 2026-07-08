@@ -40,10 +40,7 @@ describe('Recruitment Drizzle migration', () => {
       imports: [
         ConfigModule.forRoot({
           isGlobal: true,
-          envFilePath:
-            process.env.NODE_ENV === 'test'
-              ? ['.env.test', '../../.env.test', '.env', '../../.env']
-              : ['.env', '../../.env'],
+          envFilePath: ['.env', '../../.env'],
         }),
         DatabaseModule,
       ],

@@ -18,10 +18,11 @@ cp .env.example .env
 
 The defaults are set up for local development with PostgreSQL on Docker and the backend on `http://localhost:4001/graphql`.
 
-Optional isolated test database using the homelab central Postgres:
+Optional isolated test runs should use the NexOS project contract instead of
+writing env-specific files into the repo:
 
 ```bash
-homelab apps database create rakss --service backend --db-type postgres --mode central --db-name rakss_backend_test --env-file .env.test
+nexos secrets exec --project /home/nova/projects/work/rakss --env test -- bun run test:backend
 ```
 
 ## 3. Start PostgreSQL
@@ -99,5 +100,5 @@ bun run docker:down
 
 - The active implementation is the modular monolith in `apps/backend`.
 - Legacy `services/*` and `apps/api-gateway` have been removed from the active codebase.
-- The database schema is bootstrapped automatically when the backend starts.
-- `bun run test:backend` uses `.env.test` first when `NODE_ENV=test`.
+- Database schema sync runs through the Drizzle migration command; backend startup verifies the connection and seed data.
+- Shared test credentials are resolved through `.nexos/env.yaml` and NexOS.

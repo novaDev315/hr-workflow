@@ -30,15 +30,22 @@ bun run dev:web-admin
 bun run dev:mobile
 ```
 
-### Central Homelab Test Database
+### Central Homelab Test Environment
 
-For isolated integration testing, provision a dedicated central Postgres database and write it into `.env.test`:
+For isolated integration testing, keep the database URL and secrets in the NexOS
+project contract. `.nexos/env.yaml` declares the required keys; NexOS supplies
+the target values at runtime:
 
 ```bash
-homelab apps database create rakss --service backend --db-type postgres --mode central --db-name rakss_backend_test --env-file .env.test
+nexos secrets exec --project /home/nova/projects/work/rakss --env test -- bun run test:backend
 ```
 
-The backend test runner already prefers `.env.test` when `NODE_ENV=test`:
+If a dedicated central database needs to be created or rotated, use the Homelab
+database workflow and write the resulting secret through the NexOS project
+environment, not a checked-in or repo-local `.env.*` file.
+
+The backend reads already-exported environment variables first and only falls
+back to `.env` for local development:
 
 ```bash
 bun run test:backend
@@ -230,7 +237,7 @@ Operator-required configuration:
 - Set a real `JWT_SECRET`; the compose default is only a local-development fallback.
 - Set `ALLOWED_ORIGINS` to the deployed admin and mobile origins.
 - Set and back up `POLICY_STORAGE_DIR` with the database because policy rows reference stored files.
-- Run database migration verification before shipping: `bun run --cwd apps/backend migrate:deploy` or the homelab database migration wrapper for the target deployment. This runs Drizzle schema sync followed by Drizzle seed verification.
+- Run database migration verification before shipping through NexOS or Homelab so the target environment comes from `.nexos/env.yaml`: `nexos secrets exec --project /home/nova/projects/work/rakss --env production -- bun run --cwd apps/backend migrate:deploy` or the Homelab migration wrapper for the target deployment. This runs Drizzle schema sync followed by Drizzle seed verification.
 
 Not yet proven or not implemented in this repo:
 
