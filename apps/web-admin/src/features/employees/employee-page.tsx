@@ -1,5 +1,4 @@
 import { FormEvent, useDeferredValue, useState } from 'react'
-import { AdminTable, AdminTableEmpty, AdminTableRow } from '@/components/admin/admin-table'
 import { PageFeedback } from '@/components/admin/page-feedback'
 import { RecordCard } from '@/components/admin/record-card'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -16,9 +15,10 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { Pencil, Plus, Search, UserX } from 'lucide-react'
-import { Notice } from '@/components/ui/notice'
 import { StatusBadge } from '@/components/ui/status-badge'
 import { canManageAccounts, readStoredAdminAccount } from '@/lib/auth-session'
+import { EmployeeListCard } from './components'
+import type { EmployeeListRow } from './components'
 import { useEmployeeWorkspaceGraphql } from './hooks'
 import {
   departmentFormDefaults,
@@ -335,18 +335,7 @@ export function EmployeesPage() {
     }
   }
 
-  const handleEditEmployee = (employee: {
-    id: string
-    firstName: string
-    lastName: string
-    email: string
-    phone?: string | null
-    departmentId: string
-    designationId: string
-    employmentType: string
-    joinDate: string
-    status: string
-  }) => {
+  const handleEditEmployee = (employee: EmployeeListRow) => {
     setShowForms(true)
     setEditingEmployeeId(employee.id)
     setEmployeeForm({
@@ -1182,126 +1171,15 @@ export function EmployeesPage() {
         </div>
       </FormDrawer>
 
-      <Card>
-        <CardHeader>
-          <p className="app-kicker">Roster</p>
-          <CardTitle>Employee List</CardTitle>
-        </CardHeader>
-        <CardContent>
-          {loading ? (
-            <p className="text-sm text-muted-foreground">Loading employees...</p>
-          ) : error ? (
-            <Notice tone="danger">Unable to load employee data. {error.message}</Notice>
-          ) : employees.length === 0 ? (
-            <AdminTableEmpty>
-              No employees found yet. Use “Add Records” to create the first team.
-            </AdminTableEmpty>
-          ) : (
-            <AdminTable>
-                <thead>
-                  <tr className="border-b">
-                    <th className="px-4 py-3 text-left">Employee #</th>
-                    <th className="px-4 py-3 text-left">Name</th>
-                    <th className="px-4 py-3 text-left">Email</th>
-                    <th className="px-4 py-3 text-left">Department</th>
-                    <th className="px-4 py-3 text-left">Designation</th>
-                    <th className="px-4 py-3 text-left">Login</th>
-                    <th className="px-4 py-3 text-left">Join Date</th>
-                    <th className="px-4 py-3 text-left">Status</th>
-                    {accountManagerAccess ? (
-                      <th className="px-4 py-3 text-left">Actions</th>
-                    ) : null}
-                  </tr>
-                </thead>
-                <tbody>
-                  {employees.map(
-                    (employee: {
-                      id: string
-                      employeeNumber: string
-                      fullName: string
-                      email: string
-                      phone?: string | null
-                      firstName: string
-                      lastName: string
-                      departmentId: string
-                      designationId: string
-                      employmentType: string
-                      hasLinkedAccount: boolean
-                      linkedAccountEmail?: string | null
-                      linkedAccountRoles: string[]
-                      joinDate: string
-                      status: string
-                      isActive: boolean
-                      department: { name: string }
-                      designation: { title: string }
-                    }) => (
-                      <AdminTableRow key={employee.id}>
-                        <td className="px-4 py-3 font-medium">{employee.employeeNumber}</td>
-                        <td className="px-4 py-3">{employee.fullName}</td>
-                        <td className="px-4 py-3">{employee.email}</td>
-                        <td className="px-4 py-3">{employee.department.name}</td>
-                        <td className="px-4 py-3">{employee.designation.title}</td>
-                        <td className="px-4 py-3">
-                          {employee.hasLinkedAccount ? (
-                            <div className="space-y-2">
-                              <StatusBadge tone="info">
-                                {employee.linkedAccountEmail || 'Linked'}
-                              </StatusBadge>
-                              {employee.linkedAccountRoles.length > 0 && (
-                                <div className="flex flex-wrap gap-1">
-                                  {employee.linkedAccountRoles.map((role) => (
-                                    <StatusBadge key={role} tone="neutral">
-                                      {role}
-                                    </StatusBadge>
-                                  ))}
-                                </div>
-                              )}
-                            </div>
-                          ) : (
-                            <StatusBadge tone="warning">No login</StatusBadge>
-                          )}
-                        </td>
-                        <td className="px-4 py-3">{employee.joinDate}</td>
-                        <td className="px-4 py-3">
-                          <StatusBadge tone={employee.isActive ? 'success' : 'neutral'}>
-                            {employee.status}
-                          </StatusBadge>
-                        </td>
-                        {accountManagerAccess ? (
-                          <td className="px-4 py-3">
-                            <div className="flex flex-wrap gap-2">
-                              <Button
-                                type="button"
-                                variant="outline"
-                                onClick={() => handleEditEmployee(employee)}
-                              >
-                                <Pencil className="mr-2 h-4 w-4" />
-                                Edit
-                              </Button>
-                              {employee.isActive ? (
-                                <Button
-                                  type="button"
-                                  variant="outline"
-                                  disabled={deactivatingEmployee}
-                                  onClick={() =>
-                                    handleDeactivateEmployee(employee.id, employee.fullName)
-                                  }
-                                >
-                                  <UserX className="mr-2 h-4 w-4" />
-                                  Deactivate
-                                </Button>
-                              ) : null}
-                            </div>
-                          </td>
-                        ) : null}
-                      </AdminTableRow>
-                    )
-                  )}
-                </tbody>
-            </AdminTable>
-          )}
-        </CardContent>
-      </Card>
+      <EmployeeListCard
+        accountManagerAccess={accountManagerAccess}
+        deactivatingEmployee={deactivatingEmployee}
+        employees={employees}
+        error={error}
+        handleDeactivateEmployee={handleDeactivateEmployee}
+        handleEditEmployee={handleEditEmployee}
+        loading={loading}
+      />
     </div>
   )
 }

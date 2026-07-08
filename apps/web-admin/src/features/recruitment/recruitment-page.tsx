@@ -1,16 +1,12 @@
 import { FormEvent, useState } from 'react'
 import { AdminHero } from '@/components/admin/admin-hero'
-import { AdminTableEmpty } from '@/components/admin/admin-table'
 import { PageFeedback } from '@/components/admin/page-feedback'
-import { RecordCard } from '@/components/admin/record-card'
 import {
   Briefcase,
   CheckCircle2,
-  Pencil,
   Plus,
   Search,
   UserRoundPlus,
-  XCircle,
 } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
@@ -27,10 +23,14 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { StatusBadge } from '@/components/ui/status-badge'
 import { Textarea } from '@/components/ui/textarea'
 import { canManageAccounts, readStoredAdminAccount } from '@/lib/auth-session'
+import {
+  JobRequisitionListCard,
+  RecruitmentApplicationListCard,
+} from './components'
 import { useRecruitmentWorkspaceGraphql } from './hooks'
+import { actionPastTense, formatStatus } from './presentation'
 import {
   applicationFormDefaults,
   requisitionFormDefaults,
@@ -954,262 +954,21 @@ export function RecruitmentPage() {
       </FormDrawer>
 
       <div className="grid gap-4 xl:grid-cols-[minmax(0,0.95fr)_minmax(0,1.05fr)]">
-        <Card>
-          <CardHeader>
-            <p className="app-kicker">Openings</p>
-            <CardTitle>Job requisitions</CardTitle>
-          </CardHeader>
-          <CardContent>
-            {loading ? (
-              <p className="text-sm text-muted-foreground">
-                Loading requisitions...
-              </p>
-            ) : requisitions.length === 0 ? (
-              <AdminTableEmpty>
-                No requisitions match the current filters.
-              </AdminTableEmpty>
-            ) : (
-              <div className="space-y-3">
-                {requisitions.map((requisition) => (
-                  <RecordCard key={requisition.id}>
-                    <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                      <div className="min-w-0">
-                        <div className="flex flex-wrap items-center gap-2">
-                          <p className="font-semibold text-foreground">
-                            {requisition.jobTitle}
-                          </p>
-                          <StatusBadge tone={statusTone(requisition.status)}>
-                            {formatStatus(requisition.status)}
-                          </StatusBadge>
-                          <StatusBadge
-                            tone={priorityTone(requisition.priority)}
-                          >
-                            {formatStatus(requisition.priority)}
-                          </StatusBadge>
-                        </div>
-                        <p className="mt-1 text-xs font-semibold uppercase tracking-[0.12em] text-muted-foreground">
-                          {requisition.requisitionNumber} ·{' '}
-                          {requisition.departmentName}
-                        </p>
-                        <p className="mt-2 text-sm leading-6 text-muted-foreground">
-                          {requisition.description}
-                        </p>
-                        <p className="mt-2 text-xs text-muted-foreground">
-                          {requisition.positionsCount} position
-                          {requisition.positionsCount === 1 ? '' : 's'} ·{' '}
-                          {formatStatus(requisition.employmentType)} ·{' '}
-                          {requisition.applicationCount} candidate
-                          {requisition.applicationCount === 1 ? '' : 's'}
-                        </p>
-                      </div>
-                      <div className="flex shrink-0 flex-wrap gap-2">
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          type="button"
-                          onClick={() => handleEditRequisition(requisition)}
-                        >
-                          <Pencil className="mr-2 h-3.5 w-3.5" />
-                          Edit
-                        </Button>
-                        {requisition.status === 'ON_HOLD' ? (
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            type="button"
-                            disabled={changingRequisitionStatus}
-                            onClick={() =>
-                              handleRequisitionStatus(
-                                requisition.id,
-                                'OPEN',
-                                'Reopen',
-                              )
-                            }
-                          >
-                            Reopen
-                          </Button>
-                        ) : requisition.status === 'OPEN' ? (
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            type="button"
-                            disabled={changingRequisitionStatus}
-                            onClick={() =>
-                              handleRequisitionStatus(
-                                requisition.id,
-                                'ON_HOLD',
-                                'Hold',
-                              )
-                            }
-                          >
-                            Hold
-                          </Button>
-                        ) : null}
-                        {['OPEN', 'ON_HOLD'].includes(requisition.status) ? (
-                          <>
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              type="button"
-                              disabled={changingRequisitionStatus}
-                              onClick={() =>
-                                handleRequisitionStatus(
-                                  requisition.id,
-                                  'FILLED',
-                                  'Mark filled',
-                                )
-                              }
-                            >
-                              Mark Filled
-                            </Button>
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              type="button"
-                              disabled={changingRequisitionStatus}
-                              onClick={() =>
-                                handleRequisitionStatus(
-                                  requisition.id,
-                                  'CLOSED',
-                                  'Close',
-                                )
-                              }
-                            >
-                              Close
-                            </Button>
-                          </>
-                        ) : null}
-                      </div>
-                    </div>
-                  </RecordCard>
-                ))}
-              </div>
-            )}
-          </CardContent>
-        </Card>
+        <JobRequisitionListCard
+          changingRequisitionStatus={changingRequisitionStatus}
+          handleEditRequisition={handleEditRequisition}
+          handleRequisitionStatus={handleRequisitionStatus}
+          loading={loading}
+          requisitions={requisitions}
+        />
 
-        <Card>
-          <CardHeader>
-            <p className="app-kicker">Candidates</p>
-            <CardTitle>Application workflow</CardTitle>
-          </CardHeader>
-          <CardContent>
-            {loading ? (
-              <p className="text-sm text-muted-foreground">
-                Loading applications...
-              </p>
-            ) : applications.length === 0 ? (
-              <AdminTableEmpty>
-                No applications match the current filters.
-              </AdminTableEmpty>
-            ) : (
-              <div className="space-y-3">
-                {applications.map((application) => {
-                  const nextAction = nextApplicationAction(application.status)
-                  return (
-                    <RecordCard key={application.id}>
-                      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                        <div className="min-w-0">
-                          <div className="flex flex-wrap items-center gap-2">
-                            <p className="font-semibold text-foreground">
-                              {application.candidateName}
-                            </p>
-                            <StatusBadge tone={statusTone(application.status)}>
-                              {formatStatus(application.status)}
-                            </StatusBadge>
-                          </div>
-                          <p className="mt-1 text-xs font-semibold uppercase tracking-[0.12em] text-muted-foreground">
-                            {application.applicationNumber} ·{' '}
-                            {application.jobTitle}
-                          </p>
-                          <p className="mt-2 text-sm leading-6 text-muted-foreground">
-                            {application.email}
-                            {application.phone ? ` · ${application.phone}` : ''}
-                            {application.source
-                              ? ` · ${application.source}`
-                              : ''}
-                          </p>
-                          {application.notes ? (
-                            <p className="mt-2 text-sm text-muted-foreground">
-                              {application.notes}
-                            </p>
-                          ) : null}
-                          {application.decisionNotes ? (
-                            <p className="mt-2 text-xs text-muted-foreground">
-                              Decision: {application.decisionNotes}
-                            </p>
-                          ) : null}
-                        </div>
-                        <div className="flex shrink-0 flex-wrap gap-2">
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            type="button"
-                            onClick={() => handleEditApplication(application)}
-                          >
-                            <Pencil className="mr-2 h-3.5 w-3.5" />
-                            Edit
-                          </Button>
-                          {nextAction ? (
-                            <Button
-                              size="sm"
-                              type="button"
-                              disabled={advancingApplication}
-                              onClick={() =>
-                                handleApplicationStatus(
-                                  application.id,
-                                  nextAction.status,
-                                  nextAction.label,
-                                )
-                              }
-                            >
-                              {nextAction.label}
-                            </Button>
-                          ) : null}
-                          {!isTerminalApplication(application.status) ? (
-                            <>
-                              <Button
-                                size="sm"
-                                variant="outline"
-                                type="button"
-                                disabled={advancingApplication}
-                                onClick={() =>
-                                  handleApplicationStatus(
-                                    application.id,
-                                    'REJECTED',
-                                    'Reject',
-                                  )
-                                }
-                              >
-                                <XCircle className="mr-2 h-3.5 w-3.5" />
-                                Reject
-                              </Button>
-                              <Button
-                                size="sm"
-                                variant="outline"
-                                type="button"
-                                disabled={advancingApplication}
-                                onClick={() =>
-                                  handleApplicationStatus(
-                                    application.id,
-                                    'WITHDRAWN',
-                                    'Withdraw',
-                                  )
-                                }
-                              >
-                                Withdraw
-                              </Button>
-                            </>
-                          ) : null}
-                        </div>
-                      </div>
-                    </RecordCard>
-                  )
-                })}
-              </div>
-            )}
-          </CardContent>
-        </Card>
+        <RecruitmentApplicationListCard
+          advancingApplication={advancingApplication}
+          applications={applications}
+          handleApplicationStatus={handleApplicationStatus}
+          handleEditApplication={handleEditApplication}
+          loading={loading}
+        />
       </div>
     </div>
   )
@@ -1234,68 +993,4 @@ function parseOptionalNumber(value: string) {
 
 function toErrorMessage(error: unknown, fallback: string) {
   return error instanceof Error ? error.message : fallback
-}
-
-function formatStatus(status: string) {
-  return status
-    .split('_')
-    .map((part) => part.charAt(0) + part.slice(1).toLowerCase())
-    .join(' ')
-}
-
-function statusTone(status: string) {
-  if (['OPEN', 'HIRED', 'SELECTED', 'OFFER_EXTENDED'].includes(status)) {
-    return 'success'
-  }
-  if (
-    ['SCREENING', 'SHORTLISTED', 'INTERVIEW_SCHEDULED', 'INTERVIEWED'].includes(
-      status,
-    )
-  ) {
-    return 'info'
-  }
-  if (['ON_HOLD', 'RECEIVED'].includes(status)) {
-    return 'warning'
-  }
-  if (['REJECTED', 'WITHDRAWN', 'CLOSED'].includes(status)) {
-    return 'danger'
-  }
-  return 'neutral'
-}
-
-function priorityTone(priority: string) {
-  if (['HIGH', 'URGENT'].includes(priority)) return 'danger'
-  if (priority === 'MEDIUM') return 'warning'
-  return 'neutral'
-}
-
-function nextApplicationAction(status: string) {
-  const actions: Record<string, { status: string; label: string }> = {
-    RECEIVED: { status: 'SCREENING', label: 'Start Screening' },
-    SCREENING: { status: 'SHORTLISTED', label: 'Shortlist' },
-    SHORTLISTED: { status: 'INTERVIEW_SCHEDULED', label: 'Schedule Interview' },
-    INTERVIEW_SCHEDULED: { status: 'INTERVIEWED', label: 'Mark Interviewed' },
-    INTERVIEWED: { status: 'SELECTED', label: 'Select' },
-    SELECTED: { status: 'OFFER_EXTENDED', label: 'Extend Offer' },
-    OFFER_EXTENDED: { status: 'HIRED', label: 'Mark Hired' },
-  }
-
-  return actions[status] ?? null
-}
-
-function isTerminalApplication(status: string) {
-  return ['HIRED', 'REJECTED', 'WITHDRAWN'].includes(status)
-}
-
-function actionPastTense(label: string) {
-  const labels: Record<string, string> = {
-    Close: 'closed',
-    Hold: 'held',
-    Reopen: 'reopened',
-    'Mark filled': 'marked filled',
-    Reject: 'rejected',
-    Withdraw: 'withdrawn',
-  }
-
-  return labels[label] ?? label.toLowerCase()
 }
