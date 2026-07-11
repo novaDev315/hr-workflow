@@ -9,7 +9,6 @@ import {
   CardContent,
   CardDescription,
   CardHeader,
-  CardTitle,
 } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -89,10 +88,10 @@ export function LoginPage() {
   const [bootstrapAdmin] = useMutation(BOOTSTRAP_ADMIN_MUTATION);
 
   const bootstrapRequired = data?.authBootstrapStatus?.bootstrapRequired ?? false;
-  const title = bootstrapRequired ? "Set up admin access" : "Sign in";
+  const title = bootstrapRequired ? "Set up Rakss HR" : "Welcome back";
   const subtitle = bootstrapRequired
-    ? "Create the first administrator account."
-    : "Admin access only.";
+    ? "Create the first administrator account to secure and open this workspace."
+    : "Sign in with your administrator account to continue.";
   const canSubmit = !loading && !bootstrapStatusLoading && !bootstrapStatusError;
 
   useEffect(() => {
@@ -154,69 +153,44 @@ export function LoginPage() {
   };
 
   return (
-    <div className="flex min-h-screen items-center justify-center px-4 py-8">
-      <div className="grid w-full max-w-[1220px] gap-4 lg:grid-cols-[minmax(0,1.08fr)_460px]">
-        <section className="app-hero-surface p-8 sm:p-10">
-          <div className="flex items-center gap-3">
-            <div className="flex h-11 w-11 items-center justify-center rounded-[1.1rem] bg-primary text-primary-foreground">
-              <ShieldCheck className="h-4.5 w-4.5" />
-            </div>
-            <div>
-              <p className="app-kicker">Rakss HR</p>
-              <p className="mt-0.5 text-base font-semibold tracking-[-0.03em] text-foreground">
-                Admin workspace
-              </p>
-            </div>
-          </div>
+    <main className="relative flex min-h-screen items-center justify-center overflow-hidden px-4 py-8 sm:py-12">
+      <div
+        aria-hidden="true"
+        className="pointer-events-none absolute -right-32 -top-32 h-80 w-80 rounded-full bg-primary/10 blur-3xl"
+      />
+      <div
+        aria-hidden="true"
+        className="pointer-events-none absolute -bottom-36 -left-24 h-80 w-80 rounded-full bg-accent/70 blur-3xl"
+      />
 
-          <div className="mt-8 space-y-4">
-            <p className="app-kicker">{bootstrapRequired ? "Set up access" : "Daily entry"}</p>
-            <h1 className="app-section-title max-w-3xl text-[2.9rem] sm:text-[4rem]">
-              {bootstrapRequired
-                ? "Create a calmer home for people operations."
-                : "A calmer sign-in for the live people workspace."}
-            </h1>
-            <p className="max-w-2xl text-sm leading-7 text-muted-foreground sm:text-base">
-              {bootstrapRequired
-                ? "Use the first administrator account to open the live HR system with the same warm, low-noise feel as Talent Haven."
-                : "Approvals, people updates, payroll, and policy work all sit behind the same steady, low-noise admin surface."}
+      <div className="relative w-full max-w-[460px]">
+        <div className="mb-6 flex items-center justify-center gap-3 sm:mb-7">
+          <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-primary text-primary-foreground shadow-[0_10px_24px_rgba(124,61,40,0.2)]">
+            <ShieldCheck className="h-[18px] w-[18px]" />
+          </div>
+          <div>
+            <p className="text-[11px] font-bold uppercase tracking-[0.17em] text-primary">
+              Rakss HR
+            </p>
+            <p className="mt-0.5 text-base font-semibold tracking-[-0.03em] text-foreground">
+              People operations
             </p>
           </div>
+        </div>
 
-          <div className="mt-8 grid gap-4 md:grid-cols-3">
-            {[
-              {
-                title: bootstrapRequired ? "First admin" : "Leave review",
-                detail: bootstrapRequired
-                  ? "Set up the first account and open the workspace."
-                  : "Keep today focused on approvals and urgent requests.",
-              },
-              {
-                title: "People updates",
-                detail: "Employee records, access, and staffing context stay close by.",
-              },
-              {
-                title: "Policy clarity",
-                detail: "Low-noise surfaces keep documents and follow-up work readable.",
-              },
-            ].map((item) => (
-              <div className="app-muted-surface p-4" key={item.title}>
-                <p className="font-semibold text-foreground">{item.title}</p>
-                <p className="mt-2 text-sm leading-6 text-muted-foreground">{item.detail}</p>
-              </div>
-            ))}
-          </div>
-        </section>
-
-        <Card className="self-center">
-          <CardHeader className="space-y-5">
-            <div className="space-y-1.5">
-              <CardTitle className="text-[2rem]">{title}</CardTitle>
-              <CardDescription className="text-sm">{subtitle}</CardDescription>
-            </div>
+        <Card className="overflow-hidden">
+          <div className="h-1 bg-primary" />
+          <CardHeader className="space-y-2 p-6 pb-4 sm:p-7 sm:pb-4">
+            <p className="app-kicker">
+              {bootstrapRequired ? "First-time setup" : "Secure admin access"}
+            </p>
+            <h1 className="app-editorial text-[2rem] leading-tight text-foreground">
+              {title}
+            </h1>
+            <CardDescription>{subtitle}</CardDescription>
           </CardHeader>
 
-          <CardContent className="space-y-4">
+          <CardContent className="space-y-4 p-6 pt-0 sm:p-7 sm:pt-0">
             {bootstrapStatusError ? (
               <Notice tone="warning">
                 <div>
@@ -309,7 +283,11 @@ export function LoginPage() {
             </form>
           </CardContent>
         </Card>
+
+        <p className="mt-5 text-center text-xs leading-5 text-muted-foreground">
+          Protected workspace for authorized Rakss HR administrators.
+        </p>
       </div>
-    </div>
+    </main>
   );
 }
