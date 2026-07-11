@@ -20,20 +20,69 @@ import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { clearAdminSession, useAdminSession } from "@/lib/auth-session";
 import { formatDate } from "@/lib/utils";
+import {
+  WorkspaceSwitcher,
+  type WorkspaceNavigationItem,
+} from "./workspace-switcher";
 
-const primaryNavigation = [
-  { name: "Home", href: "/", icon: LayoutDashboard },
-  { name: "People Directory", href: "/directory", icon: Search },
-  { name: "Leaves", href: "/leave", icon: Calendar },
-  { name: "Attendance", href: "/attendance", icon: Briefcase },
-  { name: "Payroll", href: "/payroll", icon: DollarSign },
+const primaryNavigation: WorkspaceNavigationItem[] = [
+  {
+    name: "Home",
+    description: "Today’s priorities and activity",
+    href: "/",
+    icon: LayoutDashboard,
+  },
+  {
+    name: "People Directory",
+    description: "Find people and contact details",
+    href: "/directory",
+    icon: Search,
+  },
+  {
+    name: "Leaves",
+    description: "Requests, approvals, and balances",
+    href: "/leave",
+    icon: Calendar,
+  },
+  {
+    name: "Attendance",
+    description: "Schedules, assignments, and time",
+    href: "/attendance",
+    icon: Briefcase,
+  },
+  {
+    name: "Payroll",
+    description: "Periods, runs, and payslips",
+    href: "/payroll",
+    icon: DollarSign,
+  },
 ];
 
-const secondaryNavigation = [
-  { name: "Employees", href: "/employees", icon: Users },
-  { name: "Recruitment", href: "/recruitment", icon: FileText },
-  { name: "Reports", href: "/reports", icon: BarChart3 },
-  { name: "Policies", href: "/policies", icon: BookOpen },
+const secondaryNavigation: WorkspaceNavigationItem[] = [
+  {
+    name: "Employees",
+    description: "Records, access, and organization",
+    href: "/employees",
+    icon: Users,
+  },
+  {
+    name: "Recruitment",
+    description: "Requisitions and candidates",
+    href: "/recruitment",
+    icon: FileText,
+  },
+  {
+    name: "Reports",
+    description: "People and payroll reporting",
+    href: "/reports",
+    icon: BarChart3,
+  },
+  {
+    name: "Policies",
+    description: "Publish and manage documents",
+    href: "/policies",
+    icon: BookOpen,
+  },
 ];
 
 const navigation = [...primaryNavigation, ...secondaryNavigation];
@@ -60,6 +109,13 @@ export function DashboardLayout() {
     setMobileNavOpen(false);
   }, [location.pathname]);
 
+  useEffect(() => {
+    document.body.style.overflow = mobileNavOpen ? "hidden" : "";
+    return () => {
+      document.body.style.overflow = "";
+    };
+  }, [mobileNavOpen]);
+
   const handleLogout = async () => {
     clearAdminSession();
     await apolloClient.clearStore();
@@ -76,115 +132,146 @@ export function DashboardLayout() {
     : "RA";
 
   return (
-    <div className="min-h-screen px-2 py-2 sm:px-3 sm:py-3">
-      <div className="app-shell mx-auto min-h-[calc(100vh-1rem)] max-w-[1440px] overflow-hidden">
-        <div className="lg:grid lg:min-h-[calc(100vh-1rem)] lg:grid-cols-[228px_minmax(0,1fr)]">
-          <aside className="app-shell-sidebar border-b border-border/70 lg:border-b-0 lg:border-r">
-            <div className="space-y-5 p-4">
-              <div className="flex items-center justify-between gap-3">
-                <div className="flex items-center gap-3">
-                  <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary text-primary-foreground">
-                    <ShieldCheck className="h-4.5 w-4.5" />
-                  </div>
-                  <div>
-                    <p className="app-kicker">Rakss HR</p>
-                    <p className="mt-0.5 text-base font-semibold tracking-[-0.03em] text-foreground">
-                      Admin workspace
-                    </p>
-                  </div>
-                </div>
+    <div className="app-layout min-h-screen lg:grid lg:grid-cols-[252px_minmax(0,1fr)]">
+      {mobileNavOpen ? (
+        <button
+          aria-label="Close navigation"
+          className="fixed inset-0 z-40 bg-foreground/25 backdrop-blur-sm lg:hidden"
+          onClick={() => setMobileNavOpen(false)}
+          type="button"
+        />
+      ) : null}
 
-                <Button
-                  aria-label={
-                    mobileNavOpen ? "Close navigation" : "Open navigation"
-                  }
-                  className="lg:hidden"
-                  onClick={() => setMobileNavOpen((current) => !current)}
-                  size="icon"
-                  type="button"
-                  variant="outline"
-                >
-                  {mobileNavOpen ? (
-                    <X className="h-4 w-4" />
-                  ) : (
-                    <Menu className="h-4 w-4" />
-                  )}
-                </Button>
-              </div>
-
-              <div
-                className={
-                  mobileNavOpen
-                    ? "space-y-5 lg:block"
-                    : "hidden space-y-5 lg:block"
-                }
-              >
-                <div className="space-y-4">
-                  <div>
-                    <p className="app-kicker px-3">Workspace</p>
-                    <nav className="mt-2 space-y-1">
-                      {primaryNavigation.map((item) => (
-                        <NavItem key={item.href} item={item} />
-                      ))}
-                    </nav>
-                  </div>
-
-                  <div>
-                    <p className="app-kicker px-3">Admin</p>
-                    <nav className="mt-2 space-y-1">
-                      {secondaryNavigation.map((item) => (
-                        <NavItem key={item.href} item={item} />
-                      ))}
-                    </nav>
-                  </div>
-                </div>
-
-                <Button
-                  className="w-full justify-start px-3"
-                  variant="ghost"
-                  onClick={handleLogout}
-                >
-                  <LogOut className="mr-2 h-4 w-4" />
-                  Log out
-                </Button>
-              </div>
+      <aside
+        aria-label="Main navigation"
+        className={[
+          "app-shell-sidebar fixed inset-y-0 left-0 z-50 flex w-[min(86vw,300px)] flex-col border-r border-border/80 transition-transform duration-200 lg:sticky lg:top-0 lg:z-20 lg:h-screen lg:w-auto lg:translate-x-0",
+          mobileNavOpen
+            ? "visible translate-x-0"
+            : "invisible -translate-x-full lg:visible",
+        ].join(" ")}
+      >
+        <div className="flex h-[72px] items-center justify-between gap-3 border-b border-border/70 px-5">
+          <div className="flex items-center gap-3">
+            <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-primary text-primary-foreground shadow-sm">
+              <ShieldCheck className="h-4 w-4" />
             </div>
-          </aside>
-
-          <div className="app-shell-main min-w-0">
-            <div className="app-shell-header px-4 py-3.5 sm:px-5">
-              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                <div className="min-w-0">
-                  <p className="app-kicker">{formatDate(new Date())}</p>
-                  <h1 className="app-section-title mt-1.5 text-[2.2rem]">
-                    {currentPage.name}
-                  </h1>
-                </div>
-
-                {account ? (
-                  <div className="app-shell-account flex items-center gap-3 self-start px-3 py-2 sm:self-auto">
-                    <div className="flex h-9 w-9 items-center justify-center rounded-full bg-primary text-sm font-semibold text-primary-foreground">
-                      {initials}
-                    </div>
-                    <div className="pr-0.5">
-                      <p className="text-sm font-semibold leading-none text-foreground">
-                        {account.fullName}
-                      </p>
-                      <p className="mt-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
-                        {account.roles[0] ?? "Admin"}
-                      </p>
-                    </div>
-                  </div>
-                ) : null}
-              </div>
+            <div>
+              <p className="text-[11px] font-bold uppercase tracking-[0.17em] text-primary">
+                Rakss HR
+              </p>
+              <p className="mt-0.5 text-sm font-semibold tracking-[-0.02em] text-foreground">
+                People operations
+              </p>
             </div>
-
-            <main className="space-y-4 px-4 py-4 sm:px-5 sm:py-5">
-              <Outlet />
-            </main>
           </div>
+          <Button
+            aria-label="Close navigation"
+            className="lg:hidden"
+            onClick={() => setMobileNavOpen(false)}
+            size="icon"
+            type="button"
+            variant="ghost"
+          >
+            <X className="h-4 w-4" />
+          </Button>
         </div>
+
+        <div className="flex-1 overflow-y-auto px-3 py-5">
+          <NavigationGroup items={primaryNavigation} label="Workspace" />
+          <NavigationGroup
+            className="mt-6"
+            items={secondaryNavigation}
+            label="Manage"
+          />
+        </div>
+
+        <div className="border-t border-border/70 p-3">
+          {account ? (
+            <div className="flex items-center gap-3 rounded-xl px-2 py-2">
+              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-primary/12 text-xs font-bold text-primary">
+                {initials}
+              </div>
+              <div className="min-w-0 flex-1">
+                <p className="truncate text-sm font-semibold text-foreground">
+                  {account.fullName}
+                </p>
+                <p className="mt-0.5 truncate text-[11px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">
+                  {account.roles[0] ?? "Admin"}
+                </p>
+              </div>
+              <Button
+                aria-label="Log out"
+                onClick={handleLogout}
+                size="icon"
+                variant="ghost"
+              >
+                <LogOut className="h-4 w-4" />
+              </Button>
+            </div>
+          ) : null}
+        </div>
+      </aside>
+
+      <div className="app-shell-main min-w-0">
+        <header className="app-shell-header sticky top-0 z-30 flex h-[72px] items-center gap-3 px-4 sm:px-6">
+          <Button
+            aria-label="Open navigation"
+            className="shrink-0 lg:hidden"
+            onClick={() => setMobileNavOpen(true)}
+            size="icon"
+            type="button"
+            variant="outline"
+          >
+            <Menu className="h-4 w-4" />
+          </Button>
+
+          <div className="min-w-0 flex-1">
+            <p className="truncate text-sm font-semibold text-foreground">
+              {currentPage.name}
+            </p>
+            <p className="mt-0.5 hidden text-xs text-muted-foreground sm:block">
+              {formatDate(new Date())}
+            </p>
+          </div>
+
+          <WorkspaceSwitcher items={navigation} />
+          {account ? (
+            <div
+              aria-label={`Signed in as ${account.fullName}`}
+              className="hidden h-9 w-9 shrink-0 items-center justify-center rounded-full bg-primary text-xs font-bold text-primary-foreground sm:flex lg:hidden"
+              title={account.fullName}
+            >
+              {initials}
+            </div>
+          ) : null}
+        </header>
+
+        <main className="mx-auto w-full max-w-[1320px] space-y-5 px-4 py-5 sm:px-6 sm:py-7 lg:px-8">
+          <Outlet />
+        </main>
       </div>
+    </div>
+  );
+}
+
+function NavigationGroup({
+  className = "",
+  items,
+  label,
+}: {
+  className?: string;
+  items: WorkspaceNavigationItem[];
+  label: string;
+}) {
+  return (
+    <div className={className}>
+      <p className="app-kicker px-3">{label}</p>
+      <nav className="mt-2 space-y-1">
+        {items.map((item) => (
+          <NavItem item={item} key={item.href} />
+        ))}
+      </nav>
     </div>
   );
 }
@@ -204,10 +291,10 @@ function NavItem({
       to={item.href}
       className={({ isActive }) =>
         [
-          "flex items-center gap-3 rounded-[1rem] px-3 py-2.5 text-sm font-medium transition-colors",
+          "group flex min-h-11 items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-colors",
           isActive
-            ? "bg-[rgba(255,255,255,0.8)] text-foreground shadow-[inset_3px_0_0_0_hsl(var(--primary)),0_10px_20px_rgba(78,50,23,0.04)]"
-            : "text-muted-foreground hover:bg-[rgba(255,255,255,0.58)] hover:text-foreground",
+            ? "bg-primary/10 font-semibold text-primary"
+            : "text-muted-foreground hover:bg-card/80 hover:text-foreground",
         ].join(" ")
       }
     >
@@ -216,7 +303,9 @@ function NavItem({
           <item.icon
             className={[
               "h-4 w-4 shrink-0",
-              isActive ? "text-primary" : "text-muted-foreground",
+              isActive
+                ? "text-primary"
+                : "text-muted-foreground group-hover:text-foreground",
             ].join(" ")}
           />
           <span>{item.name}</span>

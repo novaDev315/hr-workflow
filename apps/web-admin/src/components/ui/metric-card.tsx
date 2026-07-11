@@ -1,31 +1,33 @@
-import type { LucideIcon } from 'lucide-react'
+import type { LucideIcon } from "lucide-react";
 
-import { Card, CardContent } from '@/components/ui/card'
+import { Card, CardContent } from "@/components/ui/card";
 
 type MetricCardProps = {
-  label: string
-  value: string
-  detail?: string
-  icon?: LucideIcon
-  tone?: string
-}
+  label: string;
+  value: string;
+  detail?: string;
+  icon?: LucideIcon;
+  tone?: string;
+};
 
 export function MetricCard({
   label,
   value,
   detail,
   icon: Icon,
-  tone = 'bg-accent text-accent-foreground',
+  tone = "bg-accent text-accent-foreground",
 }: MetricCardProps) {
   return (
-    <Card className="app-muted-surface">
+    <Card className="app-muted-surface border-l-[3px] border-l-primary/45 shadow-none">
       <CardContent className="flex items-start justify-between gap-3 p-4">
         <div className="min-w-0">
           <p className="text-sm font-medium text-muted-foreground">{label}</p>
-          <p className="mt-2 text-[1.75rem] font-semibold tracking-[-0.03em] text-foreground">
+          <p className="mt-1.5 text-[1.65rem] font-semibold tracking-[-0.035em] text-foreground">
             {value}
           </p>
-          {detail ? <p className="mt-1.5 text-sm text-muted-foreground">{detail}</p> : null}
+          {detail ? (
+            <p className="mt-1.5 text-sm text-muted-foreground">{detail}</p>
+          ) : null}
         </div>
         {Icon ? (
           <div
@@ -36,5 +38,5 @@ export function MetricCard({
         ) : null}
       </CardContent>
     </Card>
-  )
+  );
 }
