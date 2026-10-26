@@ -1,3 +1,5 @@
+import * as bcrypt from 'bcrypt';
+import { createFirstAdminAccount } from '../auth/bootstrap-admin';
 import type { AppDrizzleDatabase } from './database.service';
 import { leaveTypes, policyDocuments } from './drizzle/schema';
 
@@ -29,8 +31,17 @@ export async function seedDatabase(database: AppDrizzleDatabase) {
         description: 'Accrued annual leave allowance',
         isActive: true,
       },
+      {
+        id: 'seed-leave-unpaid',
+        code: 'UNPAID',
+        name: 'Unpaid Leave',
+        defaultDays: 30,
+        description: 'Approved time off without pay; deducted from payroll',
+        isPaid: false,
+        isActive: true,
+      },
     ])
-    .onConflictDoNothing({ target: leaveTypes.code });
+    .onConflictDoNothing();
 
   await database
     .insert(policyDocuments)
@@ -76,7 +87,45 @@ export async function seedDatabase(database: AppDrizzleDatabase) {
         publishedAt: new Date('2024-03-01T00:00:00.000Z'),
       },
     ])
-    .onConflictDoNothing({
-      target: [policyDocuments.title, policyDocuments.version],
-    });
+    .onConflictDoNothing();
+
+  await seedEnvAdmin(database);
+}
+
+/**
+ * Creates the first ADMIN from RAKSS_ADMIN_EMAIL / RAKSS_ADMIN_PASSWORD when
+ * the users table is empty. Serialized by an advisory lock, so concurrent
+ * instances create exactly one account. Never touches an existing database.
+ */
+export async function seedEnvAdmin(
+  database: AppDrizzleDatabase,
+  env: Record<string, string | undefined> = process.env,
+) {
+  const email = env.RAKSS_ADMIN_EMAIL?.trim().toLowerCase();
+  const password = env.RAKSS_ADMIN_PASSWORD;
+
+  if (!email || !password) {
+    return null;
+  }
+
+  if (!email.includes('@') || password.length < 8) {
+    console.warn(
+      'RAKSS_ADMIN_EMAIL/RAKSS_ADMIN_PASSWORD ignored: a valid email and a password of at least 8 characters are required.',
+    );
+    return null;
+  }
+
+  const passwordHash = await bcrypt.hash(password, 10);
+  const userId = await createFirstAdminAccount(database, {
+    email,
+    passwordHash,
+    firstName: env.RAKSS_ADMIN_FIRST_NAME?.trim() || 'System',
+    lastName: env.RAKSS_ADMIN_LAST_NAME?.trim() || 'Administrator',
+  });
+
+  if (userId) {
+    console.log(`Created initial ADMIN account for ${email} from environment.`);
+  }
+
+  return userId;
 }

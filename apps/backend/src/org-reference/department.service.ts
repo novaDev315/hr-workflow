@@ -1,13 +1,22 @@
-import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
+import { pluralize } from '../common/document-format';
+import {
+  BadRequestException,
+  ConflictException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { and, eq, ne, or, sql } from 'drizzle-orm';
 import { DatabaseService } from '../database/database.service';
-import { departments } from '../database/drizzle/schema';
+import { departments, designations, employees } from '../database/drizzle/schema';
 import {
   CreateDepartmentInput,
   DeactivateDepartmentInput,
   UpdateDepartmentInput,
 } from '../auth/auth.types';
 import { randomUUID } from 'crypto';
+import { findUniqueViolation } from './unique-violation';
+
+const DUPLICATE_MESSAGE = 'Department with this name or code already exists';
 
 @Injectable()
 export class DepartmentService {
@@ -47,23 +56,30 @@ export class DepartmentService {
       throw new ConflictException('Department with this name or code already exists');
     }
 
-    const [created] = await this.database.drizzle
-      .insert(departments)
-      .values({
-        id: randomUUID(),
-        name,
-        code,
-        description: input.description?.trim() ?? null,
-      })
-      .returning({
-        id: departments.id,
-        name: departments.name,
-        code: departments.code,
-        description: departments.description,
-        isActive: departments.isActive,
-      });
+    try {
+      const [created] = await this.database.drizzle
+        .insert(departments)
+        .values({
+          id: randomUUID(),
+          name,
+          code,
+          description: input.description?.trim() ?? null,
+        })
+        .returning({
+          id: departments.id,
+          name: departments.name,
+          code: departments.code,
+          description: departments.description,
+          isActive: departments.isActive,
+        });
 
-    return created;
+      return created;
+    } catch (error) {
+      if (findUniqueViolation(error)) {
+        throw new ConflictException(DUPLICATE_MESSAGE);
+      }
+      throw error;
+    }
   }
 
   async update(input: UpdateDepartmentInput) {
@@ -86,31 +102,39 @@ export class DepartmentService {
       throw new ConflictException('Department with this name or code already exists');
     }
 
-    const [updated] = await this.database.drizzle
-      .update(departments)
-      .set({
-        name,
-        code,
-        description:
-          input.description !== undefined
-            ? input.description?.trim() || null
-            : existing.description,
-        updatedAt: sql`NOW()`,
-      })
-      .where(eq(departments.id, input.id))
-      .returning({
-        id: departments.id,
-        name: departments.name,
-        code: departments.code,
-        description: departments.description,
-        isActive: departments.isActive,
-      });
+    try {
+      const [updated] = await this.database.drizzle
+        .update(departments)
+        .set({
+          name,
+          code,
+          description:
+            input.description !== undefined
+              ? input.description?.trim() || null
+              : existing.description,
+          updatedAt: sql`NOW()`,
+        })
+        .where(eq(departments.id, input.id))
+        .returning({
+          id: departments.id,
+          name: departments.name,
+          code: departments.code,
+          description: departments.description,
+          isActive: departments.isActive,
+        });
 
-    return updated;
+      return updated;
+    } catch (error) {
+      if (findUniqueViolation(error)) {
+        throw new ConflictException(DUPLICATE_MESSAGE);
+      }
+      throw error;
+    }
   }
 
   async deactivate(input: DeactivateDepartmentInput) {
     await this.findById(input.id);
+    await this.assertNoActiveDependents(input.id);
     const [updated] = await this.database.drizzle
       .update(departments)
       .set({ isActive: false, updatedAt: sql`NOW()` })
@@ -124,6 +148,32 @@ export class DepartmentService {
       });
 
     return updated;
+  }
+
+  private async assertNoActiveDependents(departmentId: string) {
+    const [employeeCount] = await this.database.drizzle
+      .select({ total: sql<number>`COUNT(*)::int` })
+      .from(employees)
+      .where(and(eq(employees.departmentId, departmentId), eq(employees.isActive, true)));
+    const [designationCount] = await this.database.drizzle
+      .select({ total: sql<number>`COUNT(*)::int` })
+      .from(designations)
+      .where(and(eq(designations.departmentId, departmentId), eq(designations.isActive, true)));
+
+    const activeEmployees = Number(employeeCount?.total ?? 0);
+    const activeDesignations = Number(designationCount?.total ?? 0);
+    if (activeEmployees > 0 || activeDesignations > 0) {
+      const parts: string[] = [];
+      if (activeEmployees > 0) {
+        parts.push(`${pluralize(activeEmployees, 'active employee')}`);
+      }
+      if (activeDesignations > 0) {
+        parts.push(`${pluralize(activeDesignations, 'active designation')}`);
+      }
+      throw new BadRequestException(
+        `Cannot deactivate this department: it still has ${parts.join(' and ')}. Reassign or deactivate them first.`,
+      );
+    }
   }
 
   private async findById(id: string) {

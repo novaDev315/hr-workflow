@@ -6,6 +6,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { randomUUID } from 'crypto';
+import { pluralize } from '../common/document-format';
 import {
   and,
   asc,
@@ -20,7 +21,7 @@ import {
   SQL,
 } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/pg-core';
-import { DatabaseService } from '../database/database.service';
+import { AppDrizzleDatabase, DatabaseService } from '../database/database.service';
 import {
   employees,
   leaveRequests as leaveRequestsTable,
@@ -45,6 +46,9 @@ import {
   ReviewLeaveRequestInput,
   UpdateLeaveTypeInput,
 } from './leave.types';
+import { countWorkingDays, parseDateOnly, workingDaysByYear } from './leave-days';
+
+type LeaveExecutor = Pick<AppDrizzleDatabase, 'select' | 'execute'>;
 
 interface LeaveTypeRow {
   id: string;
@@ -52,6 +56,7 @@ interface LeaveTypeRow {
   name: string;
   defaultDays: number;
   description: string | null;
+  isPaid: boolean;
   isActive: boolean;
 }
 
@@ -77,11 +82,6 @@ interface LeaveRequestRow {
   leaveTypeDescription: string | null;
   leaveTypeIsActive: boolean;
   reviewedByName: string | null;
-}
-
-interface LeaveBalanceRow extends LeaveTypeRow {
-  leaveTypeId: string;
-  usedDays: number | null;
 }
 
 const leaveReviewers = alias(users, 'leave_reviewers');
@@ -137,6 +137,7 @@ export class LeaveService {
         name,
         defaultDays,
         description: input.description?.trim() ?? null,
+        isPaid: input.isPaid ?? true,
         isActive: true,
       })
       .returning({ id: leaveTypesTable.id });
@@ -187,6 +188,7 @@ export class LeaveService {
           input.description !== undefined
             ? input.description?.trim() || null
             : existing.description,
+        isPaid: input.isPaid ?? existing.isPaid,
         updatedAt: sql`NOW()`,
       })
       .where(eq(leaveTypesTable.id, input.id));
@@ -216,9 +218,15 @@ export class LeaveService {
     );
     const startDate = this.parseDate(input.startDate, 'start date');
     const endDate = this.parseDate(input.endDate, 'end date');
+    this.assertDateWindow(startDate, endDate);
 
-    if (endDate < startDate) {
-      throw new BadRequestException('End date must be on or after start date');
+    const startText = this.formatDate(startDate);
+    const endText = this.formatDate(endDate);
+    const totalDays = countWorkingDays(startText, endText);
+    if (totalDays <= 0) {
+      throw new BadRequestException(
+        'The selected dates contain no working days (weekends are excluded)',
+      );
     }
 
     const [leaveType] = await this.database.drizzle
@@ -246,42 +254,55 @@ export class LeaveService {
       throw new NotFoundException('Employee not found or inactive');
     }
 
-    const [overlapping] = await this.database.drizzle
-      .select({ id: leaveRequestsTable.id })
-      .from(leaveRequestsTable)
-      .where(
-        and(
-          eq(leaveRequestsTable.employeeId, employeeId),
-          inArray(leaveRequestsTable.status, ['PENDING', 'APPROVED']),
-          sql`daterange(${leaveRequestsTable.startDate}, ${leaveRequestsTable.endDate}, '[]')
-            && daterange(${this.formatDate(startDate)}::date, ${this.formatDate(endDate)}::date, '[]')`,
-        ),
-      )
-      .limit(1);
+    const createdId = await this.database.drizzle.transaction(async (tx) => {
+      await this.lockEmployeeLeave(tx, employeeId);
 
-    if (overlapping) {
-      throw new ConflictException(
-        'This leave request overlaps with an existing pending or approved request',
-      );
-    }
+      const [overlapping] = await tx
+        .select({ id: leaveRequestsTable.id })
+        .from(leaveRequestsTable)
+        .where(
+          and(
+            eq(leaveRequestsTable.employeeId, employeeId),
+            inArray(leaveRequestsTable.status, ['PENDING', 'APPROVED']),
+            sql`daterange(${leaveRequestsTable.startDate}, ${leaveRequestsTable.endDate}, '[]')
+            && daterange(${startText}::date, ${endText}::date, '[]')`,
+          ),
+        )
+        .limit(1);
 
-    const totalDays = this.calculateTotalDays(startDate, endDate);
-    const [created] = await this.database.drizzle
-      .insert(leaveRequestsTable)
-      .values({
-        id: randomUUID(),
+      if (overlapping) {
+        throw new ConflictException(
+          'This leave request overlaps with an existing pending or approved request',
+        );
+      }
+
+      await this.assertWithinBalance(tx, {
         employeeId,
-        leaveTypeId: input.leaveTypeId,
-        startDate: this.formatDate(startDate),
-        endDate: this.formatDate(endDate),
-        totalDays,
-        reason: input.reason.trim(),
-        status: 'PENDING',
-        requestedAt: sql`NOW()`,
-      })
-      .returning({ id: leaveRequestsTable.id });
+        leaveType,
+        startDate: startText,
+        endDate: endText,
+        countedStatuses: ['PENDING', 'APPROVED'],
+      });
 
-    return this.findRequest(created.id);
+      const [created] = await tx
+        .insert(leaveRequestsTable)
+        .values({
+          id: randomUUID(),
+          employeeId,
+          leaveTypeId: input.leaveTypeId,
+          startDate: startText,
+          endDate: endText,
+          totalDays,
+          reason: input.reason.trim(),
+          status: 'PENDING',
+          requestedAt: sql`NOW()`,
+        })
+        .returning({ id: leaveRequestsTable.id });
+
+      return created.id;
+    });
+
+    return this.findRequest(createdId);
   }
 
   async reviewLeaveRequest(
@@ -300,6 +321,9 @@ export class LeaveService {
         id: leaveRequestsTable.id,
         status: leaveRequestsTable.status,
         employeeId: leaveRequestsTable.employeeId,
+        leaveTypeId: leaveRequestsTable.leaveTypeId,
+        startDate: sql<string>`${leaveRequestsTable.startDate}::text`,
+        endDate: sql<string>`${leaveRequestsTable.endDate}::text`,
         departmentId: employees.departmentId,
         supervisorId: employees.supervisorId,
       })
@@ -310,10 +334,6 @@ export class LeaveService {
 
     if (!existing) {
       throw new NotFoundException('Leave request not found');
-    }
-
-    if (existing.status !== 'PENDING') {
-      throw new BadRequestException('Only pending leave requests can be reviewed');
     }
 
     const scope = await resolveEmployeeVisibilityScope(this.database, currentUser);
@@ -329,16 +349,63 @@ export class LeaveService {
       );
     }
 
-    await this.database.drizzle
-      .update(leaveRequestsTable)
-      .set({
-        status,
-        decisionNotes: input.decisionNotes?.trim() ?? null,
-        decidedByUserId: currentUser.userId,
-        decidedAt: sql`NOW()`,
-        updatedAt: sql`NOW()`,
-      })
-      .where(eq(leaveRequestsTable.id, input.requestId));
+    const [reviewer] = await this.database.drizzle
+      .select({ employeeId: users.employeeId })
+      .from(users)
+      .where(eq(users.id, currentUser.userId))
+      .limit(1);
+
+    if (reviewer?.employeeId && reviewer.employeeId === existing.employeeId) {
+      throw new ForbiddenException('You cannot review your own leave request');
+    }
+
+    if (existing.status !== 'PENDING') {
+      throw new ConflictException('This request was already reviewed');
+    }
+
+    await this.database.drizzle.transaction(async (tx) => {
+      await this.lockEmployeeLeave(tx, existing.employeeId);
+
+      const updated = await tx
+        .update(leaveRequestsTable)
+        .set({
+          status,
+          decisionNotes: input.decisionNotes?.trim() ?? null,
+          decidedByUserId: currentUser.userId,
+          decidedAt: sql`NOW()`,
+          updatedAt: sql`NOW()`,
+        })
+        .where(
+          and(
+            eq(leaveRequestsTable.id, input.requestId),
+            eq(leaveRequestsTable.status, 'PENDING'),
+          ),
+        )
+        .returning({ id: leaveRequestsTable.id });
+
+      if (updated.length === 0) {
+        throw new ConflictException('This request was already reviewed');
+      }
+
+      if (status === 'APPROVED') {
+        const [leaveType] = await tx
+          .select(this.leaveTypeSelectFields())
+          .from(leaveTypesTable)
+          .where(eq(leaveTypesTable.id, existing.leaveTypeId))
+          .limit(1);
+
+        // Re-check approved usage under the per-employee lock; a failure here
+        // rolls back the status update above.
+        await this.assertWithinBalance(tx, {
+          employeeId: existing.employeeId,
+          leaveType,
+          startDate: existing.startDate,
+          endDate: existing.endDate,
+          countedStatuses: ['APPROVED'],
+          excludeRequestId: existing.id,
+        });
+      }
+    });
 
     return this.findRequest(input.requestId);
   }
@@ -386,35 +453,118 @@ export class LeaveService {
       employeeId,
     );
     const currentYear = new Date().getUTCFullYear();
-    const rows = await this.database.drizzle
-      .select({
-        leaveTypeId: leaveTypesTable.id,
-        id: leaveTypesTable.id,
-        code: leaveTypesTable.code,
-        name: leaveTypesTable.name,
-        defaultDays: leaveTypesTable.defaultDays,
-        description: leaveTypesTable.description,
-        isActive: leaveTypesTable.isActive,
-        usedDays: sql<number | null>`(
-          SELECT COALESCE(SUM(${leaveRequestsTable.totalDays}), 0)
-          FROM ${leaveRequestsTable}
-          WHERE ${leaveRequestsTable.leaveTypeId} = ${leaveTypesTable.id}
-            AND ${leaveRequestsTable.employeeId} = ${scopedEmployeeId}
-            AND ${leaveRequestsTable.status} = 'APPROVED'
-            AND DATE_PART('year', ${leaveRequestsTable.startDate}) = ${currentYear}
-        )`,
-      })
+    const types = await this.database.drizzle
+      .select(this.leaveTypeSelectFields())
       .from(leaveTypesTable)
       .where(eq(leaveTypesTable.isActive, true))
       .orderBy(asc(leaveTypesTable.name));
+    const requests = await this.database.drizzle
+      .select({
+        leaveTypeId: leaveRequestsTable.leaveTypeId,
+        status: leaveRequestsTable.status,
+        startDate: sql<string>`${leaveRequestsTable.startDate}::text`,
+        endDate: sql<string>`${leaveRequestsTable.endDate}::text`,
+      })
+      .from(leaveRequestsTable)
+      .where(
+        and(
+          eq(leaveRequestsTable.employeeId, scopedEmployeeId),
+          inArray(leaveRequestsTable.status, ['PENDING', 'APPROVED']),
+          sql`${leaveRequestsTable.startDate} <= ${`${currentYear}-12-31`}::date
+            AND ${leaveRequestsTable.endDate} >= ${`${currentYear}-01-01`}::date`,
+        ),
+      );
 
-    return rows.map((row) => ({
-      leaveTypeId: row.leaveTypeId,
-      leaveType: this.mapLeaveType(row),
-      allocatedDays: row.defaultDays,
-      usedDays: Number(row.usedDays ?? 0),
-      availableDays: Number((row.defaultDays - Number(row.usedDays ?? 0)).toFixed(2)),
-    }));
+    return types.map((row) => {
+      let usedDays = 0;
+      let pendingDays = 0;
+      for (const request of requests) {
+        if (request.leaveTypeId !== row.id) {
+          continue;
+        }
+        const days =
+          workingDaysByYear(request.startDate, request.endDate).get(currentYear) ?? 0;
+        if (request.status === 'APPROVED') {
+          usedDays += days;
+        } else {
+          pendingDays += days;
+        }
+      }
+
+      return {
+        leaveTypeId: row.id,
+        leaveType: this.mapLeaveType(row),
+        allocatedDays: row.defaultDays,
+        usedDays,
+        pendingDays,
+        availableDays: Number((row.defaultDays - usedDays - pendingDays).toFixed(2)),
+      };
+    });
+  }
+
+  private async lockEmployeeLeave(tx: LeaveExecutor, employeeId: string) {
+    await tx.execute(
+      sql`SELECT pg_advisory_xact_lock(hashtext('leave:' || ${employeeId}::text))`,
+    );
+  }
+
+  /**
+   * Splits the requested working days per calendar year and rejects when any
+   * year would exceed (allocated - already counted) for the leave type.
+   */
+  private async assertWithinBalance(
+    tx: LeaveExecutor,
+    params: {
+      employeeId: string;
+      leaveType: LeaveTypeRow;
+      startDate: string;
+      endDate: string;
+      countedStatuses: Array<'PENDING' | 'APPROVED'>;
+      excludeRequestId?: string;
+    },
+  ) {
+    const requestedByYear = workingDaysByYear(params.startDate, params.endDate);
+    const years = [...requestedByYear.keys()];
+    if (years.length === 0) {
+      return;
+    }
+
+    const where: SQL[] = [
+      eq(leaveRequestsTable.employeeId, params.employeeId),
+      eq(leaveRequestsTable.leaveTypeId, params.leaveType.id),
+      inArray(leaveRequestsTable.status, params.countedStatuses),
+      sql`${leaveRequestsTable.startDate} <= ${`${Math.max(...years)}-12-31`}::date
+        AND ${leaveRequestsTable.endDate} >= ${`${Math.min(...years)}-01-01`}::date`,
+    ];
+    if (params.excludeRequestId) {
+      where.push(ne(leaveRequestsTable.id, params.excludeRequestId));
+    }
+
+    const existing = await tx
+      .select({
+        startDate: sql<string>`${leaveRequestsTable.startDate}::text`,
+        endDate: sql<string>`${leaveRequestsTable.endDate}::text`,
+      })
+      .from(leaveRequestsTable)
+      .where(and(...where));
+
+    const usedByYear = new Map<number, number>();
+    for (const row of existing) {
+      for (const [year, days] of workingDaysByYear(row.startDate, row.endDate)) {
+        usedByYear.set(year, (usedByYear.get(year) ?? 0) + days);
+      }
+    }
+
+    for (const [year, requested] of requestedByYear) {
+      const used = usedByYear.get(year) ?? 0;
+      const remaining = Number((params.leaveType.defaultDays - used).toFixed(2));
+      if (requested > remaining + 1e-9) {
+        throw new BadRequestException(
+          `Insufficient ${params.leaveType.name} balance for ${year}: ` +
+            `${pluralize(requested, 'working day')} requested, ${Math.max(remaining, 0)} available`,
+        );
+      }
+    }
   }
 
   private async findLeaveType(id: string) {
@@ -483,6 +633,7 @@ export class LeaveService {
       name: leaveTypesTable.name,
       defaultDays: leaveTypesTable.defaultDays,
       description: leaveTypesTable.description,
+      isPaid: leaveTypesTable.isPaid,
       isActive: leaveTypesTable.isActive,
     };
   }
@@ -564,25 +715,43 @@ export class LeaveService {
   }
 
   private parseDate(value: string, label: string) {
-    const date = new Date(`${value}T00:00:00.000Z`);
-
-    if (Number.isNaN(date.getTime())) {
+    let time: number;
+    try {
+      time = parseDateOnly(value.trim());
+    } catch {
       throw new BadRequestException(`Invalid ${label}`);
     }
 
-    return date;
+    return new Date(time);
   }
 
   private formatDate(date: Date) {
     return date.toISOString().slice(0, 10);
   }
 
-  private calculateTotalDays(startDate: Date, endDate: Date) {
-    const millisecondsPerDay = 24 * 60 * 60 * 1000;
-    const totalDays =
-      Math.round((endDate.getTime() - startDate.getTime()) / millisecondsPerDay) + 1;
+  private assertDateWindow(startDate: Date, endDate: Date) {
+    if (endDate < startDate) {
+      throw new BadRequestException('End date must be on or after start date');
+    }
 
-    return Number(totalDays.toFixed(2));
+    const now = new Date();
+    const today = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate());
+    const earliestStart = new Date(today);
+    earliestStart.setUTCFullYear(earliestStart.getUTCFullYear() - 1);
+    const latestEnd = new Date(today);
+    latestEnd.setUTCFullYear(latestEnd.getUTCFullYear() + 2);
+
+    if (startDate < earliestStart) {
+      throw new BadRequestException(
+        'Start date cannot be more than one year in the past',
+      );
+    }
+
+    if (endDate > latestEnd) {
+      throw new BadRequestException(
+        'End date cannot be more than two years in the future',
+      );
+    }
   }
 
   private mapLeaveType(row: LeaveTypeRow) {
@@ -592,6 +761,7 @@ export class LeaveService {
       name: row.name,
       defaultDays: row.defaultDays,
       description: row.description,
+      isPaid: row.isPaid,
       isActive: row.isActive,
     };
   }

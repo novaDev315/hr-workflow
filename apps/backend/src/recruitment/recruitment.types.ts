@@ -6,14 +6,29 @@ import {
   Int,
   ObjectType,
 } from '@nestjs/graphql';
+import { Transform } from 'class-transformer';
 import {
   IsEmail,
+  IsIn,
   IsNumber,
   IsOptional,
   IsString,
+  IsUrl,
   MaxLength,
   Min,
+  ValidateIf,
 } from 'class-validator';
+import {
+  APPLICATION_STATUSES,
+  EMPLOYMENT_TYPES,
+  normalizeEnumInput,
+  REQUISITION_PRIORITIES,
+  REQUISITION_STATUSES,
+} from './recruitment.constants';
+
+const oneOf = (label: string, values: readonly string[]) => ({
+  message: `${label} must be one of: ${values.join(', ')}`,
+});
 
 @ObjectType()
 export class JobRequisitionType {
@@ -170,6 +185,8 @@ export class JobRequisitionFilterInput {
   @Field({ nullable: true })
   @IsOptional()
   @IsString()
+  @Transform(normalizeEnumInput)
+  @IsIn([...REQUISITION_STATUSES], oneOf('status', REQUISITION_STATUSES))
   status?: string;
 
   @Field({ nullable: true })
@@ -194,6 +211,8 @@ export class RecruitmentApplicationFilterInput {
   @Field({ nullable: true })
   @IsOptional()
   @IsString()
+  @Transform(normalizeEnumInput)
+  @IsIn([...APPLICATION_STATUSES], oneOf('status', APPLICATION_STATUSES))
   status?: string;
 }
 
@@ -223,12 +242,16 @@ export class CreateJobRequisitionInput {
   @IsOptional()
   @IsString()
   @MaxLength(40)
+  @Transform(normalizeEnumInput)
+  @IsIn([...EMPLOYMENT_TYPES], oneOf('employmentType', EMPLOYMENT_TYPES))
   employmentType?: string;
 
   @Field({ nullable: true })
   @IsOptional()
   @IsString()
   @MaxLength(20)
+  @Transform(normalizeEnumInput)
+  @IsIn([...REQUISITION_PRIORITIES], oneOf('priority', REQUISITION_PRIORITIES))
   priority?: string;
 
   @Field({ nullable: true })
@@ -298,12 +321,16 @@ export class UpdateJobRequisitionInput {
   @IsOptional()
   @IsString()
   @MaxLength(40)
+  @Transform(normalizeEnumInput)
+  @IsIn([...EMPLOYMENT_TYPES], oneOf('employmentType', EMPLOYMENT_TYPES))
   employmentType?: string;
 
   @Field({ nullable: true })
   @IsOptional()
   @IsString()
   @MaxLength(20)
+  @Transform(normalizeEnumInput)
+  @IsIn([...REQUISITION_PRIORITIES], oneOf('priority', REQUISITION_PRIORITIES))
   priority?: string;
 
   @Field({ nullable: true })
@@ -350,6 +377,8 @@ export class ChangeJobRequisitionStatusInput {
 
   @Field()
   @IsString()
+  @Transform(normalizeEnumInput)
+  @IsIn([...REQUISITION_STATUSES], oneOf('status', REQUISITION_STATUSES))
   status: string;
 }
 
@@ -398,8 +427,12 @@ export class CreateRecruitmentApplicationInput {
   expectedSalary?: number;
 
   @Field({ nullable: true })
-  @IsOptional()
+  @ValidateIf((_, value) => value !== undefined && value !== null && String(value).trim() !== '')
   @IsString()
+  @IsUrl(
+    { protocols: ['http', 'https'], require_protocol: true },
+    { message: 'resumeUrl must be a valid http:// or https:// URL' },
+  )
   @MaxLength(1000)
   resumeUrl?: string;
 
@@ -458,8 +491,12 @@ export class UpdateRecruitmentApplicationInput {
   expectedSalary?: number;
 
   @Field({ nullable: true })
-  @IsOptional()
+  @ValidateIf((_, value) => value !== undefined && value !== null && String(value).trim() !== '')
   @IsString()
+  @IsUrl(
+    { protocols: ['http', 'https'], require_protocol: true },
+    { message: 'resumeUrl must be a valid http:// or https:// URL' },
+  )
   @MaxLength(1000)
   resumeUrl?: string;
 
@@ -478,6 +515,8 @@ export class AdvanceRecruitmentApplicationInput {
 
   @Field()
   @IsString()
+  @Transform(normalizeEnumInput)
+  @IsIn([...APPLICATION_STATUSES], oneOf('status', APPLICATION_STATUSES))
   status: string;
 
   @Field({ nullable: true })

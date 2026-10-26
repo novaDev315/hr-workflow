@@ -6,7 +6,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { randomUUID } from 'crypto';
-import { and, asc, desc, eq, ilike, like, ne, or, sql, SQL } from 'drizzle-orm';
+import { and, asc, desc, eq, ilike, ne, or, sql, SQL } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/pg-core';
 import { AuthenticatedUser } from '../common/current-user.decorator';
 import {
@@ -16,7 +16,7 @@ import {
   EmployeeVisibilityScope,
   resolveEmployeeVisibilityScope,
 } from '../common/access-control';
-import { DatabaseService } from '../database/database.service';
+import { AppDrizzleDatabase, DatabaseService } from '../database/database.service';
 import {
   departments,
   designations,
@@ -31,6 +31,7 @@ import {
   EmployeeFilterInput,
   UpdateEmployeeInput,
 } from './employee.types';
+import { findUniqueViolation } from './unique-violation';
 
 interface EmployeeRow {
   id: string;
@@ -63,6 +64,7 @@ interface EmployeeRow {
 }
 
 const employeeSupervisors = alias(employees, 'employee_supervisors');
+const EMPLOYEE_NUMBER_ATTEMPTS = 3;
 
 @Injectable()
 export class EmployeeService {
@@ -141,6 +143,8 @@ export class EmployeeService {
       throw new ConflictException('Employee with this email already exists');
     }
 
+    await this.assertEmailFreeOfOtherAccounts(normalizedEmail, null);
+
     const [department] = await this.database.drizzle
       .select({ id: departments.id })
       .from(departments)
@@ -187,27 +191,79 @@ export class EmployeeService {
       }
     }
 
-    const employeeNumber = await this.generateEmployeeNumber();
-    const [created] = await this.database.drizzle
-      .insert(employees)
-      .values({
-        id: randomUUID(),
-        employeeNumber,
-        firstName: input.firstName.trim(),
-        lastName: input.lastName.trim(),
-        email: normalizedEmail,
-        phone: input.phone?.trim() ?? null,
-        departmentId: input.departmentId,
-        designationId: input.designationId,
-        supervisorId: input.supervisorId ?? null,
-        employmentType: input.employmentType?.trim().toUpperCase() ?? 'FULL_TIME',
-        joinDate: input.joinDate?.trim() ?? new Date().toISOString().slice(0, 10),
-        status: input.status?.trim().toUpperCase() ?? 'ACTIVE',
-        isActive: true,
-      })
-      .returning({ id: employees.id });
+    let created: { id: string } | undefined;
+    for (let attempt = 1; attempt <= EMPLOYEE_NUMBER_ATTEMPTS && !created; attempt += 1) {
+      const employeeNumber = await this.generateEmployeeNumber();
+      try {
+        [created] = await this.database.drizzle
+          .insert(employees)
+          .values({
+            id: randomUUID(),
+            employeeNumber,
+            firstName: input.firstName.trim(),
+            lastName: input.lastName.trim(),
+            email: normalizedEmail,
+            phone: input.phone?.trim() ?? null,
+            departmentId: input.departmentId,
+            designationId: input.designationId,
+            supervisorId: input.supervisorId ?? null,
+            employmentType: input.employmentType?.trim().toUpperCase() ?? 'FULL_TIME',
+            joinDate: input.joinDate?.trim() ?? new Date().toISOString().slice(0, 10),
+            status: input.status?.trim().toUpperCase() ?? 'ACTIVE',
+            isActive: true,
+          })
+          .returning({ id: employees.id });
+      } catch (error) {
+        const violation = findUniqueViolation(error);
+        if (!violation) {
+          throw error;
+        }
+        if (violation.constraint.includes('email')) {
+          throw new ConflictException('Employee with this email already exists');
+        }
+        if (!violation.constraint.includes('employee_number')) {
+          throw new ConflictException('An employee with these details already exists');
+        }
+        if (attempt === EMPLOYEE_NUMBER_ATTEMPTS) {
+          throw new ConflictException(
+            'Could not allocate a unique employee number, please try again',
+          );
+        }
+      }
+    }
+
+    if (!created) {
+      throw new ConflictException(
+        'Could not allocate a unique employee number, please try again',
+      );
+    }
 
     return this.findOne(currentUser, created.id);
+  }
+
+  /**
+   * A work email must not be another person's sign-in: reject it when a user
+   * account with that email (case-insensitive) is not linked to this employee.
+   */
+  private async assertEmailFreeOfOtherAccounts(email: string, employeeId: string | null) {
+    const [account] = await this.database.drizzle
+      .select({ id: users.id })
+      .from(users)
+      .where(
+        and(
+          sql`LOWER(${users.email}) = LOWER(${email})`,
+          employeeId
+            ? sql`${users.employeeId} IS DISTINCT FROM ${employeeId}`
+            : undefined,
+        ),
+      )
+      .limit(1);
+
+    if (account) {
+      throw new ConflictException(
+        'This email is already used by another sign-in account. Use a different work email.',
+      );
+    }
   }
 
   async update(currentUser: AuthenticatedUser, input: UpdateEmployeeInput) {
@@ -228,35 +284,72 @@ export class EmployeeService {
       if (duplicate) {
         throw new ConflictException('Employee with this email already exists');
       }
+
+      await this.assertEmailFreeOfOtherAccounts(normalizedEmail, input.id);
     }
 
     await this.assertDepartmentAndDesignation(departmentId, designationId);
-    await this.assertSupervisor(input.supervisorId ?? existing.supervisorId, input.id);
 
+    const supervisorChanged =
+      input.supervisorId !== undefined &&
+      (input.supervisorId || null) !== existing.supervisorId;
     const status = input.status?.trim().toUpperCase() ?? existing.status;
+    const deactivating = status === 'INACTIVE';
+    const reactivating =
+      !deactivating && input.status !== undefined && !existing.isActive;
+    const today = new Date().toISOString().slice(0, 10);
 
-    await this.database.drizzle
-      .update(employees)
-      .set({
-        firstName: input.firstName?.trim() ?? existing.firstName,
-        lastName: input.lastName?.trim() ?? existing.lastName,
-        email: normalizedEmail,
-        phone:
-          input.phone !== undefined ? input.phone?.trim() || null : existing.phone,
-        departmentId,
-        designationId,
-        supervisorId:
-          input.supervisorId !== undefined
-            ? input.supervisorId || null
-            : existing.supervisorId,
-        employmentType:
-          input.employmentType?.trim().toUpperCase() ?? existing.employmentType,
-        joinDate: input.joinDate?.trim() ?? existing.joinDate,
-        status,
-        isActive: status === 'INACTIVE' ? false : existing.isActive,
-        updatedAt: sql`NOW()`,
-      })
-      .where(eq(employees.id, input.id));
+    try {
+      await this.database.drizzle.transaction(async (tx) => {
+        if (supervisorChanged) {
+          await tx.execute(
+            sql`SELECT pg_advisory_xact_lock(hashtext('employee:hierarchy'))`,
+          );
+          await this.assertSupervisor(tx, input.supervisorId, input.id);
+        }
+
+        await tx
+          .update(employees)
+          .set({
+            firstName: input.firstName?.trim() ?? existing.firstName,
+            lastName: input.lastName?.trim() ?? existing.lastName,
+            email: normalizedEmail,
+            phone:
+              input.phone !== undefined ? input.phone?.trim() || null : existing.phone,
+            departmentId,
+            designationId,
+            supervisorId:
+              input.supervisorId !== undefined
+                ? input.supervisorId || null
+                : existing.supervisorId,
+            employmentType:
+              input.employmentType?.trim().toUpperCase() ?? existing.employmentType,
+            joinDate: input.joinDate?.trim() ?? existing.joinDate,
+            status,
+            isActive: deactivating ? false : reactivating ? true : existing.isActive,
+            exitDate: deactivating
+              ? existing.exitDate ?? today
+              : reactivating
+                ? null
+                : existing.exitDate,
+            updatedAt: sql`NOW()`,
+          })
+          .where(eq(employees.id, input.id));
+
+        if (deactivating || reactivating) {
+          await tx
+            .update(users)
+            .set({ isActive: reactivating, updatedAt: sql`NOW()` })
+            .where(eq(users.employeeId, input.id));
+        }
+      });
+    } catch (error) {
+      const violation = findUniqueViolation(error);
+      if (violation) {
+        throw new ConflictException('Employee with this email already exists');
+      }
+      throw error;
+    }
 
     return this.findOne(currentUser, input.id);
   }
@@ -264,7 +357,7 @@ export class EmployeeService {
   async deactivate(currentUser: AuthenticatedUser, input: DeactivateEmployeeInput) {
     assertAccountManagerAccess(currentUser.roles);
     await this.findRawEmployee(input.id);
-    const exitDate = input.exitDate?.trim() || new Date().toISOString().slice(0, 10);
+    const exitDate = this.resolveExitDate(input.exitDate);
 
     await this.database.drizzle.transaction(async (tx) => {
       await tx
@@ -299,6 +392,7 @@ export class EmployeeService {
         supervisorId: employees.supervisorId,
         employmentType: employees.employmentType,
         joinDate: sql<string>`${employees.joinDate}::text`,
+        exitDate: sql<string | null>`${employees.exitDate}::text`,
         status: employees.status,
         isActive: employees.isActive,
       })
@@ -349,7 +443,29 @@ export class EmployeeService {
     }
   }
 
-  private async assertSupervisor(supervisorId: string | null | undefined, employeeId: string) {
+  private resolveExitDate(value?: string | null) {
+    const trimmed = value?.trim();
+    if (!trimmed) {
+      return new Date().toISOString().slice(0, 10);
+    }
+
+    const parsed = new Date(`${trimmed}T00:00:00.000Z`);
+    if (
+      !/^\d{4}-\d{2}-\d{2}$/.test(trimmed) ||
+      Number.isNaN(parsed.getTime()) ||
+      parsed.toISOString().slice(0, 10) !== trimmed
+    ) {
+      throw new BadRequestException('Exit date must be a valid YYYY-MM-DD date');
+    }
+
+    return trimmed;
+  }
+
+  private async assertSupervisor(
+    executor: Pick<AppDrizzleDatabase, 'select' | 'execute'>,
+    supervisorId: string | null | undefined,
+    employeeId: string,
+  ) {
     if (!supervisorId) {
       return;
     }
@@ -358,7 +474,7 @@ export class EmployeeService {
       throw new BadRequestException('Employee cannot supervise themselves');
     }
 
-    const [supervisor] = await this.database.drizzle
+    const [supervisor] = await executor
       .select({ id: employees.id })
       .from(employees)
       .where(and(eq(employees.id, supervisorId), eq(employees.isActive, true)))
@@ -367,21 +483,37 @@ export class EmployeeService {
     if (!supervisor) {
       throw new BadRequestException('Supervisor not found or inactive');
     }
+
+    // Walk up the proposed supervisor's reporting chain; reaching the employee
+    // means the new assignment would create a cycle. UNION (not UNION ALL)
+    // also terminates on any pre-existing cycle.
+    const cycle = await executor.execute(sql`
+      WITH RECURSIVE chain(id, supervisor_id) AS (
+        SELECT id, supervisor_id FROM employees WHERE id = ${supervisorId}
+        UNION
+        SELECT e.id, e.supervisor_id
+        FROM employees e
+        INNER JOIN chain c ON e.id = c.supervisor_id
+      )
+      SELECT 1 AS found FROM chain WHERE id = ${employeeId} LIMIT 1
+    `);
+
+    if (cycle.rows.length > 0) {
+      throw new BadRequestException(
+        'This supervisor assignment would create a reporting cycle',
+      );
+    }
   }
 
   private async generateEmployeeNumber() {
     const year = new Date().getFullYear();
     const prefix = `EMP${year}`;
-    const [row] = await this.database.drizzle
-      .select({ employeeNumber: employees.employeeNumber })
-      .from(employees)
-      .where(like(employees.employeeNumber, `${prefix}%`))
-      .orderBy(desc(employees.employeeNumber))
-      .limit(1);
-
-    const nextSequence = row
-      ? Number.parseInt(row.employeeNumber.slice(-4), 10) + 1
-      : 1;
+    const result = await this.database.drizzle.execute<{ next: string }>(sql`
+      SELECT (COALESCE(MAX(SUBSTRING(employee_number FROM ${`^${prefix}([0-9]+)$`})::bigint), 0) + 1)::text AS next
+      FROM employees
+      WHERE employee_number ~ ${`^${prefix}[0-9]+$`}
+    `);
+    const nextSequence = Number(result.rows[0]?.next ?? 1);
 
     return `${prefix}${nextSequence.toString().padStart(4, '0')}`;
   }

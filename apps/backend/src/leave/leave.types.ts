@@ -11,6 +11,7 @@ import {
   IsString,
   MaxLength,
   MinLength,
+  IsBoolean,
 } from 'class-validator';
 
 @ObjectType()
@@ -30,6 +31,9 @@ export class LeaveTypeType {
 
   @Field({ nullable: true })
   description?: string | null;
+
+  @Field()
+  isPaid: boolean;
 
   @Field()
   isActive: boolean;
@@ -60,6 +64,9 @@ export class LeaveBalanceType {
 
   @Field(() => Float)
   usedDays: number;
+
+  @Field(() => Float)
+  pendingDays: number;
 
   @Field(() => Float)
   availableDays: number;
@@ -131,6 +138,11 @@ export class CreateLeaveTypeInput {
   @IsString()
   @MaxLength(255)
   description?: string;
+
+  @Field({ nullable: true })
+  @IsOptional()
+  @IsBoolean()
+  isPaid?: boolean;
 }
 
 @InputType()
@@ -161,6 +173,11 @@ export class UpdateLeaveTypeInput {
   @IsString()
   @MaxLength(255)
   description?: string;
+
+  @Field({ nullable: true })
+  @IsOptional()
+  @IsBoolean()
+  isPaid?: boolean;
 }
 
 @InputType()

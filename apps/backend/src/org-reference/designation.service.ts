@@ -1,4 +1,6 @@
+import { pluralize } from '../common/document-format';
 import {
+  BadRequestException,
   ConflictException,
   Injectable,
   NotFoundException,
@@ -8,6 +10,7 @@ import { DatabaseService } from '../database/database.service';
 import {
   departments,
   designations,
+  employees,
 } from '../database/drizzle/schema';
 import {
   CreateDesignationInput,
@@ -15,6 +18,10 @@ import {
   UpdateDesignationInput,
 } from '../auth/auth.types';
 import { randomUUID } from 'crypto';
+import { findUniqueViolation } from './unique-violation';
+
+const DUPLICATE_MESSAGE =
+  'Designation with this code or title already exists in the department';
 
 @Injectable()
 export class DesignationService {
@@ -83,19 +90,26 @@ export class DesignationService {
       );
     }
 
-    const [created] = await this.database.drizzle
-      .insert(designations)
-      .values({
-        id: randomUUID(),
-        title,
-        code,
-        departmentId: input.departmentId,
-        level: input.level ?? 1,
-        description: input.description?.trim() ?? null,
-      })
-      .returning({ id: designations.id });
+    try {
+      const [created] = await this.database.drizzle
+        .insert(designations)
+        .values({
+          id: randomUUID(),
+          title,
+          code,
+          departmentId: input.departmentId,
+          level: input.level ?? 1,
+          description: input.description?.trim() ?? null,
+        })
+        .returning({ id: designations.id });
 
-    return this.findById(created.id);
+      return this.findById(created.id);
+    } catch (error) {
+      if (findUniqueViolation(error)) {
+        throw new ConflictException(DUPLICATE_MESSAGE);
+      }
+      throw error;
+    }
   }
 
   async update(input: UpdateDesignationInput) {
@@ -137,26 +151,47 @@ export class DesignationService {
       );
     }
 
-    await this.database.drizzle
-      .update(designations)
-      .set({
-        title,
-        code,
-        departmentId,
-        level: input.level ?? existing.level,
-        description:
-          input.description !== undefined
-            ? input.description?.trim() || null
-            : existing.description,
-        updatedAt: sql`NOW()`,
-      })
-      .where(eq(designations.id, input.id));
+    try {
+      await this.database.drizzle
+        .update(designations)
+        .set({
+          title,
+          code,
+          departmentId,
+          level: input.level ?? existing.level,
+          description:
+            input.description !== undefined
+              ? input.description?.trim() || null
+              : existing.description,
+          updatedAt: sql`NOW()`,
+        })
+        .where(eq(designations.id, input.id));
+    } catch (error) {
+      if (findUniqueViolation(error)) {
+        throw new ConflictException(DUPLICATE_MESSAGE);
+      }
+      throw error;
+    }
 
     return this.findById(input.id);
   }
 
   async deactivate(input: DeactivateDesignationInput) {
     await this.findById(input.id);
+
+    const [counts] = await this.database.drizzle
+      .select({ activeEmployees: sql<number>`COUNT(*)::int` })
+      .from(employees)
+      .where(
+        and(eq(employees.designationId, input.id), eq(employees.isActive, true)),
+      );
+    const activeEmployees = Number(counts?.activeEmployees ?? 0);
+    if (activeEmployees > 0) {
+      throw new BadRequestException(
+        `Cannot deactivate this designation: it still has ${pluralize(activeEmployees, 'active employee')}. Reassign them first.`,
+      );
+    }
+
     await this.database.drizzle
       .update(designations)
       .set({ isActive: false, updatedAt: sql`NOW()` })

@@ -36,27 +36,17 @@ import {
   UpdateJobRequisitionInput,
   UpdateRecruitmentApplicationInput,
 } from './recruitment.types';
-
-const REQUISITION_STATUSES = ['OPEN', 'ON_HOLD', 'FILLED', 'CLOSED'] as const;
-const OPEN_REQUISITION_STATUSES = ['OPEN', 'ON_HOLD'] as const;
-const EMPLOYMENT_TYPES = ['FULL_TIME', 'PART_TIME', 'CONTRACT', 'INTERNSHIP'] as const;
-const REQUISITION_PRIORITIES = ['LOW', 'MEDIUM', 'HIGH', 'URGENT'] as const;
-const APPLICATION_FORWARD_PATH = [
-  'RECEIVED',
-  'SCREENING',
-  'SHORTLISTED',
-  'INTERVIEW_SCHEDULED',
-  'INTERVIEWED',
-  'SELECTED',
-  'OFFER_EXTENDED',
-  'HIRED',
-] as const;
-const APPLICATION_TERMINAL_STATUSES = ['REJECTED', 'WITHDRAWN'] as const;
-const APPLICATION_FINAL_STATUSES = ['HIRED', ...APPLICATION_TERMINAL_STATUSES] as const;
-const APPLICATION_STATUSES = [
-  ...APPLICATION_FORWARD_PATH,
-  ...APPLICATION_TERMINAL_STATUSES,
-] as const;
+import {
+  APPLICATION_FINAL_STATUSES,
+  APPLICATION_FORWARD_PATH,
+  APPLICATION_STATUSES,
+  APPLICATION_TERMINAL_STATUSES,
+  EMPLOYMENT_TYPES,
+  OPEN_REQUISITION_STATUSES,
+  REQUISITION_PRIORITIES,
+  REQUISITION_STATUSES,
+} from './recruitment.constants';
+import { findUniqueViolation } from './unique-violation';
 
 type RequisitionStatus = (typeof REQUISITION_STATUSES)[number];
 type ApplicationStatus = (typeof APPLICATION_STATUSES)[number];
@@ -192,13 +182,15 @@ export class RecruitmentService {
     assertAccountManagerAccess(currentUser.roles);
     const [row] = await this.database.drizzle
       .select({
-        openRequisitions: sql<number>`COUNT(*) FILTER (
+        openRequisitions: sql<number>`(
+          SELECT COUNT(*)::int
+          FROM ${jobRequisitions}
           WHERE ${jobRequisitions.status} IN ('OPEN', 'ON_HOLD')
-        )::int`,
-        activeApplications: sql<number>`COUNT(${recruitmentApplications.id}) FILTER (
+        )`,
+        activeApplications: sql<number>`COUNT(*) FILTER (
           WHERE ${recruitmentApplications.status} NOT IN ('HIRED', 'REJECTED', 'WITHDRAWN')
         )::int`,
-        screeningApplications: sql<number>`COUNT(${recruitmentApplications.id}) FILTER (
+        screeningApplications: sql<number>`COUNT(*) FILTER (
           WHERE ${recruitmentApplications.status} IN (
             'SCREENING',
             'SHORTLISTED',
@@ -206,15 +198,11 @@ export class RecruitmentService {
             'INTERVIEWED'
           )
         )::int`,
-        selectedApplications: sql<number>`COUNT(${recruitmentApplications.id}) FILTER (
+        selectedApplications: sql<number>`COUNT(*) FILTER (
           WHERE ${recruitmentApplications.status} IN ('SELECTED', 'OFFER_EXTENDED', 'HIRED')
         )::int`,
       })
-      .from(jobRequisitions)
-      .leftJoin(
-        recruitmentApplications,
-        eq(recruitmentApplications.requisitionId, jobRequisitions.id),
-      );
+      .from(recruitmentApplications);
 
     return {
       openRequisitions: row?.openRequisitions ?? 0,
@@ -234,9 +222,7 @@ export class RecruitmentService {
     await this.assertDepartmentAndDesignation(departmentId, designationId);
     this.assertSalaryRange(input.salaryMin ?? null, input.salaryMax ?? null);
 
-    const [created] = await this.database.drizzle
-      .insert(jobRequisitions)
-      .values({
+    const [created] = await this.insertRequisition({
         id: randomUUID(),
         requisitionNumber: this.generateRecordNumber('REQ'),
         jobTitle: input.jobTitle.trim(),
@@ -252,8 +238,7 @@ export class RecruitmentService {
         description: input.description.trim(),
         requirements: input.requirements?.trim() || null,
         createdByUserId: currentUser.userId,
-      })
-      .returning({ id: jobRequisitions.id });
+    });
 
     return this.findJobRequisition(created.id);
   }
@@ -368,9 +353,8 @@ export class RecruitmentService {
       );
     }
 
-    const [created] = await this.database.drizzle
-      .insert(recruitmentApplications)
-      .values({
+    const resumeUrl = this.normalizeResumeUrl(input.resumeUrl);
+    const [created] = await this.insertApplication({
         id: randomUUID(),
         applicationNumber: this.generateRecordNumber('APP'),
         requisitionId: input.requisitionId,
@@ -381,12 +365,11 @@ export class RecruitmentService {
         source: input.source?.trim() || null,
         yearsExperience: input.yearsExperience ?? null,
         expectedSalary: input.expectedSalary ?? null,
-        resumeUrl: input.resumeUrl?.trim() || null,
+        resumeUrl,
         notes: input.notes?.trim() || null,
         lastActionByUserId: currentUser.userId,
         lastActionAt: sql`NOW()`,
-      })
-      .returning({ id: recruitmentApplications.id });
+    });
 
     return this.findRecruitmentApplication(created.id);
   }
@@ -422,9 +405,12 @@ export class RecruitmentService {
       }
     }
 
-    await this.database.drizzle
-      .update(recruitmentApplications)
-      .set({
+    const resumeUrl =
+      input.resumeUrl !== undefined
+        ? this.normalizeResumeUrl(input.resumeUrl)
+        : existing.resumeUrl;
+
+    await this.updateApplicationRow(input.id, {
         firstName: input.firstName?.trim() ?? existing.firstName,
         lastName: input.lastName?.trim() ?? existing.lastName,
         email,
@@ -439,16 +425,12 @@ export class RecruitmentService {
           input.expectedSalary !== undefined
             ? input.expectedSalary
             : existing.expectedSalary,
-        resumeUrl:
-          input.resumeUrl !== undefined
-            ? input.resumeUrl?.trim() || null
-            : existing.resumeUrl,
+        resumeUrl,
         notes: input.notes !== undefined ? input.notes?.trim() || null : existing.notes,
         lastActionByUserId: currentUser.userId,
         lastActionAt: sql`NOW()`,
         updatedAt: sql`NOW()`,
-      })
-      .where(eq(recruitmentApplications.id, input.id));
+    });
 
     return this.findRecruitmentApplication(input.id);
   }
@@ -474,6 +456,81 @@ export class RecruitmentService {
       .where(eq(recruitmentApplications.id, input.id));
 
     return this.findRecruitmentApplication(input.id);
+  }
+
+  private async insertRequisition(values: Record<string, unknown>) {
+    try {
+      return await this.database.drizzle
+        .insert(jobRequisitions)
+        .values(values as never)
+        .returning({ id: jobRequisitions.id });
+    } catch (error) {
+      if (findUniqueViolation(error)) {
+        throw new ConflictException(
+          'Could not allocate a unique requisition number, please try again',
+        );
+      }
+      throw error;
+    }
+  }
+
+  private async insertApplication(
+    values: Record<string, unknown>,
+  ) {
+    try {
+      return await this.database.drizzle
+        .insert(recruitmentApplications)
+        .values(values as never)
+        .returning({ id: recruitmentApplications.id });
+    } catch (error) {
+      this.rethrowDuplicateApplication(error);
+    }
+  }
+
+  private async updateApplicationRow(
+    id: string,
+    values: Record<string, unknown>,
+  ) {
+    try {
+      await this.database.drizzle
+        .update(recruitmentApplications)
+        .set(values as never)
+        .where(eq(recruitmentApplications.id, id));
+    } catch (error) {
+      this.rethrowDuplicateApplication(error);
+    }
+  }
+
+  private rethrowDuplicateApplication(error: unknown): never {
+    if (findUniqueViolation(error)) {
+      throw new ConflictException(
+        'This candidate already has an application for the requisition',
+      );
+    }
+
+    throw error;
+  }
+
+  private normalizeResumeUrl(value?: string | null) {
+    const trimmed = value?.trim();
+    if (!trimmed) {
+      return null;
+    }
+
+    let protocol = '';
+    try {
+      protocol = new URL(trimmed).protocol;
+    } catch {
+      protocol = '';
+    }
+
+    if (protocol !== 'http:' && protocol !== 'https:') {
+      throw new BadRequestException(
+        'Resume URL must be a valid http:// or https:// link',
+      );
+    }
+
+    return trimmed;
   }
 
   private async findRequisitionRows(where: SQL[]): Promise<JobRequisitionRow[]> {
@@ -722,7 +779,9 @@ export class RecruitmentService {
   private normalizeEmploymentType(value?: string | null): EmploymentType {
     const normalized = value?.trim().toUpperCase() || 'FULL_TIME';
     if (!EMPLOYMENT_TYPES.includes(normalized as EmploymentType)) {
-      throw new BadRequestException('Invalid employment type');
+      throw new BadRequestException(
+        `Invalid employment type. Use one of: ${EMPLOYMENT_TYPES.join(', ')}`,
+      );
     }
 
     return normalized as EmploymentType;
@@ -731,7 +790,9 @@ export class RecruitmentService {
   private normalizePriority(value?: string | null): RequisitionPriority {
     const normalized = value?.trim().toUpperCase() || 'MEDIUM';
     if (!REQUISITION_PRIORITIES.includes(normalized as RequisitionPriority)) {
-      throw new BadRequestException('Invalid requisition priority');
+      throw new BadRequestException(
+        `Invalid requisition priority. Use one of: ${REQUISITION_PRIORITIES.join(', ')}`,
+      );
     }
 
     return normalized as RequisitionPriority;
@@ -740,7 +801,9 @@ export class RecruitmentService {
   private normalizeRequisitionStatus(status: string): RequisitionStatus {
     const normalized = status.trim().toUpperCase();
     if (!REQUISITION_STATUSES.includes(normalized as RequisitionStatus)) {
-      throw new BadRequestException('Invalid requisition status');
+      throw new BadRequestException(
+        `Invalid requisition status. Use one of: ${REQUISITION_STATUSES.join(', ')}`,
+      );
     }
 
     return normalized as RequisitionStatus;
@@ -749,7 +812,9 @@ export class RecruitmentService {
   private normalizeApplicationStatus(status: string): ApplicationStatus {
     const normalized = status.trim().toUpperCase();
     if (!APPLICATION_STATUSES.includes(normalized as ApplicationStatus)) {
-      throw new BadRequestException('Invalid application status');
+      throw new BadRequestException(
+        `Invalid application status. Use one of: ${APPLICATION_STATUSES.join(', ')}`,
+      );
     }
 
     return normalized as ApplicationStatus;
