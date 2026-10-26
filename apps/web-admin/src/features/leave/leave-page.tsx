@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from 'react'
+import { useMemo, useState, type FormEvent } from 'react'
 import { useMutation, useQuery } from '@apollo/client'
 import { PlaneTakeoff, Plus } from 'lucide-react'
 
@@ -12,6 +12,12 @@ import { FormDrawer } from '@/components/ui/form-drawer'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { MetricCard } from '@/components/ui/metric-card'
+import { Notice } from '@/components/ui/notice'
+import { Textarea } from '@/components/ui/textarea'
+import { toast } from '@/lib/toast'
+import { FilterSelect } from '@/features/shared/controls'
+import { ListToolbar } from '@/features/shared/list-toolbar'
+import { matchesSearch, useShowMore } from '@/features/shared/use-show-more'
 import {
   Select,
   SelectContent,
@@ -20,7 +26,7 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { canManageAccounts, useAdminSession } from '@/lib/auth-session'
-import { todayLocal } from '@/lib/format'
+import { formatDayRange, formatStatus, plural, todayLocal } from '@/lib/format'
 import { readableError } from '@/lib/graphql-errors'
 
 import { LeaveHistoryTable, LeaveTypeList, PendingRequestCard } from './components'
@@ -77,10 +83,16 @@ export function LeavePage() {
   const [leaveRequestForm, setLeaveRequestForm] = useState(leaveRequestDefaults)
   const [showLeaveTypeForm, setShowLeaveTypeForm] = useState(false)
   const [showLeaveRequestForm, setShowLeaveRequestForm] = useState(false)
-  const [statusMessage, setStatusMessage] = useState<string | null>(null)
-  const [errorMessage, setErrorMessage] = useState<string | null>(null)
+  const [leaveTypeError, setLeaveTypeError] = useState<string | null>(null)
+  const [leaveRequestError, setLeaveRequestError] = useState<string | null>(null)
   const [reviewNotes, setReviewNotes] = useState<Record<string, string>>({})
   const [deactivating, setDeactivating] = useState<LeaveType | null>(null)
+  const [rejecting, setRejecting] = useState<LeaveRequest | null>(null)
+  const [rejectReason, setRejectReason] = useState('')
+  const [rejectTouched, setRejectTouched] = useState(false)
+  const [approvingOver, setApprovingOver] = useState<{ request: LeaveRequest; shortfall: number } | null>(null)
+  const [historySearch, setHistorySearch] = useState('')
+  const [historyStatus, setHistoryStatus] = useState('')
 
   const { data, loading, error, refetch } = useQuery<LeavePageData>(LEAVE_PAGE_QUERY)
   const [createLeaveType, { loading: creatingLeaveType }] = useMutation(CREATE_LEAVE_TYPE_MUTATION)
@@ -92,18 +104,41 @@ export function LeavePage() {
   const leaveTypes = data?.leaveTypes ?? []
   const activeLeaveTypes = leaveTypes.filter((leaveType) => leaveType.isActive)
   const employees = data?.employees ?? []
-  const leaveRequests = data?.leaveRequests ?? []
-  const pendingRequests = leaveRequests.filter((request) => request.status === 'PENDING')
+  const leaveRequests = useMemo(() => data?.leaveRequests ?? [], [data?.leaveRequests])
+  // Soonest first day first: those are the decisions that cannot wait.
+  const pendingRequests = useMemo(
+    () =>
+      leaveRequests
+        .filter((request) => request.status === 'PENDING')
+        .sort((a, b) => a.startDate.localeCompare(b.startDate)),
+    [leaveRequests],
+  )
   const approvedCount = leaveRequests.filter((request) => request.status === 'APPROVED').length
-
-  const resetFeedback = () => {
-    setErrorMessage(null)
-    setStatusMessage(null)
-  }
+  const historyStatusOptions = useMemo(
+    () =>
+      [...new Set(leaveRequests.map((request) => request.status))]
+        .sort()
+        .map((status) => ({ value: status, label: formatStatus(status) })),
+    [leaveRequests],
+  )
+  const filteredHistory = useMemo(
+    () =>
+      leaveRequests.filter(
+        (request) =>
+          (!historyStatus || request.status === historyStatus) &&
+          matchesSearch(historySearch, [
+            request.employee.fullName,
+            request.employee.employeeNumber,
+            request.leaveType.name,
+          ]),
+      ),
+    [leaveRequests, historySearch, historyStatus],
+  )
+  const history = useShowMore(filteredHistory)
 
   const handleSaveLeaveType = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
-    resetFeedback()
+    setLeaveTypeError(null)
     try {
       const input = {
         code: leaveTypeForm.code.trim(),
@@ -116,19 +151,30 @@ export function LeavePage() {
       } else {
         await createLeaveType({ variables: { input } })
       }
-      setStatusMessage(editingLeaveTypeId ? 'Leave type updated.' : 'Leave type created.')
+      toast.success(editingLeaveTypeId ? `${input.name} updated.` : `${input.name} created.`)
       setLeaveTypeForm(leaveTypeFormDefaults)
       setEditingLeaveTypeId(null)
       setShowLeaveTypeForm(false)
       await refetch()
     } catch (mutationError) {
-      setErrorMessage(readableError(mutationError, 'Could not save the leave type.'))
+      setLeaveTypeError(readableError(mutationError, 'Could not save the leave type.'))
     }
   }
 
   const handleRequestLeave = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
-    resetFeedback()
+    setLeaveRequestError(null)
+    const missing = !leaveRequestForm.employeeId
+      ? 'Choose the employee taking leave.'
+      : !leaveRequestForm.leaveTypeId
+        ? 'Choose a leave type.'
+        : !leaveRequestForm.reason.trim()
+          ? 'Add a short reason.'
+          : null
+    if (missing) {
+      setLeaveRequestError(missing)
+      return
+    }
     try {
       await requestLeave({
         variables: {
@@ -143,10 +189,11 @@ export function LeavePage() {
       })
       setLeaveRequestForm(leaveRequestDefaults())
       setShowLeaveRequestForm(false)
-      setStatusMessage('Leave request created.')
+      const person = employees.find((employee) => employee.id === leaveRequestForm.employeeId)
+      toast.success(`Leave request created${person ? ` for ${person.fullName}` : ''}. It is waiting for review.`)
       await refetch()
     } catch (mutationError) {
-      setErrorMessage(readableError(mutationError, 'Could not create the leave request.'))
+      setLeaveRequestError(readableError(mutationError, 'Could not create the leave request.'))
     }
   }
 
@@ -158,52 +205,65 @@ export function LeavePage() {
       defaultDays: String(leaveType.defaultDays),
       description: leaveType.description ?? '',
     })
-    resetFeedback()
+    setLeaveTypeError(null)
     setShowLeaveTypeForm(true)
   }
 
   const handleCancelLeaveTypeEdit = () => {
     setEditingLeaveTypeId(null)
     setLeaveTypeForm(leaveTypeFormDefaults)
+    setLeaveTypeError(null)
     setShowLeaveTypeForm(false)
   }
 
   const handleDeactivateLeaveType = async () => {
     if (!deactivating) return
-    resetFeedback()
     try {
       await deactivateLeaveType({ variables: { input: { id: deactivating.id } } })
-      setStatusMessage(`${deactivating.name} deactivated.`)
+      toast.success(`${deactivating.name} deactivated.`)
       setDeactivating(null)
       await refetch()
     } catch (mutationError) {
       setDeactivating(null)
-      setErrorMessage(readableError(mutationError, 'Could not deactivate the leave type.'))
+      toast.error(readableError(mutationError, 'Could not deactivate the leave type.'))
     }
   }
 
-  const handleReview = async (request: LeaveRequest, status: 'APPROVED' | 'REJECTED') => {
-    resetFeedback()
+  const handleReview = async (
+    request: LeaveRequest,
+    status: 'APPROVED' | 'REJECTED',
+    notes = reviewNotes[request.id]?.trim() || null,
+  ) => {
     try {
       await reviewLeaveRequest({
-        variables: {
-          input: {
-            requestId: request.id,
-            status,
-            decisionNotes: reviewNotes[request.id]?.trim() || null,
-          },
-        },
+        variables: { input: { requestId: request.id, status, decisionNotes: notes } },
       })
       setReviewNotes((current) => ({ ...current, [request.id]: '' }))
-      setStatusMessage(
+      toast.success(
         `${request.employee.fullName}'s ${request.leaveType.name.toLowerCase()} ${
           status === 'APPROVED' ? 'approved' : 'rejected'
         }.`,
       )
       await refetch()
+      return true
     } catch (mutationError) {
-      setErrorMessage(readableError(mutationError, 'Could not review the leave request.'))
+      toast.error(readableError(mutationError, 'Could not review the leave request.'))
+      return false
     }
+  }
+
+  const openReject = (request: LeaveRequest) => {
+    setRejectReason(reviewNotes[request.id] ?? '')
+    setRejectTouched(false)
+    setRejecting(request)
+  }
+
+  const confirmReject = async () => {
+    if (!rejecting) return
+    setRejectTouched(true)
+    if (!rejectReason.trim()) return
+    const ok = await handleReview(rejecting, 'REJECTED', rejectReason.trim())
+    if (ok) setRejecting(null)
   }
 
   return (
@@ -235,7 +295,7 @@ export function LeavePage() {
         }
       />
 
-      <div className="grid gap-3 sm:grid-cols-3">
+      <div className="grid grid-cols-3 gap-2 sm:gap-3">
         <MetricCard
           label="Pending"
           value={String(pendingRequests.length)}
@@ -253,8 +313,6 @@ export function LeavePage() {
         <MetricCard label="Approved" value={String(approvedCount)} detail="Approved requests on record" />
       </div>
 
-      <PageFeedback errorMessage={errorMessage} statusMessage={statusMessage} />
-
       <div className="grid min-w-0 gap-4 xl:grid-cols-[minmax(0,1.35fr)_minmax(0,1fr)]">
         <Card className="min-w-0">
           <CardHeader className="pb-3">
@@ -266,7 +324,7 @@ export function LeavePage() {
             ) : error && !data ? (
               <PageFeedback loadError={error} loadErrorPrefix="Leave requests could not be loaded." />
             ) : pendingRequests.length === 0 ? (
-              <p className="text-sm text-muted-foreground">No pending leave requests right now.</p>
+              <p className="text-sm text-muted-foreground">Nothing to review. New requests appear here, soonest first.</p>
             ) : (
               pendingRequests.map((request) => (
                 <PendingRequestCard
@@ -278,8 +336,10 @@ export function LeavePage() {
                     setReviewNotes((current) => ({ ...current, [request.id]: value }))
                   }
                   busy={reviewingLeaveRequest}
-                  onApprove={() => handleReview(request, 'APPROVED')}
-                  onReject={() => handleReview(request, 'REJECTED')}
+                  onApprove={(shortfall) =>
+                    shortfall > 0 ? setApprovingOver({ request, shortfall }) : void handleReview(request, 'APPROVED')
+                  }
+                  onReject={() => openReject(request)}
                 />
               ))
             )}
@@ -312,7 +372,46 @@ export function LeavePage() {
           ) : leaveRequests.length === 0 ? (
             <AdminTableEmpty>No leave requests yet.</AdminTableEmpty>
           ) : (
-            <LeaveHistoryTable requests={leaveRequests} />
+            <div className="space-y-3">
+              <ListToolbar
+                filters={
+                  <FilterSelect
+                    allLabel="Any status"
+                    className="w-full sm:w-44"
+                    id="leave-history-status"
+                    label="Status"
+                    onChange={(value) => {
+                      setHistoryStatus(value)
+                      history.reset()
+                    }}
+                    options={historyStatusOptions}
+                    value={historyStatus}
+                  />
+                }
+                noun={['request']}
+                onClear={() => {
+                  setHistorySearch('')
+                  setHistoryStatus('')
+                }}
+                onSearchChange={(value) => {
+                  setHistorySearch(value)
+                  history.reset()
+                }}
+                search={historySearch}
+                searchLabel="Search leave history"
+                searchPlaceholder="Search name, number or leave type"
+                shown={filteredHistory.length}
+                total={leaveRequests.length}
+              />
+              {filteredHistory.length === 0 ? (
+                <AdminTableEmpty>No requests match. Try another name or clear the filters.</AdminTableEmpty>
+              ) : (
+                <>
+                  <LeaveHistoryTable requests={history.visible} />
+                  {history.more}
+                </>
+              )}
+            </div>
           )}
         </CardContent>
       </Card>
@@ -325,6 +424,11 @@ export function LeavePage() {
           description="Set the yearly allowance employees can request."
         >
           <form className="space-y-4" onSubmit={handleSaveLeaveType}>
+            {leaveTypeError ? (
+              <Notice role="alert" tone="danger">
+                {leaveTypeError}
+              </Notice>
+            ) : null}
             <div className="grid gap-4 sm:grid-cols-2">
               <div className="space-y-2">
                 <Label htmlFor="leave-type-name">Name</Label>
@@ -395,11 +499,26 @@ export function LeavePage() {
 
       <FormDrawer
         open={showLeaveRequestForm}
-        onOpenChange={setShowLeaveRequestForm}
+        onOpenChange={(open) => {
+          setShowLeaveRequestForm(open)
+          if (!open) setLeaveRequestError(null)
+        }}
         title="New leave request"
         description="Record leave on behalf of an employee. Only working days are counted."
       >
-        <form className="space-y-4" onSubmit={handleRequestLeave}>
+        <form className="space-y-4" noValidate onSubmit={handleRequestLeave}>
+          {leaveRequestError ? (
+            <Notice role="alert" tone="danger">
+              {leaveRequestError}
+            </Notice>
+          ) : null}
+          {employees.length === 0 || activeLeaveTypes.length === 0 ? (
+            <Notice tone="warning">
+              {employees.length === 0
+                ? 'Add an employee in People before recording leave.'
+                : 'Create a leave type first.'}
+            </Notice>
+          ) : null}
           <div className="space-y-2">
             <Label htmlFor="leave-request-employee">Employee</Label>
             <Select
@@ -485,7 +604,14 @@ export function LeavePage() {
             >
               {requestingLeave ? 'Saving…' : 'Create request'}
             </Button>
-            <Button type="button" variant="outline" onClick={() => setShowLeaveRequestForm(false)}>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => {
+                setShowLeaveRequestForm(false)
+                setLeaveRequestError(null)
+              }}
+            >
               Cancel
             </Button>
           </div>
@@ -501,6 +627,58 @@ export function LeavePage() {
         tone="destructive"
         busy={deactivatingLeaveType}
         onConfirm={handleDeactivateLeaveType}
+      />
+
+      <ConfirmDialog
+        open={Boolean(rejecting)}
+        onOpenChange={(open) => (open ? undefined : setRejecting(null))}
+        title={rejecting ? `Reject ${rejecting.employee.fullName}'s leave?` : 'Reject leave?'}
+        description={
+          rejecting
+            ? `${rejecting.leaveType.name} · ${formatDayRange(rejecting.startDate, rejecting.endDate)} · ${plural(rejecting.totalDays, 'working day')}. The employee sees your reason.`
+            : undefined
+        }
+        confirmLabel="Reject request"
+        tone="destructive"
+        busy={reviewingLeaveRequest}
+        onConfirm={confirmReject}
+      >
+        <div className="space-y-1.5">
+          <Label htmlFor="leave-reject-reason">Reason for the employee</Label>
+          <Textarea
+            aria-describedby={rejectTouched && !rejectReason.trim() ? 'leave-reject-reason-error' : undefined}
+            aria-invalid={rejectTouched && !rejectReason.trim() ? true : undefined}
+            className="min-h-[5.5rem]"
+            id="leave-reject-reason"
+            onChange={(event) => setRejectReason(event.target.value)}
+            placeholder="For example: peak season, please pick dates after the 20th"
+            rows={3}
+            value={rejectReason}
+          />
+          {rejectTouched && !rejectReason.trim() ? (
+            <p className="text-[13px] font-medium text-rose-800" id="leave-reject-reason-error">
+              Add a reason so the employee knows what to change.
+            </p>
+          ) : null}
+        </div>
+      </ConfirmDialog>
+
+      <ConfirmDialog
+        open={Boolean(approvingOver)}
+        onOpenChange={(open) => (open ? undefined : setApprovingOver(null))}
+        title={approvingOver ? `Approve beyond ${approvingOver.request.employee.fullName}'s balance?` : 'Approve beyond balance?'}
+        description={
+          approvingOver
+            ? `This goes over the ${approvingOver.request.leaveType.name.toLowerCase()} allowance by ${plural(approvingOver.shortfall, 'day')}.`
+            : undefined
+        }
+        confirmLabel="Approve anyway"
+        busy={reviewingLeaveRequest}
+        onConfirm={async () => {
+          if (!approvingOver) return
+          await handleReview(approvingOver.request, 'APPROVED')
+          setApprovingOver(null)
+        }}
       />
     </div>
   )

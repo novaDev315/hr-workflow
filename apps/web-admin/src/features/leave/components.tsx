@@ -49,30 +49,22 @@ function useLeaveBalances(employeeId: string) {
   }
 }
 
-function LeaveBalanceSummary({
-  request,
-  pendingRequests,
-}: {
-  request: LeaveRequest
-  pendingRequests: LeaveRequest[]
-}) {
+type BalanceView =
+  | { kind: 'loading' }
+  | { kind: 'failed' }
+  | { kind: 'none' }
+  | { kind: 'ready'; balance: LeaveBalance; pending: number; afterApproval: number }
+
+// Balance context for one pending request. The card uses `afterApproval` to
+// ask for confirmation before approving beyond the allowance.
+function useBalanceView(request: LeaveRequest, pendingRequests: LeaveRequest[]): BalanceView {
   const { balances, loading, failed, hasServerPending } = useLeaveBalances(request.employee.id)
 
-  if (loading) {
-    return <p className="text-[13px] text-muted-foreground">Checking balance…</p>
-  }
-  if (failed) {
-    return <p className="text-[13px] text-muted-foreground">Balance unavailable.</p>
-  }
+  if (loading) return { kind: 'loading' }
+  if (failed) return { kind: 'failed' }
 
   const balance = balances?.find((entry) => entry.leaveTypeId === request.leaveType.id)
-  if (!balance) {
-    return (
-      <p className="text-[13px] text-muted-foreground">
-        No {request.leaveType.name.toLowerCase()} allowance for this employee this year.
-      </p>
-    )
-  }
+  if (!balance) return { kind: 'none' }
 
   // New API: pendingDays from the server, availableDays already excludes it.
   // Older API: add up this employee's pending requests of the same type.
@@ -90,6 +82,25 @@ function LeaveBalanceSummary({
     hasServerPending && typeof balance.pendingDays === 'number'
       ? balance.availableDays
       : balance.allocatedDays - balance.usedDays - pending
+
+  return { kind: 'ready', balance, pending, afterApproval }
+}
+
+function LeaveBalanceSummary({ request, view }: { request: LeaveRequest; view: BalanceView }) {
+  if (view.kind === 'loading') {
+    return <p className="text-[13px] text-muted-foreground">Checking balance…</p>
+  }
+  if (view.kind === 'failed') {
+    return <p className="text-[13px] text-muted-foreground">Balance unavailable.</p>
+  }
+  if (view.kind === 'none') {
+    return (
+      <p className="text-[13px] text-muted-foreground">
+        No {request.leaveType.name.toLowerCase()} allowance for this employee this year.
+      </p>
+    )
+  }
+  const { balance, pending, afterApproval } = view
 
   return (
     <div className="space-y-2">
@@ -146,16 +157,20 @@ export function PendingRequestCard({
   note: string
   onNoteChange: (value: string) => void
   busy: boolean
-  onApprove: () => void
+  /** Receives the shortfall in days when approving goes over the balance. */
+  onApprove: (shortfall: number) => void
   onReject: () => void
 }) {
   const noteId = `decision-note-${request.id}`
+  const view = useBalanceView(request, pendingRequests)
+  const shortfall = view.kind === 'ready' && view.afterApproval < 0 ? Math.abs(view.afterApproval) : 0
+  const who = request.employee.fullName
 
   return (
     <RecordCard className="min-w-0 space-y-3">
       <div className="flex min-w-0 flex-wrap items-start justify-between gap-x-3 gap-y-1">
         <div className="min-w-0">
-          <p className="truncate font-semibold text-foreground">{request.employee.fullName}</p>
+          <p className="truncate font-semibold text-foreground"><bdi>{request.employee.fullName}</bdi></p>
           <p className="text-[13px] text-muted-foreground">
             {request.leaveType.name} · {formatDayRange(request.startDate, request.endDate)}
           </p>
@@ -167,7 +182,7 @@ export function PendingRequestCard({
         <p className="text-sm leading-6 text-foreground">“{request.reason}”</p>
       ) : null}
 
-      <LeaveBalanceSummary request={request} pendingRequests={pendingRequests} />
+      <LeaveBalanceSummary request={request} view={view} />
 
       <div className="space-y-2">
         <label htmlFor={noteId} className="sr-only">
@@ -180,10 +195,10 @@ export function PendingRequestCard({
           placeholder="Decision note (optional)"
         />
         <div className="flex flex-wrap gap-2">
-          <Button type="button" disabled={busy} onClick={onApprove}>
+          <Button aria-label={`Approve ${who}'s leave`} type="button" disabled={busy} onClick={() => onApprove(shortfall)}>
             Approve
           </Button>
-          <Button type="button" variant="outline" disabled={busy} onClick={onReject}>
+          <Button aria-label={`Reject ${who}'s leave`} type="button" variant="outline" disabled={busy} onClick={onReject}>
             Reject
           </Button>
         </div>
@@ -277,7 +292,7 @@ export function LeaveHistoryTable({ requests }: { requests: LeaveRequest[] }) {
         {requests.map((request) => (
           <AdminTableRow key={request.id}>
             <AdminTableCell nowrap>
-              <div className="font-medium text-foreground">{request.employee.fullName}</div>
+              <div className="font-medium text-foreground"><bdi>{request.employee.fullName}</bdi></div>
               <div className="text-xs text-muted-foreground">{request.employee.employeeNumber}</div>
             </AdminTableCell>
             <AdminTableCell nowrap>{request.leaveType.name}</AdminTableCell>
@@ -292,6 +307,11 @@ export function LeaveHistoryTable({ requests }: { requests: LeaveRequest[] }) {
                   <div>{request.reviewedByName}</div>
                   {request.decidedAt ? (
                     <div className="text-xs text-muted-foreground">{formatDateTime(request.decidedAt)}</div>
+                  ) : null}
+                  {request.decisionNotes ? (
+                    <div className="max-w-[260px] truncate text-xs text-muted-foreground" title={request.decisionNotes}>
+                      “{request.decisionNotes}”
+                    </div>
                   ) : null}
                 </>
               ) : (
