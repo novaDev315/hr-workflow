@@ -80,9 +80,13 @@ NODE_ENV=production
 BACKEND_PORT=4001
 BACKEND_PUBLIC_URL=https://hr.your-company.internal
 DATABASE_URL=postgresql://hrflow_admin:<password>@postgres-host:5432/hrflow_production
-JWT_SECRET=<random-secret>
+JWT_SECRET=<32+ random characters>
 JWT_EXPIRY=3600s
-ALLOWED_ORIGINS=https://admin.your-company.internal
+ALLOWED_ORIGINS=https://admin.your-company.internal   # required in production
+TRUST_PROXY=1
+RAKSS_ADMIN_EMAIL=<first admin email>        # optional first-admin seeding
+RAKSS_ADMIN_PASSWORD=<first admin password>  # optional first-admin seeding
+BOOTSTRAP_ALLOWED=false                      # optional; first-run UI bootstrap in production, default off
 POLICY_STORAGE_DIR=/var/lib/hrflow/policies
 ```
 
@@ -148,10 +152,11 @@ homelab apps database create rakss --service backend --db-type postgres --mode c
 homelab apps database verify rakss --service backend
 ```
 
-### 3. Start the Backend
+### 3. Migrate and Start the Backend
 
 ```bash
 bun run build:backend
+bun run --cwd apps/backend migrate:deploy
 node apps/backend/dist/src/main.js
 ```
 
@@ -169,6 +174,14 @@ bun run --cwd apps/web-admin build
 
 Serve `apps/web-admin/dist` behind your reverse proxy or static web server.
 
+### Web admin container
+
+`apps/web-admin/Dockerfile` builds from the repository root (`docker build -f apps/web-admin/Dockerfile .`) using the root `bun.lock`. nginx proxies `/graphql` to `API_UPSTREAM_HOST` (default `api.hrflow.lab.novadev.tech`) with TLS verification on, sets security headers and a CSP, and serves `/assets/*` as immutable.
+
+## Domain cutover
+
+The public hostnames are `admin.hrflow.lab.novadev.tech` and `api.hrflow.lab.novadev.tech` (`base_domain: hrflow` in `homelab.yaml`; the internal project id and database stay `rakss`). The hrflow DNS, route, and TLS certificate must exist in Homelab before deploying this config, because the web-admin nginx verifies the API certificate. The old `rakss` hostnames are retired separately.
+
 ## Health Checks
 
 ### Backend
@@ -179,7 +192,7 @@ Serve `apps/web-admin/dist` behind your reverse proxy or static web server.
 
 ## Current Deployment Proof
 
-Last checked: June 22, 2026.
+Last checked: June 22, 2026 (before the hrflow domain cutover).
 
 Local deployment contract:
 
@@ -198,19 +211,19 @@ Result:
 Live route checks:
 
 ```bash
-curl -I -L https://admin.rakss.lab.novadev.tech
-curl -I -L https://admin.rakss.lab.novadev.tech/health
-curl -I -L https://api.rakss.lab.novadev.tech/health
-curl -sS -X POST https://api.rakss.lab.novadev.tech/graphql \
+curl -I -L https://admin.hrflow.lab.novadev.tech
+curl -I -L https://admin.hrflow.lab.novadev.tech/health
+curl -I -L https://api.hrflow.lab.novadev.tech/health
+curl -sS -X POST https://api.hrflow.lab.novadev.tech/graphql \
   -H 'content-type: application/json' \
   --data '{"query":"query { __typename }"}'
 ```
 
-Result:
+Result (recorded on the previous `rakss` hostnames, before the domain cutover):
 
-- `https://admin.rakss.lab.novadev.tech` returns HTTP `200`.
-- `https://admin.rakss.lab.novadev.tech/health` returns HTTP `200`.
-- `https://api.rakss.lab.novadev.tech/health` returns HTTP `200`.
+- `https://admin.hrflow.lab.novadev.tech` returns HTTP `200`.
+- `https://admin.hrflow.lab.novadev.tech/health` returns HTTP `200`.
+- `https://api.hrflow.lab.novadev.tech/health` returns HTTP `200`.
 - GraphQL returns `{"data":{"__typename":"Query"}}`.
 
 Homelab caveat:
@@ -234,10 +247,10 @@ Implemented in the current backend:
 
 Operator-required configuration:
 
-- Set a real `JWT_SECRET`; the compose default is only a local-development fallback.
+- Set a real `JWT_SECRET` (32+ random characters); compose has no default and refuses to start without it.
 - Set `ALLOWED_ORIGINS` to the deployed admin and mobile origins.
 - Set and back up `POLICY_STORAGE_DIR` with the database because policy rows reference stored files.
-- Run database migration verification before shipping through NexOS or Homelab so the target environment comes from `.nexos/env.yaml`: `nexos secrets exec --project /home/nova/projects/work/rakss --env production -- bun run --cwd apps/backend migrate:deploy` or the Homelab migration wrapper for the target deployment. This runs Drizzle schema sync followed by Drizzle seed verification.
+- Run database migration verification before shipping through NexOS or Homelab so the target environment comes from `.nexos/env.yaml`: `nexos secrets exec --project /home/nova/projects/work/rakss --env production -- bun run --cwd apps/backend migrate:deploy` or the Homelab migration wrapper for the target deployment. This applies pending versioned migrations (baseline-adopting databases created by `push`) followed by seed verification.
 
 Not yet proven or not implemented in this repo:
 
@@ -253,6 +266,19 @@ Not yet proven or not implemented in this repo:
 curl -I http://localhost:4001/health
 curl -I http://localhost:4001/graphql
 ```
+
+## Database Migrations
+
+Schema changes are versioned SQL migrations in `apps/backend/drizzle/`:
+
+1. Edit `apps/backend/src/database/drizzle/schema.ts`.
+2. `bun run db:generate` and review the generated SQL (never accept a destructive drop+add for a rename without a restore plan).
+3. Commit the SQL and `meta/` files.
+4. Deploy runs `bun run migrate:deploy` (`node dist/src/scripts/migrate.js && node dist/src/scripts/ensure-schema.js`): applies pending migrations under a Postgres advisory lock, then verifies seed data. Databases originally created by `drizzle-kit push` are adopted automatically (baseline recorded, not re-executed).
+
+`bun run --cwd apps/backend schema:push` is **local development only**; never run it against a shared or production database.
+
+Back up the database before any migration that alters or drops data.
 
 ## Storage And Backups
 

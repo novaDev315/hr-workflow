@@ -1,18 +1,18 @@
 # Drizzle Migration
 
-Status: runtime service and schema bootstrap migration complete
-Date: 2026-07-01
+Status: runtime migration complete; versioned SQL migrations enabled
+Date: 2026-10-25
 
 ## Decision
 
-Rakss now uses Drizzle as the backend runtime query layer and explicit schema
-sync surface on top of the existing `pg` pool exposed by
+HRFlow Pro uses Drizzle as the backend runtime query layer and schema
+source of truth on top of the existing `pg` pool exposed by
 `DatabaseService.drizzle`.
 
 Drizzle owns:
 
 - table/index/constraint mapping in `apps/backend/src/database/drizzle/schema.ts`
-- schema synchronization through `drizzle-kit push`
+- versioned SQL migrations in `apps/backend/drizzle/` (`drizzle-kit generate`, applied by `src/scripts/migrate.ts`)
 - idempotent seed data through `apps/backend/src/database/seeds.ts`
 - runtime service queries through `DatabaseService.drizzle`
 
@@ -73,59 +73,35 @@ rg -n 'sql`|\.execute\(sql' apps/backend/src
 Backend scripts:
 
 ```bash
-bun run --cwd apps/backend schema:push
-bun run --cwd apps/backend schema:seed
-bun run --cwd apps/backend schema:ensure
-bun run --cwd apps/backend migrate:deploy
-bun run --cwd apps/backend drizzle:check
-bun run --cwd apps/backend drizzle:generate
+bun run --cwd apps/backend db:generate          # drizzle-kit generate -> new SQL migration
+bun run --cwd apps/backend migrate:deploy       # apply migrations, then seed verification
 bun run --cwd apps/backend drizzle:migration-check
-bun run --cwd apps/backend drizzle:pull
+bun run --cwd apps/backend schema:push          # LOCAL DEV ONLY
+bun run --cwd apps/backend schema:seed
+bun run --cwd apps/backend drizzle:check
 ```
 
-Config:
+Config: `apps/backend/drizzle.config.ts` (`strict: true`).
 
-```text
-apps/backend/drizzle.config.ts
-```
+## Migration Flow
 
-`schema:ensure` runs Drizzle schema sync first, then the compiled backend script
-calls `DatabaseService.verifyConnection()` and `DatabaseService.ensureSeedData()`
-directly. Backend startup uses the same explicit methods during Nest module
-initialization, but migration verification does not depend on calling the
-lifecycle method as an API. `drizzle:check` validates that the mapped schema can
-be exported as Postgres DDL.
+1. Edit `apps/backend/src/database/drizzle/schema.ts`.
+2. `bun run db:generate` (optionally `-- --name <name>`), then review the SQL. A rename or type change is generated as drop + add unless you rewrite it; never accept that on live data without a backup and a data-preserving rewrite.
+3. Commit the `.sql` file and the `meta/` snapshot and journal.
+4. Deploy runs `migrate:deploy`:
+   `node dist/src/scripts/migrate.js && node dist/src/scripts/ensure-schema.js`.
 
-Generated SQL migrations are not enabled yet. `drizzle:migration-check` remains
-reserved for a later versioned-migration phase.
+`migrate.js` (compiled from `src/scripts/migrate.ts`):
 
-## Versioned Migration Lane
+- takes a Postgres advisory lock so concurrent deploys serialize;
+- resolves the migrations folder as `apps/backend/drizzle` relative to the compiled file (the backend Dockerfile copies it into the runtime image);
+- applies pending migrations using drizzle's node-postgres migrator (history in `drizzle.__drizzle_migrations`);
+- baseline adoption: if the history table is absent or empty and `public.users` already exists (databases created by `drizzle-kit push`), the first journal entry (`0000_baseline`) is recorded as applied with the same hash and timestamp drizzle uses, without executing its SQL; later migrations then run normally;
+- logs what it did.
 
-The current production lane is explicit Drizzle push-sync. It is acceptable for
-the completed bootstrap migration, but future structural changes should move to
-reviewed SQL migration files before they touch production.
+`schema:push` bypasses migration history and can drop data on renames; use it only on a disposable local database.
 
-Adopt the versioned lane in a separate phase with this gate:
-
-1. Prove the current schema export is clean:
-   `bun run --cwd apps/backend drizzle:check`.
-2. Generate migration SQL from the Drizzle schema:
-   `bun run --cwd apps/backend drizzle:generate`.
-3. Review the generated files under `apps/backend/drizzle/`; do not accept
-   destructive SQL without a named rollback or restore plan.
-4. In that same phase, switch `migrate:deploy` from `schema:ensure` to a
-   reviewed generated-migration command such as
-   `drizzle-kit migrate --config drizzle.config.ts`, followed by seed
-   verification.
-5. Rehearse the switched command against the NexOS test environment:
-   `nexos secrets exec --project /home/nova/projects/work/rakss --env test -- bun run --cwd apps/backend migrate:deploy`.
-6. Back up production before live migration:
-   `nexos secrets exec --project /home/nova/projects/work/rakss --env production -- <backup command>`.
-7. Ship through Homelab so deploy and migration use the same NexOS-rendered
-   production environment.
-
-Do not replace the production migration command with generated migrations until
-the test rehearsal and backup path are proven in the same phase.
+Rollback is forward-only: restore from backup or add a corrective migration.
 
 ## Proof
 

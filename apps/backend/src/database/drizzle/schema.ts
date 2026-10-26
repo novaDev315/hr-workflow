@@ -26,6 +26,7 @@ export const users = pgTable(
     firstName: text('first_name').notNull(),
     lastName: text('last_name').notNull(),
     isActive: boolean('is_active').notNull().default(true),
+    sessionVersion: integer('session_version').notNull().default(0),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   },
@@ -237,6 +238,7 @@ export const leaveTypes = pgTable('leave_types', {
   defaultDays: doublePrecision('default_days').notNull(),
   description: text('description'),
   isActive: boolean('is_active').notNull().default(true),
+  isPaid: boolean('is_paid').notNull().default(true),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 });

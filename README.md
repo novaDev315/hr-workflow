@@ -27,9 +27,10 @@ git clone <your-repo-url>
 cd rakss
 
 bun install
-cp .env.example .env
+cp .env.example .env   # then set JWT_SECRET
 
 docker compose up -d postgres
+bun run --cwd apps/backend schema:push   # local dev only
 bun run dev:backend
 ```
 
@@ -80,6 +81,9 @@ The main backend settings are:
 - `ALLOWED_ORIGINS`
 - `VITE_GRAPHQL_ENDPOINT`
 - `EXPO_PUBLIC_GRAPHQL_ENDPOINT`
+- `RAKSS_ADMIN_EMAIL` / `RAKSS_ADMIN_PASSWORD` (first admin seeding), `BOOTSTRAP_ALLOWED`, `TRUST_PROXY`
+
+`JWT_SECRET` must be set (32+ random characters) and `ALLOWED_ORIGINS` is required in production. The web-admin dev server proxies `/graphql` to `http://localhost:4001` (override with `VITE_DEV_API_PROXY`).
 
 See [.env.example](./.env.example) for a working local template.
 
@@ -90,6 +94,17 @@ for deploys or shared test runs; use NexOS to render the target environment:
 ```bash
 nexos secrets exec --project /home/nova/projects/work/rakss --env test -- bun run test:backend
 ```
+
+## Database Migrations
+
+Schema changes are versioned SQL migrations in `apps/backend/drizzle/`:
+
+1. Edit `apps/backend/src/database/drizzle/schema.ts`.
+2. `bun run db:generate` and review the generated SQL (never accept a destructive drop+add for a rename without a restore plan).
+3. Commit the SQL and `meta/` files.
+4. Deploy runs `bun run migrate:deploy` (`node dist/src/scripts/migrate.js && node dist/src/scripts/ensure-schema.js`): applies pending migrations under a Postgres advisory lock, then verifies seed data. Databases originally created by `drizzle-kit push` are adopted automatically (baseline recorded, not re-executed).
+
+`bun run --cwd apps/backend schema:push` is **local development only**; never run it against a shared or production database.
 
 ## Implemented Modules
 

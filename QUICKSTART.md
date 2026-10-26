@@ -16,7 +16,7 @@ bun install
 cp .env.example .env
 ```
 
-The defaults are set up for local development with PostgreSQL on Docker and the backend on `http://localhost:4001/graphql`.
+Set `JWT_SECRET` in `.env` (32+ random characters, e.g. `openssl rand -base64 48`); compose will not start without it. Optionally set `RAKSS_ADMIN_EMAIL` and `RAKSS_ADMIN_PASSWORD` to seed the first admin. The defaults are set up for local development with PostgreSQL on Docker and the backend on `http://localhost:4001/graphql`.
 
 Optional isolated test runs should use the NexOS project contract instead of
 writing env-specific files into the repo:
@@ -30,6 +30,12 @@ nexos secrets exec --project /home/nova/projects/work/rakss --env test -- bun ru
 ```bash
 docker compose up -d postgres
 docker compose ps
+```
+
+Create the tables for a fresh local database (dev only; production uses versioned migrations):
+
+```bash
+bun run --cwd apps/backend schema:push
 ```
 
 ## 4. Start the Backend
@@ -51,7 +57,7 @@ bun run dev:web-admin
 
 Admin UI:
 
-- `http://localhost:5173`
+- `http://localhost:5173` (its dev server proxies `/graphql` to `http://localhost:4001`; override with `VITE_DEV_API_PROXY`)
 
 ## 6. Optional Mobile App
 
@@ -100,5 +106,6 @@ bun run docker:down
 
 - The active implementation is the modular monolith in `apps/backend`.
 - Legacy `services/*` and `apps/api-gateway` have been removed from the active codebase.
-- Database schema sync runs through the Drizzle migration command; backend startup verifies the connection and seed data.
+- Schema changes: edit `schema.ts` -> `bun run db:generate` -> commit the SQL in `apps/backend/drizzle/` -> `bun run migrate:deploy`. `schema:push` is local-dev only.
+- Backend startup verifies the connection and seed data.
 - Shared test credentials are resolved through `.nexos/env.yaml` and NexOS.

@@ -15,7 +15,8 @@ build:
 # Default deployment settings
 deploy:
   target: web
-  base_domain: rakss
+  # Public domain hrflow.*; internal project id and database stay 'rakss'.
+  base_domain: hrflow
   port: 5173
 database:
   migration:
@@ -46,7 +47,7 @@ services:
         required_for_ship: true
   web-admin:
     dockerfile: apps/web-admin/Dockerfile
-    context: apps/web-admin
+    context: .
     service_type: frontend
     domain: admin
     health_endpoint: /health
