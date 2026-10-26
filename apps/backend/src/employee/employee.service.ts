@@ -8,6 +8,7 @@ import {
 import { randomUUID } from 'crypto';
 import { and, asc, desc, eq, ilike, ne, or, sql, SQL } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/pg-core';
+import { assertNotLastActiveAdmin } from '../auth/admin-guard';
 import { AuthenticatedUser } from '../common/current-user.decorator';
 import {
   assertAdminPanelAccess,
@@ -308,6 +309,10 @@ export class EmployeeService {
           await this.assertSupervisor(tx, input.supervisorId, input.id);
         }
 
+        if (deactivating) {
+          await assertNotLastActiveAdmin(tx, input.id);
+        }
+
         await tx
           .update(employees)
           .set({
@@ -360,6 +365,8 @@ export class EmployeeService {
     const exitDate = this.resolveExitDate(input.exitDate);
 
     await this.database.drizzle.transaction(async (tx) => {
+      await assertNotLastActiveAdmin(tx, input.id);
+
       await tx
         .update(employees)
         .set({
