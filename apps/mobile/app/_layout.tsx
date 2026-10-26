@@ -1,9 +1,11 @@
 import { useEffect } from 'react'
 import { ActivityIndicator, StyleSheet, View } from 'react-native'
 import { Stack, useRouter, useSegments } from 'expo-router'
+import { StatusBar } from 'expo-status-bar'
 import { ApolloProvider } from '@apollo/client'
 import { apolloClient } from '../src/lib/apollo-client'
 import { useAuthSession } from '../src/lib/auth-session'
+import { colors } from '../src/theme'
 
 export default function RootLayout() {
   const router = useRouter()
@@ -36,16 +38,26 @@ export default function RootLayout() {
   if (!isHydrated) {
     return (
       <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color="#3b82f6" />
+        <StatusBar style="dark" />
+        <ActivityIndicator size="large" color={colors.accentStrong} accessibilityLabel="Loading" />
       </View>
     )
   }
 
   return (
     <ApolloProvider client={apolloClient}>
-      <Stack screenOptions={{ headerShown: false }}>
-        <Stack.Screen name="(auth)" />
+      <Stack
+        screenOptions={{
+          headerShown: false,
+          contentStyle: { backgroundColor: colors.background },
+        }}
+      >
+        <Stack.Screen name="(auth)/login" />
         <Stack.Screen name="(tabs)" />
+        <Stack.Screen name="request-leave" options={{ presentation: 'modal' }} />
+        <Stack.Screen name="payslip/[id]" />
+        <Stack.Screen name="policies/index" />
+        <Stack.Screen name="policies/[id]" />
       </Stack>
     </ApolloProvider>
   )
@@ -56,6 +68,6 @@ const styles = StyleSheet.create({
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#f9fafb',
+    backgroundColor: colors.background,
   },
 })

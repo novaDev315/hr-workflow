@@ -1,211 +1,202 @@
-import { gql, useQuery } from '@apollo/client'
-import { View, Text, StyleSheet, ScrollView } from 'react-native'
-import { MaterialCommunityIcons } from '@expo/vector-icons'
-import { useAuthSession } from '../../src/lib/auth-session'
-
-const ME_QUERY = gql`
-  query MobileAttendanceMe {
-    me {
-      employeeId
-    }
-  }
-`
-
-const ATTENDANCE_HISTORY_QUERY = gql`
-  query MobileAttendanceHistory($filter: AttendanceFilterInput) {
-    attendanceRecords(filter: $filter) {
-      id
-      attendanceDate
-      clockInAt
-      clockOutAt
-      totalHours
-      status
-    }
-  }
-`
+import { useMemo, type ReactElement } from 'react'
+import { useQuery } from '@apollo/client'
+import { RefreshControl, SectionList, StyleSheet, Text, View } from 'react-native'
+import { ATTENDANCE_QUERY, type AttendanceRecord } from '../../src/lib/queries'
+import { useEmployee } from '../../src/lib/use-employee'
+import { useRefresh } from '../../src/lib/use-refresh'
+import {
+  attendanceStatus,
+  formatHours,
+  formatMonth,
+  formatShortDate,
+  formatTime,
+  monthKey,
+} from '../../src/lib/format'
+import { Badge, EmptyState, ErrorState, LoadingState, Screen, ScreenHeader } from '../../src/components'
+import { colors, radii, spacing, type } from '../../src/theme'
 
 export default function AttendanceScreen() {
-  const storedAccount = useAuthSession((state) => state.account)
-  const { data: meData } = useQuery(ME_QUERY)
-  const employeeId = meData?.me?.employeeId ?? storedAccount?.employeeId ?? null
-  const { data, loading } = useQuery(ATTENDANCE_HISTORY_QUERY, {
-    variables: {
-      filter: employeeId
-        ? {
-            employeeId,
-          }
-        : null,
-    },
+  const { employeeId, account, error: accountError, refetch: refetchMe } = useEmployee()
+  const { data, loading, error, refetch } = useQuery<{ attendanceRecords: AttendanceRecord[] }>(ATTENDANCE_QUERY, {
+    variables: { filter: { employeeId } },
     skip: !employeeId,
   })
+  const { refreshing, onRefresh } = useRefresh(refetchMe, employeeId ? refetch : undefined)
 
-  const attendanceHistory = data?.attendanceRecords ?? []
+  const sections = useMemo(() => {
+    const records = [...(data?.attendanceRecords ?? [])].sort(
+      (a, b) =>
+        b.attendanceDate.localeCompare(a.attendanceDate) ||
+        String(b.clockInAt ?? '').localeCompare(String(a.clockInAt ?? '')),
+    )
+    const groups = new Map<string, AttendanceRecord[]>()
+    for (const record of records) {
+      const key = monthKey(record.attendanceDate)
+      groups.set(key, [...(groups.get(key) ?? []), record])
+    }
+    return [...groups.entries()].map(([key, items]) => ({
+      key,
+      title: formatMonth(key),
+      days: items.length,
+      data: items,
+    }))
+  }, [data])
+
+  const header = <ScreenHeader title="Attendance" subtitle="Your clock-ins, newest first." />
+
+  let emptyContent: ReactElement | null = null
+  if (!account) {
+    emptyContent = accountError ? <ErrorState error={accountError} onRetry={() => void refetchMe()} /> : <LoadingState />
+  } else if (!employeeId) {
+    emptyContent = (
+      <EmptyState
+        icon="account-question-outline"
+        title="No employee profile linked"
+        message="Attendance is available once HR links this account to your employee profile."
+      />
+    )
+  } else if (error && !data) {
+    emptyContent = <ErrorState error={error} onRetry={() => void refetch()} retrying={loading} />
+  } else if (loading && !data) {
+    emptyContent = <LoadingState label="Loading attendance" />
+  } else if (sections.length === 0) {
+    emptyContent = (
+      <EmptyState
+        icon="clock-outline"
+        title="No attendance yet"
+        message="Your days appear here after you clock in from the Today tab."
+      />
+    )
+  }
 
   return (
-    <ScrollView style={styles.container}>
-      <View style={styles.header}>
-        <Text style={styles.title}>Attendance History</Text>
-        <Text style={styles.subtitle}>Track your attendance records</Text>
-      </View>
-
-      <View style={styles.content}>
-        {!employeeId ? (
-          <View style={styles.recordCard}>
-            <Text style={styles.timeValue}>
-              This account can sign in on mobile, but attendance history is only available for linked employee profiles.
+    <Screen scroll={false}>
+      <SectionList
+        sections={emptyContent ? [] : sections}
+        keyExtractor={(item) => item.id}
+        contentContainerStyle={styles.list}
+        stickySectionHeadersEnabled={false}
+        ListHeaderComponent={header}
+        ListEmptyComponent={emptyContent}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            tintColor={colors.accentStrong}
+            colors={[colors.accentStrong]}
+          />
+        }
+        renderSectionHeader={({ section }) => (
+          <View style={styles.sectionHeader}>
+            <Text style={styles.sectionTitle} accessibilityRole="header">
+              {section.title}
+            </Text>
+            <Text style={styles.sectionMeta}>
+              {section.days === 1 ? '1 day' : `${section.days} days`}
             </Text>
           </View>
-        ) : loading ? (
-          <View style={styles.recordCard}>
-            <Text style={styles.timeValue}>Loading attendance history...</Text>
-          </View>
-        ) : attendanceHistory.length === 0 ? (
-          <View style={styles.recordCard}>
-            <Text style={styles.timeValue}>No attendance history found yet.</Text>
-          </View>
-        ) : (
-          attendanceHistory.map((record: {
-            id: string
-            attendanceDate: string
-            clockInAt?: string | null
-            clockOutAt?: string | null
-            status: string
-            totalHours?: number | null
-          }) => (
-          <View key={record.id} style={styles.recordCard}>
-            <View style={styles.recordHeader}>
-              <Text style={styles.recordDate}>{record.attendanceDate}</Text>
-              <View style={[
-                styles.statusBadge,
-                record.status === 'COMPLETED' || record.status === 'CLOCKED_IN'
-                  ? styles.statusPresent
-                  : styles.statusLeave,
-              ]}>
-                <Text style={[
-                  styles.statusText,
-                  record.status === 'COMPLETED' || record.status === 'CLOCKED_IN'
-                    ? styles.statusPresentText
-                    : styles.statusLeaveText,
-                ]}>
-                  {record.status}
-                </Text>
-              </View>
-            </View>
+        )}
+        renderItem={({ item, index, section }) => (
+          <AttendanceRow record={item} first={index === 0} last={index === section.data.length - 1} />
+        )}
+      />
+    </Screen>
+  )
+}
 
-            <View style={styles.recordDetails}>
-              <View style={styles.timeRow}>
-                <MaterialCommunityIcons name="clock-in" size={16} color="#6b7280" />
-                <Text style={styles.timeLabel}>Clock In:</Text>
-                <Text style={styles.timeValue}>
-                  {record.clockInAt ? new Date(record.clockInAt).toLocaleTimeString() : '-'}
-                </Text>
-              </View>
-              <View style={styles.timeRow}>
-                <MaterialCommunityIcons name="clock-out" size={16} color="#6b7280" />
-                <Text style={styles.timeLabel}>Clock Out:</Text>
-                <Text style={styles.timeValue}>
-                  {record.clockOutAt ? new Date(record.clockOutAt).toLocaleTimeString() : '-'}
-                </Text>
-              </View>
-              <View style={styles.timeRow}>
-                <MaterialCommunityIcons name="clock" size={16} color="#6b7280" />
-                <Text style={styles.timeLabel}>Total Hours:</Text>
-                <Text style={styles.timeValue}>
-                  {record.totalHours != null ? `${record.totalHours}h` : '-'}
-                </Text>
-              </View>
-            </View>
-          </View>
-        )))}
+function AttendanceRow({ record, first, last }: { record: AttendanceRecord; first: boolean; last: boolean }) {
+  const status = attendanceStatus(record.status)
+  const inTime = formatTime(record.clockInAt)
+  const outTime = record.clockOutAt ? formatTime(record.clockOutAt) : 'now'
+  const hours = record.totalHours != null ? formatHours(record.totalHours) : null
+  return (
+    <View
+      style={[styles.row, first && styles.rowFirst, last && styles.rowLast, !last && styles.rowDivider]}
+      accessible
+      accessibilityLabel={`${formatShortDate(record.attendanceDate)}, ${record.location?.name ?? ''}, ${inTime} to ${outTime}${hours ? `, ${hours}` : ''}, ${status.label}`}
+    >
+      <View style={styles.rowMain}>
+        <Text style={styles.date}>{formatShortDate(record.attendanceDate)}</Text>
+        {record.location?.name ? <Text style={styles.meta}>{record.location.name}</Text> : null}
+        {/* Duration wraps as a whole under the times on narrow screens. */}
+        <View style={styles.timesLine}>
+          <Text style={styles.times}>
+            {inTime} – {outTime}
+          </Text>
+          {hours ? <Text style={styles.duration}>{hours.replace(/ /g, '\u00a0')}</Text> : null}
+        </View>
       </View>
-    </ScrollView>
+      <Badge label={status.label} tone={status.tone} />
+    </View>
   )
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#f9fafb',
+  list: {
+    paddingHorizontal: spacing.lg,
+    paddingBottom: spacing.xxl,
   },
-  header: {
-    backgroundColor: '#3b82f6',
-    padding: 24,
-    paddingTop: 60,
-  },
-  title: {
-    fontSize: 28,
-    fontWeight: 'bold',
-    color: 'white',
-  },
-  subtitle: {
-    fontSize: 14,
-    color: 'white',
-    opacity: 0.9,
-    marginTop: 4,
-  },
-  content: {
-    padding: 16,
-  },
-  recordCard: {
-    backgroundColor: 'white',
-    borderRadius: 12,
-    padding: 16,
-    marginBottom: 12,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05,
-    shadowRadius: 4,
-    elevation: 2,
-  },
-  recordHeader: {
+  sectionHeader: {
     flexDirection: 'row',
+    alignItems: 'baseline',
     justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 12,
-    paddingBottom: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: '#f3f4f6',
+    marginTop: spacing.xl,
+    marginBottom: spacing.sm,
   },
-  recordDate: {
-    fontSize: 16,
-    fontWeight: '600',
+  sectionTitle: {
+    ...type.title,
   },
-  statusBadge: {
-    paddingHorizontal: 12,
-    paddingVertical: 4,
-    borderRadius: 12,
+  sectionMeta: {
+    ...type.label,
   },
-  statusPresent: {
-    backgroundColor: '#d1fae5',
-  },
-  statusLeave: {
-    backgroundColor: '#fee2e2',
-  },
-  statusText: {
-    fontSize: 12,
-    fontWeight: '500',
-  },
-  statusPresentText: {
-    color: '#065f46',
-  },
-  statusLeaveText: {
-    color: '#991b1b',
-  },
-  recordDetails: {
-    gap: 8,
-  },
-  timeRow: {
+  row: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
+    gap: spacing.md,
+    padding: spacing.lg,
+    backgroundColor: colors.surface,
+    borderColor: colors.border,
+    borderLeftWidth: 1,
+    borderRightWidth: 1,
   },
-  timeLabel: {
-    fontSize: 14,
-    color: '#6b7280',
+  rowFirst: {
+    borderTopWidth: 1,
+    borderTopLeftRadius: radii.lg,
+    borderTopRightRadius: radii.lg,
+  },
+  rowLast: {
+    borderBottomWidth: 1,
+    borderBottomLeftRadius: radii.lg,
+    borderBottomRightRadius: radii.lg,
+  },
+  rowDivider: {
+    borderBottomWidth: 1,
+  },
+  rowMain: {
     flex: 1,
+    gap: 2,
   },
-  timeValue: {
-    fontSize: 14,
-    fontWeight: '500',
+  date: {
+    ...type.bodyStrong,
   },
-});
+  meta: {
+    ...type.label,
+    fontWeight: '400',
+  },
+  timesLine: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    alignItems: 'baseline',
+    columnGap: spacing.sm,
+  },
+  times: {
+    ...type.body,
+    color: colors.ink,
+    fontVariant: ['tabular-nums'],
+  },
+  duration: {
+    ...type.label,
+    fontWeight: '400',
+    fontVariant: ['tabular-nums'],
+  },
+})

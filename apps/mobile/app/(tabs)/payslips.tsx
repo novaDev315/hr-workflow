@@ -1,224 +1,139 @@
-import { gql, useQuery } from '@apollo/client';
-import { View, Text, StyleSheet, ScrollView } from 'react-native';
-import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { useAuthSession } from '../../src/lib/auth-session';
-
-const ME_QUERY = gql`
-  query MobilePayslipMe {
-    me {
-      employeeId
-    }
-  }
-`
-
-const PAYSLIPS_QUERY = gql`
-  query MobilePayslips($employeeId: String!) {
-    payslips(filter: { employeeId: $employeeId }) {
-      id
-      periodMonth
-      grossPay
-      netPay
-      attendanceDeduction
-      deductionAmount
-      allowanceAmount
-      paidDays
-      expectedWorkdays
-      currencyCode
-      status
-    }
-  }
-`
+import { useMemo, type ReactElement } from 'react'
+import { useQuery } from '@apollo/client'
+import { FlatList, Pressable, RefreshControl, StyleSheet, Text, View } from 'react-native'
+import { MaterialCommunityIcons } from '@expo/vector-icons'
+import { useRouter } from 'expo-router'
+import { PAYSLIPS_QUERY, type Payslip } from '../../src/lib/queries'
+import { useEmployee } from '../../src/lib/use-employee'
+import { useRefresh } from '../../src/lib/use-refresh'
+import { formatMoney, formatMonth, formatNumber } from '../../src/lib/format'
+import { EmptyState, ErrorState, LoadingState, Screen, ScreenHeader } from '../../src/components'
+import { colors, radii, spacing, type } from '../../src/theme'
 
 export default function PayslipsScreen() {
-  const storedAccount = useAuthSession((state) => state.account)
-  const { data: meData } = useQuery(ME_QUERY)
-  const employeeId = meData?.me?.employeeId ?? storedAccount?.employeeId ?? null
-
-  const { data, loading } = useQuery(PAYSLIPS_QUERY, {
-    variables: {
-      employeeId,
-    },
+  const router = useRouter()
+  const { account, employeeId, error: accountError, refetch: refetchMe } = useEmployee()
+  const { data, loading, error, refetch } = useQuery<{ payslips: Payslip[] }>(PAYSLIPS_QUERY, {
+    variables: { filter: { employeeId } },
     skip: !employeeId,
   })
+  const { refreshing, onRefresh } = useRefresh(refetchMe, employeeId ? refetch : undefined)
 
-  const payslips = data?.payslips ?? []
+  const payslips = useMemo(
+    () => [...(data?.payslips ?? [])].sort((a, b) => b.periodMonth.localeCompare(a.periodMonth)),
+    [data],
+  )
+
+  let emptyContent: ReactElement | null = null
+  if (!account) {
+    emptyContent = accountError ? <ErrorState error={accountError} onRetry={() => void refetchMe()} /> : <LoadingState />
+  } else if (!employeeId) {
+    emptyContent = (
+      <EmptyState
+        icon="account-question-outline"
+        title="No employee profile linked"
+        message="Payslips are available once HR links this account to your employee profile."
+      />
+    )
+  } else if (error && !data) {
+    emptyContent = <ErrorState error={error} onRetry={() => void refetch()} retrying={loading} />
+  } else if (loading && !data) {
+    emptyContent = <LoadingState label="Loading payslips" />
+  } else if (payslips.length === 0) {
+    emptyContent = (
+      <EmptyState
+        icon="file-document-outline"
+        title="No payslips yet"
+        message="Your payslip appears here once payroll for the month has been paid."
+      />
+    )
+  }
 
   return (
-    <ScrollView style={styles.container}>
-      <View style={styles.header}>
-        <Text style={styles.title}>Payslips</Text>
-        <Text style={styles.subtitle}>View your processed payroll history</Text>
-      </View>
-
-      <View style={styles.content}>
-        {!employeeId ? (
-          <View style={styles.payslipCard}>
-            <Text style={styles.helperText}>
-              This account can sign in on mobile, but payslips are only available for linked employee profiles.
-            </Text>
-          </View>
-        ) : loading ? (
-          <View style={styles.payslipCard}>
-            <Text style={styles.helperText}>Loading payslips...</Text>
-          </View>
-        ) : payslips.length === 0 ? (
-          <View style={styles.payslipCard}>
-            <Text style={styles.helperText}>No payslips have been generated yet.</Text>
-          </View>
-        ) : (
-          payslips.map((payslip: {
-            id: string
-            periodMonth: string
-            netPay: number
-            grossPay: number
-            allowanceAmount: number
-            deductionAmount: number
-            attendanceDeduction: number
-            paidDays: number
-            expectedWorkdays: number
-            currencyCode: string
-            status: string
-          }) => (
-            <View key={payslip.id} style={styles.payslipCard}>
-              <View style={styles.payslipHeader}>
-                <MaterialCommunityIcons name="file-document" size={40} color="#3b82f6" />
-                <View style={styles.payslipInfo}>
-                  <Text style={styles.payslipMonth}>{payslip.periodMonth}</Text>
-                  <Text style={styles.payslipAmount}>
-                    {payslip.currencyCode} {payslip.netPay.toFixed(2)}
-                  </Text>
-                </View>
-                <View style={[
-                  styles.statusBadge,
-                  payslip.status === 'PAID' ? styles.statusPaid : styles.statusGenerated,
-                ]}>
-                  <Text style={styles.statusText}>{payslip.status}</Text>
-                </View>
-              </View>
-
-              <View style={styles.summaryGrid}>
-                <View style={styles.summaryItem}>
-                  <Text style={styles.summaryLabel}>Gross Pay</Text>
-                  <Text style={styles.summaryValue}>
-                    {payslip.currencyCode} {payslip.grossPay.toFixed(2)}
-                  </Text>
-                </View>
-                <View style={styles.summaryItem}>
-                  <Text style={styles.summaryLabel}>Allowance</Text>
-                  <Text style={styles.summaryValue}>
-                    {payslip.currencyCode} {payslip.allowanceAmount.toFixed(2)}
-                  </Text>
-                </View>
-                <View style={styles.summaryItem}>
-                  <Text style={styles.summaryLabel}>Deductions</Text>
-                  <Text style={styles.summaryValue}>
-                    {payslip.currencyCode} {(payslip.deductionAmount + payslip.attendanceDeduction).toFixed(2)}
-                  </Text>
-                </View>
-                <View style={styles.summaryItem}>
-                  <Text style={styles.summaryLabel}>Paid Days</Text>
-                  <Text style={styles.summaryValue}>
-                    {payslip.paidDays}/{payslip.expectedWorkdays}
-                  </Text>
-                </View>
-              </View>
+    <Screen scroll={false}>
+      <FlatList
+        data={emptyContent ? [] : payslips}
+        keyExtractor={(item) => item.id}
+        contentContainerStyle={styles.list}
+        ListHeaderComponent={<ScreenHeader title="Payslips" subtitle="Paid months, newest first." />}
+        ListEmptyComponent={emptyContent}
+        ItemSeparatorComponent={() => <View style={styles.separator} />}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            tintColor={colors.accentStrong}
+            colors={[colors.accentStrong]}
+          />
+        }
+        renderItem={({ item, index }) => (
+          <Pressable
+            // navigate, not push: expo-router 4 push adds `__EXPO_ROUTER_key=undefined-…` to web URLs.
+            onPress={() => router.navigate(`/payslip/${item.id}`)}
+            accessibilityRole="button"
+            accessibilityLabel={`${formatMonth(item.periodMonth)}, net pay ${formatMoney(item.netPay, item.currencyCode)}`}
+            accessibilityHint="Opens the payslip"
+            style={({ pressed }) => [styles.row, index === 0 && styles.rowFirst, pressed && styles.pressed]}
+          >
+            <View style={styles.main}>
+              <Text style={styles.month}>{formatMonth(item.periodMonth)}</Text>
+              <Text style={styles.meta}>
+                {formatNumber(item.paidDays)} of {item.expectedWorkdays} days paid
+              </Text>
             </View>
-          ))
+            <View style={styles.amountWrap}>
+              <Text style={styles.amount}>{formatMoney(item.netPay, item.currencyCode)}</Text>
+              <Text style={styles.meta}>Net pay</Text>
+            </View>
+            <MaterialCommunityIcons name="chevron-right" size={22} color={colors.muted} />
+          </Pressable>
         )}
-      </View>
-    </ScrollView>
-  );
+      />
+    </Screen>
+  )
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#f9fafb',
+  list: {
+    paddingHorizontal: spacing.lg,
+    paddingBottom: spacing.xxl,
   },
-  header: {
-    backgroundColor: '#3b82f6',
-    padding: 24,
-    paddingTop: 60,
+  separator: {
+    height: spacing.sm,
   },
-  title: {
-    fontSize: 28,
-    fontWeight: 'bold',
-    color: 'white',
-  },
-  subtitle: {
-    fontSize: 14,
-    color: 'white',
-    opacity: 0.9,
-    marginTop: 4,
-  },
-  content: {
-    padding: 16,
-  },
-  payslipCard: {
-    backgroundColor: 'white',
-    borderRadius: 12,
-    padding: 16,
-    marginBottom: 12,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05,
-    shadowRadius: 4,
-    elevation: 2,
-  },
-  payslipHeader: {
+  row: {
+    minHeight: 72,
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 16,
+    gap: spacing.md,
+    padding: spacing.lg,
+    backgroundColor: colors.surface,
+    borderColor: colors.border,
+    borderWidth: 1,
+    borderRadius: radii.lg,
   },
-  payslipInfo: {
+  rowFirst: {
+    marginTop: spacing.xl,
+  },
+  pressed: {
+    backgroundColor: colors.surfaceMuted,
+  },
+  main: {
     flex: 1,
-    marginLeft: 12,
+    gap: 2,
   },
-  payslipMonth: {
-    fontSize: 16,
-    fontWeight: '600',
+  month: {
+    ...type.bodyStrong,
   },
-  payslipAmount: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    color: '#3b82f6',
-    marginTop: 4,
+  meta: {
+    ...type.caption,
   },
-  statusBadge: {
-    paddingHorizontal: 12,
-    paddingVertical: 4,
-    borderRadius: 12,
+  amountWrap: {
+    alignItems: 'flex-end',
+    gap: 2,
   },
-  statusPaid: {
-    backgroundColor: '#d1fae5',
+  amount: {
+    ...type.bodyStrong,
+    fontVariant: ['tabular-nums'],
   },
-  statusGenerated: {
-    backgroundColor: '#dbeafe',
-  },
-  statusText: {
-    fontSize: 12,
-    fontWeight: '500',
-    color: '#065f46',
-  },
-  summaryGrid: {
-    gap: 12,
-  },
-  summaryItem: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-  },
-  summaryLabel: {
-    fontSize: 14,
-    color: '#6b7280',
-  },
-  summaryValue: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#111827',
-  },
-  helperText: {
-    fontSize: 14,
-    color: '#4b5563',
-    lineHeight: 20,
-  },
-});
+})

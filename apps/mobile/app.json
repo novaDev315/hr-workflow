@@ -5,12 +5,13 @@
     "version": "2.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
-    "userInterfaceStyle": "automatic",
+    "userInterfaceStyle": "light",
     "scheme": "hrflow",
+    "backgroundColor": "#f5f4ed",
     "splash": {
       "image": "./assets/splash.png",
       "resizeMode": "contain",
-      "backgroundColor": "#3b82f6"
+      "backgroundColor": "#f5f4ed"
     },
     "assetBundlePatterns": [
       "**/*"
@@ -19,41 +20,42 @@
       "supportsTablet": true,
       "bundleIdentifier": "com.hrflow.mobile",
       "infoPlist": {
-        "NSLocationWhenInUseUsageDescription": "HRFlow needs your location to verify attendance check-in.",
-        "NSCameraUsageDescription": "HRFlow needs camera access to capture attendance photos."
+        "NSLocationWhenInUseUsageDescription": "HRFlow Pro uses your location when you clock in or out to confirm you are at your work site."
       }
     },
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
-        "backgroundColor": "#3b82f6"
+        "backgroundColor": "#7c3d28"
       },
       "package": "com.hrflow.mobile",
       "permissions": [
         "ACCESS_FINE_LOCATION",
-        "ACCESS_COARSE_LOCATION",
-        "CAMERA"
+        "ACCESS_COARSE_LOCATION"
+      ],
+      "blockedPermissions": [
+        "android.permission.ACCESS_BACKGROUND_LOCATION",
+        "android.permission.CAMERA"
       ]
     },
     "web": {
       "bundler": "metro",
-      "output": "static",
-      "favicon": "./assets/favicon.png"
+      "output": "single",
+      "favicon": "./assets/favicon.png",
+      "backgroundColor": "#f5f4ed"
     },
     "plugins": [
       "expo-router",
       [
         "expo-location",
         {
-          "locationAlwaysAndWhenInUsePermission": "Allow HRFlow to use your location for attendance tracking."
+          "locationWhenInUsePermission": "HRFlow Pro uses your location when you clock in or out to confirm you are at your work site.",
+          "isAndroidBackgroundLocationEnabled": false,
+          "isIosBackgroundLocationEnabled": false
         }
       ],
-      [
-        "expo-camera",
-        {
-          "cameraPermission": "Allow HRFlow to access your camera for attendance photos."
-        }
-      ]
+      "expo-secure-store",
+      "@react-native-community/datetimepicker"
     ]
   }
 }

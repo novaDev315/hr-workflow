@@ -1,262 +1,147 @@
-import { gql, useQuery } from '@apollo/client'
-import { View, Text, TouchableOpacity, StyleSheet, ScrollView, Alert } from 'react-native'
-import { MaterialCommunityIcons } from '@expo/vector-icons'
+import { useState } from 'react'
+import { StyleSheet, Text, View } from 'react-native'
 import { useRouter } from 'expo-router'
-import { useAuthSession } from '../../src/lib/auth-session'
-
-const ME_QUERY = gql`
-  query MobileProfileMe {
-    me {
-      id
-      email
-      firstName
-      lastName
-      fullName
-      roles
-      employeeNumber
-      departmentName
-      designationTitle
-      employeeStatus
-    }
-  }
-`
-
-const personalInfoIcons: Array<{
-  icon: keyof typeof MaterialCommunityIcons.glyphMap
-  label: string
-  value: string
-}> = [
-  { icon: 'email', label: 'Email', value: '' },
-  { icon: 'briefcase', label: 'Designation', value: '' },
-  { icon: 'badge-account', label: 'Roles', value: '' },
-  { icon: 'clock-outline', label: 'Employee Status', value: '' },
-]
-
-const settingsIcons: Array<{
-  icon: keyof typeof MaterialCommunityIcons.glyphMap
-  label: string
-  value?: string
-}> = [
-  { icon: 'bell', label: 'Notifications', value: 'Enabled' },
-  { icon: 'map-marker-radius', label: 'Department' },
-  { icon: 'information', label: 'Employee Portal' },
-]
+import { useEmployee } from '../../src/lib/use-employee'
+import { useRefresh } from '../../src/lib/use-refresh'
+import { confirmAction, signOut } from '../../src/lib/session-actions'
+import { employeeStatusLabel, formatRoles, initials } from '../../src/lib/format'
+import {
+  Button,
+  Card,
+  DetailRow,
+  ErrorState,
+  ListItem,
+  LoadingState,
+  Screen,
+  ScreenHeader,
+  SectionTitle,
+} from '../../src/components'
+import { colors, fonts, radii, spacing, type } from '../../src/theme'
 
 export default function ProfileScreen() {
   const router = useRouter()
-  const clearSession = useAuthSession((state) => state.clearSession)
-  const storedAccount = useAuthSession((state) => state.account)
-  const { data } = useQuery(ME_QUERY)
-  const account = data?.me ?? storedAccount
+  const { account, error, refetch } = useEmployee()
+  const { refreshing, onRefresh } = useRefresh(refetch)
+  const [signingOut, setSigningOut] = useState(false)
 
-  const handleLogout = async () => {
-    Alert.alert(
-      'Logout',
-      'Are you sure you want to logout?',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Logout',
-          style: 'destructive',
-          onPress: async () => {
-            await clearSession()
-            router.replace('/(auth)/login')
-          },
-        },
-      ]
+  const handleSignOut = async () => {
+    if (signingOut) return
+    const confirmed = await confirmAction({
+      title: 'Sign out?',
+      message: "You'll need your email and password to sign in again.",
+      confirmLabel: 'Sign out',
+      destructive: true,
+    })
+    if (!confirmed) return
+    setSigningOut(true)
+    try {
+      await signOut()
+      router.replace('/(auth)/login')
+    } finally {
+      setSigningOut(false)
+    }
+  }
+
+  if (!account) {
+    return (
+      <Screen>
+        <ScreenHeader title="Profile" />
+        {error ? <ErrorState error={error} onRetry={() => void refetch()} /> : <LoadingState />}
+      </Screen>
     )
   }
 
+  const role = [account.designationTitle, account.departmentName].filter(Boolean).join(' · ')
+
   return (
-    <ScrollView style={styles.container}>
-      <View style={styles.header}>
-        <View style={styles.avatar}>
-          <Text style={styles.avatarText}>
-            {(account?.fullName ?? 'Employee')
-              .split(' ')
-              .slice(0, 2)
-              .map((part: string) => part[0] ?? '')
-              .join('')
-              .toUpperCase()}
-          </Text>
+    <Screen refreshing={refreshing} onRefresh={onRefresh}>
+      <ScreenHeader title="Profile" />
+
+      <View style={styles.identity}>
+        <View style={styles.avatar} accessibilityElementsHidden importantForAccessibility="no-hide-descendants">
+          <Text style={styles.avatarText}>{initials(account.fullName)}</Text>
         </View>
-        <Text style={styles.name}>{account?.fullName ?? 'Employee'}</Text>
-        <Text style={styles.employeeId}>
-          {account?.employeeNumber ?? 'No employee number'}
-        </Text>
-        <Text style={styles.department}>
-          {account?.departmentName ?? 'No department assigned'}
-        </Text>
+        <View style={styles.identityText}>
+          <Text style={styles.name}>{account.fullName}</Text>
+          {role ? <Text style={styles.role}>{role}</Text> : null}
+        </View>
       </View>
 
-      <View style={styles.content}>
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Personal Information</Text>
-          {personalInfoIcons
-            .map((item) => ({
-              ...item,
-              value:
-                item.label === 'Email'
-                  ? account?.email ?? 'Not available'
-                  : item.label === 'Designation'
-                    ? account?.designationTitle ?? 'Not assigned'
-                    : item.label === 'Roles'
-                      ? (account?.roles ?? []).join(', ') || 'None'
-                      : account?.employeeStatus ?? 'Unknown',
-            }))
-            .map((item, i) => (
-            <View key={i} style={styles.infoRow}>
-              <MaterialCommunityIcons name={item.icon} size={20} color="#6b7280" />
-              <View style={styles.infoText}>
-                <Text style={styles.infoLabel}>{item.label}</Text>
-                <Text style={styles.infoValue}>{item.value}</Text>
-              </View>
-            </View>
-          ))}
-        </View>
+      <SectionTitle>Personal details</SectionTitle>
+      <Card flush>
+        <DetailRow label="Full name" value={account.fullName} />
+        <DetailRow label="Work email" value={account.email} last />
+      </Card>
 
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Settings</Text>
-          {settingsIcons
-            .map((item) => ({
-              ...item,
-              value:
-                item.label === 'Department'
-                  ? account?.departmentName ?? 'Unknown'
-                  : item.value,
-            }))
-            .map((item, i) => (
-            <TouchableOpacity key={i} style={styles.settingRow}>
-              <MaterialCommunityIcons name={item.icon} size={20} color="#6b7280" />
-              <Text style={styles.settingLabel}>{item.label}</Text>
-              {item.value && (
-                <Text style={styles.settingValue}>{item.value}</Text>
-              )}
-              <MaterialCommunityIcons name="chevron-right" size={20} color="#d1d5db" />
-            </TouchableOpacity>
-          ))}
-        </View>
+      <SectionTitle>Job details</SectionTitle>
+      <Card flush>
+        <DetailRow label="Employee number" value={account.employeeNumber ?? 'Not linked yet'} />
+        <DetailRow label="Job title" value={account.designationTitle ?? 'Not set'} />
+        <DetailRow label="Department" value={account.departmentName ?? 'Not set'} />
+        <DetailRow
+          label="Employment status"
+          value={account.employeeStatus ? employeeStatusLabel(account.employeeStatus) : 'Not set'}
+        />
+        <DetailRow label="Access" value={formatRoles(account.roles)} last />
+      </Card>
 
-        <TouchableOpacity style={styles.logoutButton} onPress={handleLogout}>
-          <MaterialCommunityIcons name="logout" size={20} color="#ef4444" />
-          <Text style={styles.logoutText}>Logout</Text>
-        </TouchableOpacity>
-      </View>
-    </ScrollView>
+      <SectionTitle>Company</SectionTitle>
+      <Card flush>
+        <ListItem
+          icon="book-open-variant"
+          title="Company policies"
+          subtitle="Handbook, leave and workplace rules"
+          onPress={() => router.navigate('/policies')}
+          last
+        />
+      </Card>
+
+      <Button
+        label="Sign out"
+        icon="logout"
+        variant="destructive"
+        loading={signingOut}
+        loadingLabel="Signing out"
+        onPress={handleSignOut}
+        style={styles.signOut}
+      />
+    </Screen>
   )
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#f9fafb',
-  },
-  header: {
-    backgroundColor: '#3b82f6',
-    padding: 24,
-    paddingTop: 60,
+  identity: {
+    flexDirection: 'row',
     alignItems: 'center',
-    paddingBottom: 40,
+    gap: spacing.lg,
   },
   avatar: {
-    width: 80,
-    height: 80,
-    borderRadius: 40,
-    backgroundColor: 'white',
+    width: 64,
+    height: 64,
+    borderRadius: radii.pill,
+    backgroundColor: colors.accentAlt,
+    borderWidth: 1,
+    borderColor: colors.border,
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 16,
   },
   avatarText: {
-    fontSize: 32,
-    fontWeight: 'bold',
-    color: '#3b82f6',
+    fontFamily: fonts.serif,
+    fontSize: 24,
+    color: colors.ink,
+  },
+  identityText: {
+    flex: 1,
+    gap: 2,
   },
   name: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    color: 'white',
+    ...type.title,
   },
-  employeeId: {
-    fontSize: 14,
-    color: 'white',
-    opacity: 0.9,
-    marginTop: 4,
+  role: {
+    ...type.body,
+    color: colors.muted,
   },
-  department: {
-    fontSize: 14,
-    color: 'white',
-    opacity: 0.8,
-    marginTop: 2,
+  signOut: {
+    marginTop: spacing.md,
   },
-  content: {
-    padding: 16,
-  },
-  section: {
-    backgroundColor: 'white',
-    borderRadius: 12,
-    padding: 16,
-    marginBottom: 16,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05,
-    shadowRadius: 4,
-    elevation: 2,
-  },
-  sectionTitle: {
-    fontSize: 16,
-    fontWeight: '600',
-    marginBottom: 16,
-  },
-  infoRow: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: 12,
-    marginBottom: 16,
-  },
-  infoText: {
-    flex: 1,
-  },
-  infoLabel: {
-    fontSize: 12,
-    color: '#6b7280',
-  },
-  infoValue: {
-    fontSize: 14,
-    fontWeight: '500',
-    marginTop: 2,
-  },
-  settingRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-    paddingVertical: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: '#f3f4f6',
-  },
-  settingLabel: {
-    flex: 1,
-    fontSize: 14,
-    fontWeight: '500',
-  },
-  settingValue: {
-    fontSize: 14,
-    color: '#6b7280',
-  },
-  logoutButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
-    backgroundColor: 'white',
-    padding: 16,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: '#fee2e2',
-  },
-  logoutText: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#ef4444',
-  },
-});
+})
