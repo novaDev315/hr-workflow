@@ -1,11 +1,13 @@
-import { useMemo } from 'react'
+import { useCallback, useMemo } from 'react'
 import { StyleSheet, Text, View } from 'react-native'
-import { useRouter } from 'expo-router'
+import { useFocusEffect, useRouter } from 'expo-router'
 import type { LeaveRequestRow } from '../../src/lib/queries'
 import { useEmployee } from '../../src/lib/use-employee'
 import { useLeaveData } from '../../src/lib/use-leave-data'
 import { useRefresh } from '../../src/lib/use-refresh'
 import { formatDateRange, formatNumber, leaveStatus, plural } from '../../src/lib/format'
+import { useFlash } from '../../src/lib/flash'
+import type { BalanceWithPending } from '../../src/lib/use-leave-data'
 import {
   Badge,
   Button,
@@ -13,6 +15,7 @@ import {
   EmptyState,
   ErrorState,
   LoadingState,
+  Notice,
   Screen,
   ScreenHeader,
   SectionTitle,
@@ -29,14 +32,26 @@ export default function LeaveScreen() {
     employeeId ? refetchPending : undefined,
   )
 
+  const flash = useFlash((state) => state.flash)
+  const clearFlash = useFlash((state) => state.clearFlash)
+  // The confirmation belongs to this visit: drop it when the employee moves on.
+  useFocusEffect(useCallback(() => clearFlash, [clearFlash]))
+
+  // Pending first (what the employee is waiting on), then newest first.
   const requests = useMemo(
-    () => [...(data?.leaveRequests ?? [])].sort((a, b) => b.requestedAt.localeCompare(a.requestedAt)),
+    () =>
+      [...(data?.leaveRequests ?? [])].sort(
+        (a, b) =>
+          Number(b.status === 'PENDING') - Number(a.status === 'PENDING') ||
+          b.requestedAt.localeCompare(a.requestedAt),
+      ),
     [data],
   )
 
   const header = (
     <>
-      <ScreenHeader title="Leave" subtitle="Your balances and requests." />
+      <ScreenHeader title="Leave" subtitle="Your requests and days left." />
+      {flash ? <Notice tone={flash.tone} message={flash.message} onDismiss={clearFlash} /> : null}
       {employeeId && data ? (
         <Button label="Request leave" icon="plus" onPress={() => router.navigate('/request-leave')} />
       ) : null}
@@ -75,34 +90,6 @@ export default function LeaveScreen() {
         <LoadingState label="Loading leave" />
       ) : (
         <>
-          <SectionTitle>Balances</SectionTitle>
-          {balances.length === 0 ? (
-            <Card>
-              <EmptyState
-                icon="calendar-blank-outline"
-                title="No leave balances yet"
-                message="HR hasn't set up your leave allowance yet."
-              />
-            </Card>
-          ) : (
-            balances.map((balance) => (
-              <Card key={balance.leaveTypeId}>
-                <View style={styles.balanceHead}>
-                  <Text style={styles.balanceName}>{balance.leaveType.name}</Text>
-                  <Text style={styles.balanceAvailable}>
-                    {formatNumber(balance.availableDays)}
-                    <Text style={styles.balanceUnit}> {balance.availableDays === 1 ? 'day' : 'days'} left</Text>
-                  </Text>
-                </View>
-                <View style={styles.balanceStats}>
-                  <BalanceStat label="Allocated" value={balance.allocatedDays} />
-                  <BalanceStat label="Used" value={balance.usedDays} />
-                  <BalanceStat label="Pending" value={balance.pendingDays} />
-                </View>
-              </Card>
-            ))
-          )}
-
           <SectionTitle>Requests</SectionTitle>
           {requests.length === 0 ? (
             <Card>
@@ -115,17 +102,50 @@ export default function LeaveScreen() {
           ) : (
             requests.map((request) => <RequestCard key={request.id} request={request} />)
           )}
+
+          <SectionTitle>Days left</SectionTitle>
+          {balances.length === 0 ? (
+            <Card>
+              <EmptyState
+                icon="calendar-blank-outline"
+                title="No leave balances yet"
+                message="HR hasn't set up your leave allowance yet."
+              />
+            </Card>
+          ) : (
+            <View style={styles.balanceGrid}>
+              {balances.map((balance) => (
+                <BalanceTile key={balance.leaveTypeId} balance={balance} />
+              ))}
+            </View>
+          )}
         </>
       )}
     </Screen>
   )
 }
 
-function BalanceStat({ label, value }: { label: string; value: number }) {
+function BalanceTile({ balance }: { balance: BalanceWithPending }) {
+  const details = [
+    `${formatNumber(balance.usedDays)} of ${formatNumber(balance.allocatedDays)} used`,
+    balance.pendingDays ? `${formatNumber(balance.pendingDays)} pending` : null,
+  ]
+    .filter(Boolean)
+    .join(' · ')
   return (
-    <View style={styles.stat}>
-      <Text style={styles.statValue}>{formatNumber(value)}</Text>
-      <Text style={styles.statLabel}>{label}</Text>
+    <View
+      style={styles.balanceTile}
+      accessible
+      accessibilityLabel={`${balance.leaveType.name}: ${plural(balance.availableDays, 'day')} left, ${details}`}
+    >
+      <Text style={styles.balanceName} numberOfLines={2}>
+        {balance.leaveType.name}
+      </Text>
+      <Text style={styles.balanceAvailable}>
+        {formatNumber(balance.availableDays)}
+        <Text style={styles.balanceUnit}> {balance.availableDays === 1 ? 'day' : 'days'} left</Text>
+      </Text>
+      <Text style={styles.balanceDetail}>{details}</Text>
     </View>
   )
 }
@@ -139,7 +159,9 @@ function RequestCard({ request }: { request: LeaveRequestRow }) {
         <View style={styles.requestMain}>
           <Text style={styles.requestType}>{request.leaveType.name}</Text>
           <Text style={styles.requestDates}>
-            {formatDateRange(request.startDate, request.endDate)} · {plural(request.totalDays, 'working day')}
+            {formatDateRange(request.startDate, request.endDate)} ·{' '}
+            {/* No-break spaces keep "3 working days" on one line. */}
+            {plural(request.totalDays, 'working day').replace(/ /g, '\u00a0')}
           </Text>
         </View>
         <Badge label={status.label} tone={status.tone} />
@@ -160,38 +182,37 @@ function RequestCard({ request }: { request: LeaveRequestRow }) {
 }
 
 const styles = StyleSheet.create({
-  balanceHead: {
+  balanceGrid: {
     flexDirection: 'row',
-    alignItems: 'baseline',
-    justifyContent: 'space-between',
     flexWrap: 'wrap',
-    gap: spacing.sm,
+    gap: spacing.md,
+  },
+  balanceTile: {
+    flexGrow: 1,
+    flexBasis: '40%',
+    minWidth: 140,
+    backgroundColor: colors.surface,
+    borderColor: colors.border,
+    borderWidth: 1,
+    borderRadius: radii.lg,
+    padding: spacing.lg,
+    gap: spacing.xs,
   },
   balanceName: {
-    ...type.heading,
+    ...type.label,
+    color: colors.ink,
+    fontWeight: '600',
   },
   balanceAvailable: {
     ...type.title,
-    fontSize: 24,
+    fontSize: 26,
+    lineHeight: 32,
+    fontVariant: ['tabular-nums'],
   },
   balanceUnit: {
     ...type.label,
   },
-  balanceStats: {
-    flexDirection: 'row',
-    borderTopWidth: 1,
-    borderTopColor: colors.border,
-    paddingTop: spacing.md,
-  },
-  stat: {
-    flex: 1,
-    gap: 2,
-  },
-  statValue: {
-    ...type.bodyStrong,
-    fontVariant: ['tabular-nums'],
-  },
-  statLabel: {
+  balanceDetail: {
     ...type.caption,
   },
   requestHead: {
