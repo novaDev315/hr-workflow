@@ -22,6 +22,10 @@ database:
   migration:
     enabled: false
     timeout_seconds: 300
+# Tests run outside ship (local/CI suites against a migrated Postgres); the
+# runtime image is production-only and has no test tooling.
+test:
+  mode: external
 # Git configuration
 git:
   remote: gitea
