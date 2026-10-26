@@ -98,6 +98,35 @@ function parseAmount(value: string) {
  * Validation (client side, before the API is called)
  * ------------------------------------------------------------------------- */
 
+export type ProfileErrors = Partial<Record<keyof ProfileForm, string>>
+
+// Field-level messages so each problem shows under its own input.
+export function profileFieldErrors(form: ProfileForm): ProfileErrors {
+  const errors: ProfileErrors = {}
+  if (!form.firstName.trim()) errors.firstName = 'Enter the first name.'
+  if (!form.lastName.trim()) errors.lastName = 'Enter the last name.'
+  if (!form.email.trim()) errors.email = 'Enter a work email.'
+  else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email.trim())) errors.email = 'Enter a valid email, like name@company.com.'
+  if (!form.departmentId) errors.departmentId = 'Choose a department.'
+  if (!form.designationId) errors.designationId = form.departmentId ? 'Choose a designation.' : 'Choose a department first.'
+  if (!form.joinDate) errors.joinDate = 'Enter the join date.'
+  return errors
+}
+
+const PROFILE_FIELD_IDS: Partial<Record<keyof ProfileForm, string>> = {
+  firstName: 'profile-first-name',
+  lastName: 'profile-last-name',
+  email: 'profile-email',
+  departmentId: 'profile-department',
+  designationId: 'profile-designation',
+  joinDate: 'profile-join-date',
+}
+
+export function focusFirstProfileError(errors: ProfileErrors) {
+  const first = (Object.keys(PROFILE_FIELD_IDS) as (keyof ProfileForm)[]).find((key) => errors[key])
+  if (first) document.getElementById(PROFILE_FIELD_IDS[first] ?? '')?.focus()
+}
+
 export function validateProfile(form: ProfileForm): string | null {
   if (!form.firstName.trim() || !form.lastName.trim()) return 'Enter the first and last name.'
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email.trim())) return 'Enter a valid work email.'

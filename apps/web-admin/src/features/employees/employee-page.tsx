@@ -1,11 +1,13 @@
 import { useMutation, useQuery } from '@apollo/client'
-import { LayoutGrid, List, Plus, Search } from 'lucide-react'
-import { useDeferredValue, useMemo, useState } from 'react'
+import { LayoutGrid, List, Plus, Search, SlidersHorizontal } from 'lucide-react'
+import { useDeferredValue, useEffect, useMemo, useState, useSyncExternalStore } from 'react'
+import { useSearchParams } from 'react-router-dom'
 
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Notice } from '@/components/ui/notice'
+import { toast } from '@/lib/toast'
 import { useConfirm } from '@/features/shared/confirm-dialog'
 import { FilterSelect, SegmentedControl } from '@/features/shared/controls'
 import { EmptyState } from '@/features/shared/data-table'
@@ -14,6 +16,7 @@ import { PageIntro } from '@/features/shared/page-intro'
 import { useReferenceData } from '@/features/shared/reference-data'
 import { canManageAccounts, useAdminSession } from '@/lib/auth-session'
 import { formatStatus, plural } from '@/lib/format'
+import { cn } from '@/lib/utils'
 
 import { EmployeeActionSheet, type EmployeeAction } from './action-sheets'
 import { PeopleCards, PeopleTable, SetupChecklist, type RowActions } from './components'
@@ -24,7 +27,7 @@ import {
   PEOPLE_REFETCH,
 } from './graphql'
 import { NewEmployeeSheet } from './new-employee-sheet'
-import { grantableRoles, type Compensation, type Person } from './types'
+import { grantableRoles, type Compensation, type Person, type ProfileForm } from './types'
 
 type View = 'table' | 'cards'
 const VIEW_KEY = 'hrflow.people.view'
@@ -35,6 +38,17 @@ function readView(): View {
   } catch {
     return 'table'
   }
+}
+
+// Tables need room; on phones People always shows cards so actions stay in reach.
+const WIDE_QUERY = '(min-width: 768px)'
+function subscribeWide(callback: () => void) {
+  const media = window.matchMedia(WIDE_QUERY)
+  media.addEventListener('change', callback)
+  return () => media.removeEventListener('change', callback)
+}
+function useIsWide() {
+  return useSyncExternalStore(subscribeWide, () => window.matchMedia(WIDE_QUERY).matches, () => true)
 }
 
 export function EmployeesPage() {
@@ -58,7 +72,10 @@ export function EmployeesPage() {
   const [view, setViewState] = useState<View>(readView)
   const [newOpen, setNewOpen] = useState(false)
   const [action, setAction] = useState<{ type: EmployeeAction; person: Person } | null>(null)
-  const [notice, setNotice] = useState<{ text: string; tone: 'success' | 'danger' } | null>(null)
+  const [filtersOpen, setFiltersOpen] = useState(false)
+  const [prefill, setPrefill] = useState<Partial<ProfileForm> | null>(null)
+  const [searchParams, setSearchParams] = useSearchParams()
+  const isWide = useIsWide()
 
   const people = useMemo(() => peopleQuery.data?.employees ?? [], [peopleQuery.data])
   const compensations = compensationQuery.data?.employeeCompensations ?? []
@@ -106,6 +123,24 @@ export function EmployeesPage() {
   const freshInstall = !loading && (activeDepartments.length === 0 || people.length === 0)
   const canAddEmployee = canManage && activeDepartments.length > 0 && activeDesignations.length > 0
   const filtersActive = Boolean(search || departmentFilter || statusFilter || signInFilter)
+  const activeFilterCount = [departmentFilter, statusFilter, signInFilter].filter(Boolean).length
+  const effectiveView: View = isWide ? view : 'cards'
+
+  // Recruitment hands over a hired candidate as /employees?new=1&firstName=…
+  useEffect(() => {
+    if (searchParams.get('new') !== '1' || loading) return
+    if (canAddEmployee) {
+      const fields = ['firstName', 'lastName', 'email', 'phone', 'departmentId', 'designationId'] as const
+      const next: Partial<ProfileForm> = {}
+      for (const field of fields) {
+        const value = searchParams.get(field)
+        if (value) next[field] = value
+      }
+      setPrefill(next)
+      setNewOpen(true)
+    }
+    setSearchParams({}, { replace: true })
+  }, [searchParams, loading, canAddEmployee, setSearchParams])
 
   const handleDeactivate = async (person: Person) => {
     const ok = await confirm({
@@ -119,9 +154,9 @@ export function EmployeesPage() {
     if (!ok) return
     try {
       await deactivateEmployee({ variables: { input: { id: person.id } } })
-      setNotice({ text: `${person.fullName} deactivated.`, tone: 'success' })
+      toast.success(`${person.fullName} deactivated.`)
     } catch (error) {
-      setNotice({ text: readableError(error, 'The employee could not be deactivated.'), tone: 'danger' })
+      toast.error(readableError(error, 'The employee could not be deactivated.'))
     }
   }
 
@@ -129,7 +164,6 @@ export function EmployeesPage() {
     canManage,
     hasPay: (id) => compensations.some((c) => c.employeeId === id),
     onAction: (type, person) => {
-      setNotice(null)
       setAction({ type, person })
     },
     onDeactivate: (person) => void handleDeactivate(person),
@@ -143,7 +177,7 @@ export function EmployeesPage() {
             <Button
               disabled={!canAddEmployee}
               onClick={() => {
-                setNotice(null)
+                setPrefill(null)
                 setNewOpen(true)
               }}
               title={canAddEmployee ? undefined : 'Create a department and designation in Organisation first'}
@@ -162,16 +196,6 @@ export function EmployeesPage() {
         title="People"
       />
 
-      {notice ? (
-        <Notice tone={notice.tone}>
-          <div className="flex items-start justify-between gap-3">
-            <span>{notice.text}</span>
-            <button className="shrink-0 text-xs font-semibold underline-offset-4 hover:underline" onClick={() => setNotice(null)} type="button">
-              Dismiss
-            </button>
-          </div>
-        </Notice>
-      ) : null}
       {peopleQuery.error ? (
         <Notice tone="danger">People could not be loaded. {readableError(peopleQuery.error, '')}</Notice>
       ) : null}
@@ -193,8 +217,8 @@ export function EmployeesPage() {
       ) : (
         <Card>
           <CardContent className="space-y-4 p-4 sm:p-5">
-            <div className="grid gap-2 md:grid-cols-[minmax(0,1.6fr)_repeat(3,minmax(0,1fr))_auto]">
-              <div className="relative">
+            <div className="flex flex-wrap gap-2 md:grid md:grid-cols-[minmax(0,1.6fr)_repeat(3,minmax(0,1fr))_auto]">
+              <div className="relative min-w-0 flex-1">
                 <Search className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
                 <Input
                   aria-label="Search people"
@@ -205,6 +229,23 @@ export function EmployeesPage() {
                   value={search}
                 />
               </div>
+              <Button
+                aria-controls="people-filters"
+                aria-expanded={filtersOpen}
+                className="h-10 shrink-0 md:hidden"
+                onClick={() => setFiltersOpen((open) => !open)}
+                type="button"
+                variant="outline"
+              >
+                <SlidersHorizontal className="mr-2 h-4 w-4" />
+                Filters
+                {activeFilterCount > 0 ? (
+                  <span className="ml-1.5 rounded-full bg-primary px-1.5 text-[11px] font-semibold leading-5 text-primary-foreground">
+                    {activeFilterCount}
+                  </span>
+                ) : null}
+              </Button>
+              <div className={cn('basis-full gap-2 md:contents', filtersOpen ? 'grid' : 'hidden')} id="people-filters">
               <FilterSelect
                 allLabel="All departments"
                 id="people-department"
@@ -232,6 +273,8 @@ export function EmployeesPage() {
                 ]}
                 value={signInFilter}
               />
+              </div>
+              <div className="hidden md:block">
               <SegmentedControl
                 label="View"
                 onChange={setView}
@@ -241,6 +284,7 @@ export function EmployeesPage() {
                 ]}
                 value={view}
               />
+              </div>
             </div>
 
             <div className="flex items-center justify-between gap-3 text-sm text-muted-foreground">
@@ -267,7 +311,7 @@ export function EmployeesPage() {
 
             {filtered.length === 0 ? (
               <EmptyState title="Nobody matches these filters">Try a different name or clear the filters.</EmptyState>
-            ) : view === 'table' ? (
+            ) : effectiveView === 'table' ? (
               <PeopleTable actions={rowActions} people={filtered} />
             ) : (
               <PeopleCards actions={rowActions} people={filtered} />
@@ -281,7 +325,8 @@ export function EmployeesPage() {
         departments={reference.departments}
         designations={reference.designations}
         grantable={grantable}
-        onFinished={(text) => setNotice({ text, tone: 'success' })}
+        initialProfile={prefill}
+        onFinished={(text) => toast.success(text)}
         onOpenChange={setNewOpen}
         open={newOpen}
         people={people}
@@ -296,7 +341,7 @@ export function EmployeesPage() {
         designations={reference.designations}
         grantable={grantable}
         onClose={() => setAction(null)}
-        onSaved={(text) => setNotice({ text, tone: 'success' })}
+        onSaved={(text) => toast.success(text)}
         people={people}
         person={action?.person ?? null}
         sites={reference.sites}

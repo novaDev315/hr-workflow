@@ -17,7 +17,10 @@ import {
   generatePassword,
   useEmployeeMutations,
   validatePay,
+  focusFirstProfileError,
+  profileFieldErrors,
   validateProfile,
+  type ProfileErrors,
   validateSignIn,
 } from './mutations'
 import {
@@ -73,6 +76,7 @@ export function EmployeeActionSheet({
   const [site, setSite] = useState<SiteForm>({ locationId: '', isPrimary: true })
   const [signIn, setSignIn] = useState<SignInForm>({ createSignIn: true, password: '', staffRole: '' })
   const [error, setError] = useState<string | null>(null)
+  const [profileErrors, setProfileErrors] = useState<ProfileErrors>({})
   const [busy, setBusy] = useState(false)
   const [password, setPassword] = useState<string | null>(null)
 
@@ -82,6 +86,7 @@ export function EmployeeActionSheet({
   useEffect(() => {
     if (!open || !person) return
     setError(null)
+    setProfileErrors({})
     setPassword(null)
     setProfile(profileFromPerson(person))
     setPay(compensation ? payFromCompensation(compensation) : emptyPay(currencyCode, person.joinDate))
@@ -94,6 +99,14 @@ export function EmployeeActionSheet({
   const submit = async () => {
     if (!person || !action) return
     setError(null)
+    if (action === 'edit' && profile) {
+      const fieldErrors = profileFieldErrors(profile)
+      setProfileErrors(fieldErrors)
+      if (Object.keys(fieldErrors).length > 0) {
+        focusFirstProfileError(fieldErrors)
+        return
+      }
+    }
     const validation =
       action === 'edit'
         ? profile && validateProfile(profile)
@@ -145,7 +158,14 @@ export function EmployeeActionSheet({
     }
   }
 
-  const title = action === 'pay' && compensation ? 'Update pay' : action ? TITLES[action] : ''
+  const title =
+    action === 'pay' && compensation
+      ? 'Update pay'
+      : action === 'signin' && person?.hasLinkedAccount
+        ? 'Staff access'
+        : action
+          ? TITLES[action]
+          : ''
 
   return (
     <SideSheet
@@ -163,7 +183,7 @@ export function EmployeeActionSheet({
               Cancel
             </Button>
             <Button disabled={busy} form="employee-action-form" type="submit">
-              {busy ? 'Saving…' : action === 'edit' ? 'Save changes' : action === 'site' ? 'Assign site' : action === 'signin' ? 'Give access' : 'Save pay'}
+              {busy ? 'Saving…' : action === 'edit' ? 'Save changes' : action === 'site' ? 'Assign site' : action === 'signin' ? (person?.hasLinkedAccount ? 'Grant role' : 'Give access') : 'Save pay'}
             </Button>
           </div>
         )
@@ -193,14 +213,22 @@ export function EmployeeActionSheet({
               void submit()
             }}
           >
-            {error ? <Notice tone="danger">{error}</Notice> : null}
+            {error ? <Notice role="alert" tone="danger">{error}</Notice> : null}
             {action === 'edit' && profile ? (
               <ProfileFields
                 departments={departments}
                 designations={designations}
                 editingId={person.id}
                 form={profile}
-                onChange={(patch) => setProfile((value) => (value ? { ...value, ...patch } : value))}
+                errors={profileErrors}
+                onChange={(patch) => {
+                  setProfile((value) => (value ? { ...value, ...patch } : value))
+                  setProfileErrors((current) => {
+                    const next = { ...current }
+                    for (const key of Object.keys(patch) as (keyof ProfileForm)[]) delete next[key]
+                    return next
+                  })
+                }}
                 people={people}
                 showStatus
               />

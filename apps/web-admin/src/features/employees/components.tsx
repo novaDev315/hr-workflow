@@ -42,7 +42,7 @@ function rowMenuItems(person: Person, actions: RowActions): OverflowMenuItem[] {
     },
     { label: 'Assign site', icon: MapPin, onSelect: () => actions.onAction('site', person), hidden: !person.isActive },
     {
-      label: person.hasLinkedAccount ? 'Change staff role' : 'Give sign-in access',
+      label: person.hasLinkedAccount ? 'Staff access' : 'Give sign-in access',
       icon: KeyRound,
       onSelect: () => actions.onAction('signin', person),
       hidden: !person.isActive,
@@ -116,7 +116,7 @@ export function PeopleCards({ people, actions }: { people: Person[]; actions: Ro
   return (
     <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
       {people.map((person) => (
-        <Card className={cn('shadow-none', !person.isActive && 'opacity-70')} key={person.id}>
+        <Card className={cn('min-w-0 shadow-none', !person.isActive && 'opacity-70')} key={person.id}>
           <CardContent className="p-4">
             <div className="flex items-start gap-3">
               <Avatar large name={person.fullName} />
@@ -136,7 +136,7 @@ export function PeopleCards({ people, actions }: { people: Person[]; actions: Ro
                     {person.isActive ? null : ` · ${formatStatus(person.status)}`}
                   </CardLine>
                   <CardLine icon={<Mail className="h-3.5 w-3.5" />} label="Email">
-                    <a className="truncate text-primary underline-offset-4 hover:underline" href={`mailto:${person.email}`}>
+                    <a className="block truncate text-primary underline-offset-4 hover:underline" href={`mailto:${person.email}`}>
                       {person.email}
                     </a>
                   </CardLine>

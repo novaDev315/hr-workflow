@@ -18,7 +18,7 @@ import {
   type SignInForm,
   type SiteForm,
 } from './types'
-import { generatePassword } from './mutations'
+import { generatePassword, type ProfileErrors } from './mutations'
 
 /* ----------------------------------------------------------------------------
  * Field groups
@@ -32,7 +32,9 @@ export function ProfileFields({
   people,
   editingId,
   showStatus,
+  errors = {},
 }: {
+  errors?: ProfileErrors
   form: ProfileForm
   onChange: (patch: Partial<ProfileForm>) => void
   departments: Department[]
@@ -55,14 +57,14 @@ export function ProfileFields({
   return (
     <div className="space-y-4">
       <div className="grid gap-4 sm:grid-cols-2">
-        <TextField id="profile-first-name" label="First name">
-          <Input autoComplete="off" id="profile-first-name" onChange={(e) => onChange({ firstName: e.target.value })} required value={form.firstName} />
+        <TextField error={errors.firstName} id="profile-first-name" label="First name">
+          <Input aria-invalid={errors.firstName ? true : undefined} autoComplete="off" id="profile-first-name" onChange={(e) => onChange({ firstName: e.target.value })} required value={form.firstName} />
         </TextField>
-        <TextField id="profile-last-name" label="Last name">
-          <Input autoComplete="off" id="profile-last-name" onChange={(e) => onChange({ lastName: e.target.value })} required value={form.lastName} />
+        <TextField error={errors.lastName} id="profile-last-name" label="Last name">
+          <Input aria-invalid={errors.lastName ? true : undefined} autoComplete="off" id="profile-last-name" onChange={(e) => onChange({ lastName: e.target.value })} required value={form.lastName} />
         </TextField>
-        <TextField hint="Used for sign-in if you create one." id="profile-email" label="Work email">
-          <Input autoComplete="off" id="profile-email" onChange={(e) => onChange({ email: e.target.value })} required type="email" value={form.email} />
+        <TextField error={errors.email} hint={errors.email ? undefined : 'Used for sign-in if you create one.'} id="profile-email" label="Work email">
+          <Input aria-invalid={errors.email ? true : undefined} autoComplete="off" id="profile-email" onChange={(e) => onChange({ email: e.target.value })} required type="email" value={form.email} />
         </TextField>
         <TextField id="profile-phone" label="Phone" optional>
           <Input autoComplete="off" id="profile-phone" onChange={(e) => onChange({ phone: e.target.value })} type="tel" value={form.phone} />
@@ -71,6 +73,7 @@ export function ProfileFields({
 
       <div className="grid gap-4 sm:grid-cols-2">
         <SelectField
+          error={errors.departmentId}
           id="profile-department"
           label="Department"
           onChange={(departmentId) => onChange({ departmentId, designationId: '' })}
@@ -91,6 +94,7 @@ export function ProfileFields({
               </>
             ) : undefined
           }
+          error={errors.designationId}
           id="profile-designation"
           label="Designation"
           onChange={(designationId) => onChange({ designationId })}
@@ -114,8 +118,8 @@ export function ProfileFields({
           options={EMPLOYMENT_TYPES.map((value) => ({ value, label: formatStatus(value) }))}
           value={form.employmentType}
         />
-        <TextField id="profile-join-date" label="Join date">
-          <Input id="profile-join-date" onChange={(e) => onChange({ joinDate: e.target.value })} required type="date" value={form.joinDate} />
+        <TextField error={errors.joinDate} id="profile-join-date" label="Join date">
+          <Input aria-invalid={errors.joinDate ? true : undefined} id="profile-join-date" onChange={(e) => onChange({ joinDate: e.target.value })} required type="date" value={form.joinDate} />
         </TextField>
         {showStatus ? (
           <SelectField
@@ -259,13 +263,23 @@ export function SignInFields({
   return (
     <div className="space-y-4">
       {hasAccount ? (
-        <Notice tone="info">
-          Already signs in as <span className="font-semibold">{person?.linkedAccountEmail ?? person?.email}</span>
-          {person?.linkedAccountRoles.length
-            ? ` (${person.linkedAccountRoles.map((role) => formatStatus(role)).join(', ')})`
-            : ''}
-          .
-        </Notice>
+        <section aria-labelledby="current-access-heading" className="rounded-xl border border-border/70 bg-secondary/40 p-3.5" data-testid="current-access">
+          <h3 className="text-sm font-semibold text-foreground" id="current-access-heading">
+            Current access
+          </h3>
+          <p className="mt-0.5 text-[13px] text-muted-foreground">
+            Signs in as <span className="font-medium text-foreground">{person?.linkedAccountEmail ?? person?.email}</span>
+          </p>
+          <ul aria-label="Current roles" className="mt-2.5 divide-y divide-border/70 rounded-lg border border-border/70 bg-card">
+            {(person?.linkedAccountRoles.length ? person.linkedAccountRoles : ['EMPLOYEE']).map((role) => (
+              <li className="flex min-h-10 items-center justify-between gap-3 px-3 py-2 text-sm" data-role={role} key={role}>
+                <span className="font-medium text-foreground">{formatStatus(role)}</span>
+                {/* Revoke slot: a per-role "Remove" action goes here once the
+                    revoke-staff-role mutation exists (never for EMPLOYEE). */}
+              </li>
+            ))}
+          </ul>
+        </section>
       ) : (
         <label className="flex items-start gap-3 text-sm">
           <input

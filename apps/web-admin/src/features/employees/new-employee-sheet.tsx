@@ -18,8 +18,11 @@ import {
 import {
   useEmployeeMutations,
   validatePay,
+  focusFirstProfileError,
+  profileFieldErrors,
   validateProfile,
   validateSignIn,
+  type ProfileErrors,
 } from './mutations'
 import {
   emptyPay,
@@ -51,6 +54,7 @@ export function NewEmployeeSheet({
   currencyCode,
   grantable,
   onFinished,
+  initialProfile,
 }: {
   open: boolean
   onOpenChange: (open: boolean) => void
@@ -61,6 +65,8 @@ export function NewEmployeeSheet({
   currencyCode: string
   grantable: string[]
   onFinished: (summary: string) => void
+  /** Prefill for the profile step, e.g. a candidate who was just hired. */
+  initialProfile?: Partial<ProfileForm> | null
 }) {
   const mutations = useEmployeeMutations()
   const [step, setStep] = useState(0)
@@ -71,6 +77,7 @@ export function NewEmployeeSheet({
   const [site, setSite] = useState<SiteForm>({ locationId: '', isPrimary: true })
   const [signIn, setSignIn] = useState<SignInForm>({ createSignIn: false, password: '', staffRole: '' })
   const [error, setError] = useState<string | null>(null)
+  const [profileErrors, setProfileErrors] = useState<ProfileErrors>({})
   const [busy, setBusy] = useState(false)
   const [finished, setFinished] = useState(false)
 
@@ -79,12 +86,13 @@ export function NewEmployeeSheet({
     setStep(0)
     setOutcomes([null, null, null, null])
     setEmployee(null)
-    setProfile(emptyProfile())
+    setProfile({ ...emptyProfile(), ...(initialProfile ?? {}) })
     setPay(emptyPay(currencyCode))
     const activeSites = sites.filter((s) => s.isActive)
     setSite({ locationId: activeSites.length === 1 ? activeSites[0].id : '', isPrimary: true })
     setSignIn({ createSignIn: false, password: '', staffRole: '' })
     setError(null)
+    setProfileErrors({})
     setFinished(false)
     // Reset only when the drawer opens.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -112,6 +120,14 @@ export function NewEmployeeSheet({
 
   const runStep = async () => {
     setError(null)
+    if (step === 0) {
+      const fieldErrors = profileFieldErrors(profile)
+      setProfileErrors(fieldErrors)
+      if (Object.keys(fieldErrors).length > 0) {
+        focusFirstProfileError(fieldErrors)
+        return
+      }
+    }
     const validation =
       step === 0
         ? validateProfile(profile)
@@ -259,7 +275,7 @@ export function NewEmployeeSheet({
               <p className="mt-1">Fix it and try again, skip it, or finish later from the row menu.</p>
             </Notice>
           ) : error ? (
-            <Notice tone="danger">{error}</Notice>
+            <Notice role="alert" tone="danger">{error}</Notice>
           ) : null}
 
           {step === 0 ? (
@@ -268,7 +284,15 @@ export function NewEmployeeSheet({
               designations={designations}
               editingId={employee?.id}
               form={profile}
-              onChange={(patch) => setProfile((current) => ({ ...current, ...patch }))}
+              errors={profileErrors}
+              onChange={(patch) => {
+                setProfile((current) => ({ ...current, ...patch }))
+                setProfileErrors((current) => {
+                  const next = { ...current }
+                  for (const key of Object.keys(patch) as (keyof ProfileForm)[]) delete next[key]
+                  return next
+                })
+              }}
               people={people}
             />
           ) : null}
