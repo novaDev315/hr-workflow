@@ -32,34 +32,60 @@ describe('0002_money_numeric migration on a scratch database', () => {
   const scratchName = `money_mig_${randomUUID().replace(/-/g, '').slice(0, 12)}`;
   let admin: Client;
   let scratch: Client;
-  let folder: string;
+  let beforeFolder: string;
+  let afterFolder: string;
+  let canCreateDb = true;
 
   beforeAll(async () => {
     if (!adminUrl) throw new Error('DATABASE_URL is required');
     admin = new Client({ connectionString: adminUrl });
     await admin.connect();
+    const privilege = await admin.query(
+      `select rolcreatedb from pg_roles where rolname = current_user`,
+    );
+    canCreateDb = privilege.rows[0]?.rolcreatedb === true;
+    if (!canCreateDb) {
+      console.warn(
+        'Skipping 0002_money_numeric migration spec: the database role lacks CREATEDB.',
+      );
+      return;
+    }
     await admin.query(`create database "${scratchName}"`);
     const url = new URL(adminUrl);
     url.pathname = `/${scratchName}`;
     scratch = new Client({ connectionString: url.toString() });
     await scratch.connect();
 
-    // Copy the migrations with the journal cut at 0001 (the pre-change head).
-    folder = mkdtempSync(path.join(os.tmpdir(), 'money-mig-'));
-    cpSync(DEFAULT_MIGRATIONS_FOLDER, folder, { recursive: true });
-    const journalPath = path.join(folder, 'meta', '_journal.json');
-    const journal = JSON.parse(readFileSync(journalPath, 'utf8'));
-    journal.entries = journal.entries.slice(0, 2);
-    writeFileSync(journalPath, JSON.stringify(journal));
+    // Locate 0002 by tag so later migrations do not move the boundary.
+    const journal = JSON.parse(
+      readFileSync(path.join(DEFAULT_MIGRATIONS_FOLDER, 'meta', '_journal.json'), 'utf8'),
+    );
+    const idx = journal.entries.findIndex(
+      (entry: { tag: string }) => entry.tag === '0002_money_numeric',
+    );
+    if (idx < 1) throw new Error('0002_money_numeric not found in the migration journal');
+    const copyCutAt = (end: number) => {
+      const dir = mkdtempSync(path.join(os.tmpdir(), 'money-mig-'));
+      cpSync(DEFAULT_MIGRATIONS_FOLDER, dir, { recursive: true });
+      const journalPath = path.join(dir, 'meta', '_journal.json');
+      const copy = JSON.parse(readFileSync(journalPath, 'utf8'));
+      copy.entries = copy.entries.slice(0, end);
+      writeFileSync(journalPath, JSON.stringify(copy));
+      return dir;
+    };
+    beforeFolder = copyCutAt(idx); // entries [0, idx): the pre-change head
+    afterFolder = copyCutAt(idx + 1); // through 0002 only
   });
 
   afterAll(async () => {
     await scratch?.end();
     if (admin) {
-      await admin.query(`drop database if exists "${scratchName}" with (force)`);
+      if (canCreateDb) await admin.query(`drop database if exists "${scratchName}" with (force)`);
       await admin.end();
     }
-    if (folder) rmSync(folder, { recursive: true, force: true });
+    for (const dir of [beforeFolder, afterFolder]) {
+      if (dir) rmSync(dir, { recursive: true, force: true });
+    }
   });
 
   const typeOf = async (table: string, column: string) =>
@@ -72,7 +98,8 @@ describe('0002_money_numeric migration on a scratch database', () => {
     ).rows[0];
 
   it('converts float money to exact numeric(14,2), rounding existing rows', async () => {
-    await runMigrations(scratch, folder, () => undefined);
+    if (!canCreateDb) return;
+    await runMigrations(scratch, beforeFolder, () => undefined);
     for (const [table, column] of MONEY_COLUMNS) {
       expect((await typeOf(table, column)).data_type).toBe('double precision');
     }
@@ -87,7 +114,7 @@ describe('0002_money_numeric migration on a scratch database', () => {
     );
     await scratch.query(
       `insert into employee_compensations (id, employee_id, base_salary, allowance_amount, deduction_amount, effective_from)
-       values ('c1', 'e1', 1234.565, 0.1 + 0.2, 1e-9, '2030-01-01')`,
+       values ('c1', 'e1', 1234.565, '0.30000000000000004'::float8, 1e-9, '2030-01-01')`,
     );
     await scratch.query(
       `insert into payroll_periods (id, period_month, start_date, end_date) values ('p1', '2030-01', '2030-01-01', '2030-01-31')`,
@@ -95,7 +122,7 @@ describe('0002_money_numeric migration on a scratch database', () => {
     await scratch.query(
       `insert into payslips (id, payroll_period_id, employee_id, expected_workdays, base_salary, prorated_base_salary,
          allowance_amount, deduction_amount, attendance_deduction, gross_pay, net_pay)
-       values ('s1', 'p1', 'e1', 22, 1234.565, 1000.005, 0.1 + 0.2, 10.994, 0, 123456789012.345, 99999999.999)`,
+       values ('s1', 'p1', 'e1', 22, 1234.565, 1000.005, '0.30000000000000004'::float8, 10.994, 0, 123456789012.345, 99999999.999)`,
     );
     await scratch.query(
       `insert into job_requisitions (id, requisition_number, job_title, department_id, description, salary_min, salary_max)
@@ -106,8 +133,8 @@ describe('0002_money_numeric migration on a scratch database', () => {
        values ('a1', 'A1', 'r1', 'A', 'B', 'a1@example.test', 3000.1)`,
     );
 
-    // Apply the real head (all migrations, including 0002) to the populated database.
-    const result = await runMigrations(scratch, DEFAULT_MIGRATIONS_FOLDER, () => undefined);
+    // Apply exactly 0002 to the populated database.
+    const result = await runMigrations(scratch, afterFolder, () => undefined);
     expect(result.applied).toBe(1);
 
     for (const [table, column] of MONEY_COLUMNS) {
