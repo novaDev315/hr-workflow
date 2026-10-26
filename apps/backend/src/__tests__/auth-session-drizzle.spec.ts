@@ -1,7 +1,7 @@
 import { BadRequestException, INestApplication, ValidationError, ValidationPipe } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { Test } from '@nestjs/testing';
-import bcrypt from 'bcrypt';
+import bcrypt from 'bcryptjs';
 import { randomUUID } from 'crypto';
 import { eq, inArray } from 'drizzle-orm';
 import request from 'supertest';

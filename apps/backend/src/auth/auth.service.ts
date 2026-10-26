@@ -24,7 +24,7 @@ import {
   LoginInput,
   ProvisionStaffAccessInput,
 } from './auth.types';
-import * as bcrypt from 'bcrypt';
+import * as bcrypt from 'bcryptjs';
 import { randomUUID } from 'crypto';
 import { findUniqueViolation } from '../employee/unique-violation';
 import { createFirstAdminAccount, ensureSystemRole } from './bootstrap-admin';

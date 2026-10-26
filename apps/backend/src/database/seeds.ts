@@ -1,4 +1,4 @@
-import * as bcrypt from 'bcrypt';
+import * as bcrypt from 'bcryptjs';
 import { createFirstAdminAccount } from '../auth/bootstrap-admin';
 import type { AppDrizzleDatabase } from './database.service';
 import { leaveTypes, policyDocuments } from './drizzle/schema';

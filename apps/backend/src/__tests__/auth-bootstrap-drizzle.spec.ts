@@ -1,6 +1,6 @@
 import { ConfigModule } from '@nestjs/config';
 import { Test, TestingModule } from '@nestjs/testing';
-import bcrypt from 'bcrypt';
+import bcrypt from 'bcryptjs';
 import { count, eq } from 'drizzle-orm';
 import { Pool } from 'pg';
 import { AuthModule } from '../auth/auth.module';
