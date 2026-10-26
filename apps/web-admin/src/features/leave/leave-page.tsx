@@ -90,7 +90,9 @@ export function LeavePage() {
   const [rejecting, setRejecting] = useState<LeaveRequest | null>(null)
   const [rejectReason, setRejectReason] = useState('')
   const [rejectTouched, setRejectTouched] = useState(false)
-  const [approvingOver, setApprovingOver] = useState<{ request: LeaveRequest; shortfall: number } | null>(null)
+  // shortfall null: the balance could not be loaded, so the over-balance check is unknown.
+  const [approvingOver, setApprovingOver] = useState<{ request: LeaveRequest; shortfall: number | null } | null>(null)
+  const [rejectError, setRejectError] = useState<string | null>(null)
   const [historySearch, setHistorySearch] = useState('')
   const [historyStatus, setHistoryStatus] = useState('')
 
@@ -233,6 +235,7 @@ export function LeavePage() {
     request: LeaveRequest,
     status: 'APPROVED' | 'REJECTED',
     notes = reviewNotes[request.id]?.trim() || null,
+    reportError: (message: string) => void = (message) => toast.error(message),
   ) => {
     try {
       await reviewLeaveRequest({
@@ -247,7 +250,7 @@ export function LeavePage() {
       await refetch()
       return true
     } catch (mutationError) {
-      toast.error(readableError(mutationError, 'Could not review the leave request.'))
+      reportError(readableError(mutationError, 'Could not review the leave request.'))
       return false
     }
   }
@@ -255,6 +258,7 @@ export function LeavePage() {
   const openReject = (request: LeaveRequest) => {
     setRejectReason(reviewNotes[request.id] ?? '')
     setRejectTouched(false)
+    setRejectError(null)
     setRejecting(request)
   }
 
@@ -262,7 +266,9 @@ export function LeavePage() {
     if (!rejecting) return
     setRejectTouched(true)
     if (!rejectReason.trim()) return
-    const ok = await handleReview(rejecting, 'REJECTED', rejectReason.trim())
+    setRejectError(null)
+    // A failure stays inside the dialog, next to the reason, where the user is looking.
+    const ok = await handleReview(rejecting, 'REJECTED', rejectReason.trim(), setRejectError)
     if (ok) setRejecting(null)
   }
 
@@ -337,7 +343,9 @@ export function LeavePage() {
                   }
                   busy={reviewingLeaveRequest}
                   onApprove={(shortfall) =>
-                    shortfall > 0 ? setApprovingOver({ request, shortfall }) : void handleReview(request, 'APPROVED')
+                    shortfall === null || shortfall > 0
+                      ? setApprovingOver({ request, shortfall })
+                      : void handleReview(request, 'APPROVED')
                   }
                   onReject={() => openReject(request)}
                 />
@@ -646,7 +654,11 @@ export function LeavePage() {
         <div className="space-y-1.5">
           <Label htmlFor="leave-reject-reason">Reason for the employee</Label>
           <Textarea
-            aria-describedby={rejectTouched && !rejectReason.trim() ? 'leave-reject-reason-error' : undefined}
+            aria-describedby={
+              [rejectTouched && !rejectReason.trim() ? 'leave-reject-reason-error' : null, rejectError ? 'leave-reject-failure' : null]
+                .filter(Boolean)
+                .join(' ') || undefined
+            }
             aria-invalid={rejectTouched && !rejectReason.trim() ? true : undefined}
             className="min-h-[5.5rem]"
             id="leave-reject-reason"
@@ -660,17 +672,30 @@ export function LeavePage() {
               Add a reason so the employee knows what to change.
             </p>
           ) : null}
+          {rejectError ? (
+            <p className="text-[13px] font-medium text-rose-800" id="leave-reject-failure" role="alert">
+              {rejectError}
+            </p>
+          ) : null}
         </div>
       </ConfirmDialog>
 
       <ConfirmDialog
         open={Boolean(approvingOver)}
         onOpenChange={(open) => (open ? undefined : setApprovingOver(null))}
-        title={approvingOver ? `Approve beyond ${approvingOver.request.employee.fullName}'s balance?` : 'Approve beyond balance?'}
+        title={
+          !approvingOver
+            ? 'Approve beyond balance?'
+            : approvingOver.shortfall === null
+              ? `Approve ${approvingOver.request.employee.fullName}'s leave without a balance check?`
+              : `Approve beyond ${approvingOver.request.employee.fullName}'s balance?`
+        }
         description={
-          approvingOver
-            ? `This goes over the ${approvingOver.request.leaveType.name.toLowerCase()} allowance by ${plural(approvingOver.shortfall, 'day')}.`
-            : undefined
+          !approvingOver
+            ? undefined
+            : approvingOver.shortfall === null
+              ? `Their ${approvingOver.request.leaveType.name.toLowerCase()} balance could not be checked, so this may go over the allowance.`
+              : `This goes over the ${approvingOver.request.leaveType.name.toLowerCase()} allowance by ${plural(approvingOver.shortfall, 'day')}.`
         }
         confirmLabel="Approve anyway"
         busy={reviewingLeaveRequest}

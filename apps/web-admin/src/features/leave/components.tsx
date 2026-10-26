@@ -157,13 +157,22 @@ export function PendingRequestCard({
   note: string
   onNoteChange: (value: string) => void
   busy: boolean
-  /** Receives the shortfall in days when approving goes over the balance. */
-  onApprove: (shortfall: number) => void
+  /**
+   * Receives the shortfall in days when approving goes over the balance, or
+   * null when the balance could not be read, so the page can ask before
+   * approving blind. Approve waits while the balance is still loading.
+   */
+  onApprove: (shortfall: number | null) => void
   onReject: () => void
 }) {
   const noteId = `decision-note-${request.id}`
   const view = useBalanceView(request, pendingRequests)
-  const shortfall = view.kind === 'ready' && view.afterApproval < 0 ? Math.abs(view.afterApproval) : 0
+  const shortfall =
+    view.kind === 'failed'
+      ? null
+      : view.kind === 'ready' && view.afterApproval < 0
+        ? Math.abs(view.afterApproval)
+        : 0
   const who = request.employee.fullName
 
   return (
@@ -195,7 +204,7 @@ export function PendingRequestCard({
           placeholder="Decision note (optional)"
         />
         <div className="flex flex-wrap gap-2">
-          <Button aria-label={`Approve ${who}'s leave`} type="button" disabled={busy} onClick={() => onApprove(shortfall)}>
+          <Button aria-label={`Approve ${who}'s leave`} type="button" disabled={busy || view.kind === 'loading'} onClick={() => onApprove(shortfall)}>
             Approve
           </Button>
           <Button aria-label={`Reject ${who}'s leave`} type="button" variant="outline" disabled={busy} onClick={onReject}>
