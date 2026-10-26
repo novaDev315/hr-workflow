@@ -61,11 +61,13 @@
 
   // Every page action reports through one toast region. Wait for the message,
   // then dismiss it so it never covers controls the next step needs.
+  // includeHidden: an open modal sheet marks the rest of the page aria-hidden,
+  // and toasts raised from inside the sheet still show on top of it.
   async function toastSeen(text) {
-    const region = page.getByRole('region', { name: /Notifications/ });
+    const region = page.getByRole('region', { name: /Notifications/, includeHidden: true });
     const item = region.locator('li').filter({ hasText: text }).first();
     await item.waitFor({ state: 'visible', timeout: 15000 });
-    await item.getByRole('button', { name: 'Dismiss' }).click();
+    await item.getByRole('button', { name: 'Dismiss', includeHidden: true }).click();
     await item.waitFor({ state: 'hidden' });
   }
 
@@ -232,9 +234,35 @@
 
   await rowAction(`Actions for ${employeeName}`, 'Staff access');
   const accessSheet = dialog('Staff access');
-  await accessSheet.getByRole('list', { name: 'Current roles' }).getByText('Supervisor').waitFor();
-  await accessSheet.getByRole('button', { name: 'Cancel' }).click();
+  const currentRoles = accessSheet.getByRole('list', { name: 'Current roles' });
+  await currentRoles.getByText('Supervisor').waitFor();
   check('ui staff access shows current roles');
+
+  // Grant MANAGER on top of SUPERVISOR, then remove it again from the same sheet.
+  await pickOption('signin-staff-role', 'Manager');
+  await accessSheet.getByRole('button', { name: 'Grant role' }).click();
+  await toastSeen(`${employeeName} can now sign in with the manager role.`);
+  await accessSheet.waitFor({ state: 'hidden' });
+  await rowAction(`Actions for ${employeeName}`, 'Staff access');
+  const managerRow = accessSheet.locator('[data-role="MANAGER"]');
+  await managerRow.waitFor();
+  check('ui grant manager role from staff access');
+
+  await managerRow.getByRole('button', { name: 'Remove Manager role' }).click();
+  await alertDialog(`Remove Manager from ${employeeName}?`).getByRole('button', { name: 'Remove Manager' }).click();
+  await toastSeen(`Removed Manager from ${employeeName}.`);
+  await managerRow.waitFor({ state: 'detached' });
+  await accessSheet.locator('[data-role="SUPERVISOR"]').waitFor();
+  const afterRevoke = await gql(`
+    query Employees($filter: EmployeeFilterInput) {
+      employees(filter: $filter) { id linkedAccountRoles }
+    }
+  `, { filter: { search: employeeEmail } }, token).then((data) => data.employees[0]);
+  if (afterRevoke.linkedAccountRoles.includes('MANAGER') || !afterRevoke.linkedAccountRoles.includes('SUPERVISOR')) {
+    throw new Error(`Removing Manager left roles ${JSON.stringify(afterRevoke.linkedAccountRoles)}`);
+  }
+  await accessSheet.getByRole('button', { name: 'Cancel' }).click();
+  check('ui remove manager role from staff access', { roles: afterRevoke.linkedAccountRoles });
 
   await goto('/directory');
   await page.waitForURL(`${baseUrl}/employees`);
@@ -294,10 +322,25 @@
   const rejectDialog = alertDialog(`Reject ${employeeName}'s leave?`);
   await rejectDialog.getByRole('button', { name: 'Reject request' }).click();
   await rejectDialog.getByText('Add a reason so the employee knows what to change.').waitFor();
-  await rejectDialog.getByLabel('Reason for the employee').fill('Rejected by UI lifecycle sweep');
+  const rejectReason = `Rejected by UI lifecycle sweep ${runId}`;
+  await rejectDialog.getByLabel('Reason for the employee').fill(rejectReason);
   await rejectDialog.getByRole('button', { name: 'Reject request' }).click();
   await toastSeen(`${employeeName}'s ${leaveTypeName.toLowerCase()} rejected.`);
   check('ui reject leave requires a reason');
+
+  async function employeeLeave() {
+    return gql(`
+      query LeaveRequests($filter: LeaveRequestFilterInput) {
+        leaveRequests(filter: $filter) { id status reason decisionNotes leaveType { id name } }
+      }
+    `, { filter: { employeeId: employee.id } }, token).then((data) =>
+      data.leaveRequests.filter((row) => row.leaveType.name === leaveTypeName));
+  }
+  const rejectedRequest = (await employeeLeave()).find((row) => row.status === 'REJECTED');
+  if (rejectedRequest?.decisionNotes !== rejectReason) {
+    throw new Error(`Rejected leave did not keep the typed reason: ${JSON.stringify(rejectedRequest)}`);
+  }
+  check('rejected leave stores the typed reason as decisionNotes');
 
   await requestLeave(28, 28, 'Approval path from UI lifecycle sweep');
   await page.getByRole('button', { name: `Approve ${employeeName}'s leave` }).click();
@@ -307,6 +350,33 @@
   await page.getByRole('searchbox', { name: 'Search leave history' }).fill(employeeName);
   await page.getByText('Showing 2 of').waitFor();
   check('ui search leave history');
+
+  // Over-balance approval. Creating a request never exceeds the allowance, so
+  // queue two that fit (3 + 1 days next to 1 approved, allowance 6), then
+  // lower the allowance to 4: available becomes -1 and both cards warn.
+  // Approving the 1-day one passes the server's approved-only re-check.
+  await requestLeave(35, 37, `Over balance long ${runId}`);
+  await requestLeave(49, 49, `Over balance short ${runId}`);
+  await page.getByRole('button', { name: `Edit ${leaveTypeName}` }).click();
+  await page.locator('#leave-type-days').fill('4');
+  await page.getByRole('button', { name: 'Save changes' }).click();
+  await toastSeen(`${leaveTypeName} updated.`);
+  await goto('/leave');
+  const shortCard = page.locator('.app-muted-surface').filter({ hasText: `Over balance short ${runId}` });
+  await shortCard.getByText(/Approving goes over the .* balance by 1 day/).waitFor();
+  await shortCard.getByRole('button', { name: `Approve ${employeeName}'s leave` }).click();
+  const overDialog = alertDialog(`Approve beyond ${employeeName}'s balance?`);
+  await overDialog.getByText('This goes over the').waitFor();
+  await overDialog.getByRole('button', { name: 'Approve anyway' }).click();
+  await toastSeen(`${employeeName}'s ${leaveTypeName.toLowerCase()} approved.`);
+  const overRows = await employeeLeave();
+  const approvedShort = overRows.find((row) => row.reason === `Over balance short ${runId}`);
+  if (approvedShort?.status !== 'APPROVED') throw new Error(`Approve anyway did not approve: ${JSON.stringify(approvedShort)}`);
+  check('ui approve anyway confirms an over-balance approval');
+  const leftover = overRows.find((row) => row.reason === `Over balance long ${runId}`);
+  await gql(`
+    mutation Review($input: ReviewLeaveRequestInput!) { reviewLeaveRequest(input: $input) { id status } }
+  `, { input: { requestId: leftover.id, status: 'REJECTED', decisionNotes: 'Sweep clean-up' } }, token);
 
   await page.getByRole('button', { name: `Deactivate ${leaveTypeName}` }).click();
   await alertDialog(`Deactivate ${leaveTypeName}?`).getByRole('button', { name: 'Deactivate' }).click();
@@ -464,10 +534,30 @@
   await hireCard().getByRole('link', { name: 'Create employee record' }).click();
   await page.waitForURL(`${baseUrl}/employees`);
   await dialog(/New employee/).waitFor();
-  const prefilledEmail = await page.locator('#profile-email').inputValue();
-  if (prefilledEmail !== hireEmail) throw new Error(`Hire handoff did not prefill email (${prefilledEmail})`);
+  const prefilled = {
+    firstName: await page.locator('#profile-first-name').inputValue(),
+    lastName: await page.locator('#profile-last-name').inputValue(),
+    email: await page.locator('#profile-email').inputValue(),
+    phone: await page.locator('#profile-phone').inputValue(),
+    department: (await page.locator('#profile-department').innerText()).trim(),
+    designation: (await page.locator('#profile-designation').innerText()).trim(),
+  };
+  const expectedPrefill = {
+    firstName: 'Recruitment',
+    lastName: hireLast,
+    email: hireEmail,
+    phone: '+971500003333',
+    department: deptName,
+    designation: desTitle,
+  };
+  for (const [field, value] of Object.entries(expectedPrefill)) {
+    if (prefilled[field] !== value) {
+      throw new Error(`Hire handoff did not prefill ${field}: got ${JSON.stringify(prefilled[field])}, want ${JSON.stringify(value)}`);
+    }
+  }
+  if (new URL(page.url()).search) throw new Error(`Hire handoff left query params in the URL: ${page.url()}`);
   await dialog(/New employee/).getByRole('button', { name: 'Close' }).click();
-  check('ui hired candidate opens prefilled new employee');
+  check('ui hired candidate opens new employee prefilled with name, contact, department and designation');
 
   await goto('/recruitment');
   const rejectLast = `Reject ${runId}`;
