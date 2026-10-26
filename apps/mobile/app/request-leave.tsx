@@ -242,7 +242,7 @@ export default function RequestLeaveScreen() {
               </View>
               {errors.dates ? <FieldError message={errors.dates} /> : null}
               <Text style={styles.helper}>
-                {inPast ? 'These days have already passed, which is fine for sick leave. ' : ''}
+                {inPast ? 'These days have already passed. You can request leave up to a year back. ' : ''}
                 Weekends aren't counted. HR confirms the final number of days.
               </Text>
             </View>
