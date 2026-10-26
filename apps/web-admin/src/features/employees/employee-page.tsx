@@ -51,6 +51,14 @@ function useIsWide() {
   return useSyncExternalStore(subscribeWide, () => window.matchMedia(WIDE_QUERY).matches, () => true)
 }
 
+// The session carries no employee id, so the viewer's own record is matched
+// by sign-in email. Removing your own staff role would sign you out at once.
+function isOwnRecord(person: Pick<Person, 'email' | 'linkedAccountEmail'>, viewerEmail: string | undefined) {
+  if (!viewerEmail) return false
+  const own = viewerEmail.trim().toLowerCase()
+  return [person.linkedAccountEmail, person.email].some((email) => email?.trim().toLowerCase() === own)
+}
+
 export function EmployeesPage() {
   const { account } = useAdminSession()
   const canManage = canManageAccounts(account)
@@ -138,9 +146,11 @@ export function EmployeesPage() {
       }
       setPrefill(next)
       setNewOpen(true)
+    } else if (canManage) {
+      toast.error('Create a department and designation in Organisation first.')
     }
     setSearchParams({}, { replace: true })
-  }, [searchParams, loading, canAddEmployee, setSearchParams])
+  }, [searchParams, loading, canAddEmployee, canManage, setSearchParams])
 
   const handleDeactivate = async (person: Person) => {
     const ok = await confirm({
@@ -339,7 +349,7 @@ export function EmployeesPage() {
         currencyCode={currencyCode}
         departments={reference.departments}
         designations={reference.designations}
-        canRevoke={account?.roles.includes('ADMIN') ?? false}
+        canRevoke={(account?.roles.includes('ADMIN') ?? false) && !(action && isOwnRecord(action.person, account?.email))}
         grantable={grantable}
         onClose={() => setAction(null)}
         onSaved={(text) => toast.success(text)}
