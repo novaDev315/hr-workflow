@@ -31,6 +31,7 @@ export default function PayslipDetailScreen() {
   })
   const [downloading, setDownloading] = useState(false)
   const [downloadError, setDownloadError] = useState<string | null>(null)
+  const [downloadDone, setDownloadDone] = useState<string | null>(null)
   const busyRef = useRef(false)
 
   const back = () => (router.canGoBack() ? router.back() : router.replace('/(tabs)/payslips'))
@@ -41,13 +42,14 @@ export default function PayslipDetailScreen() {
     busyRef.current = true
     setDownloading(true)
     setDownloadError(null)
+    setDownloadDone(null)
     try {
       const result = await client.query<{ exportPayslipPdf: ExportedDocument }>({
         query: EXPORT_PAYSLIP_QUERY,
         variables: { payslipId: payslip.id },
         fetchPolicy: 'no-cache',
       })
-      await saveAndShareDocument(result.data.exportPayslipPdf)
+      setDownloadDone(await saveAndShareDocument(result.data.exportPayslipPdf))
     } catch (exportError) {
       setDownloadError(errorMessage(exportError, "We couldn't prepare the PDF. Please try again."))
     } finally {
@@ -113,6 +115,7 @@ export default function PayslipDetailScreen() {
       </Card>
 
       {downloadError ? <Notice tone="danger" message={downloadError} /> : null}
+      {downloadDone ? <Notice tone="success" message={downloadDone} onDismiss={() => setDownloadDone(null)} /> : null}
       <Button
         label="Download PDF"
         icon="download"

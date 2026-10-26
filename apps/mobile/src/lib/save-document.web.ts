@@ -10,14 +10,16 @@ export function safeFileName(name: string, fallback = 'document.pdf'): string {
 }
 
 /** Web preview: download the file through the browser. */
-export async function saveAndShareDocument(document: ExportedDocument): Promise<void> {
+export async function saveAndShareDocument(document: ExportedDocument): Promise<string | null> {
   const binary = atob(document.contentBase64)
   const bytes = new Uint8Array(binary.length)
   for (let index = 0; index < binary.length; index += 1) bytes[index] = binary.charCodeAt(index)
   const url = URL.createObjectURL(new Blob([bytes], { type: document.mimeType || 'application/pdf' }))
   const link = window.document.createElement('a')
   link.href = url
-  link.download = safeFileName(document.fileName)
+  const fileName = safeFileName(document.fileName)
+  link.download = fileName
   link.click()
   setTimeout(() => URL.revokeObjectURL(url), 1000)
+  return `Downloaded ${fileName}. Find it in your downloads.`
 }

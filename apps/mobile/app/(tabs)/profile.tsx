@@ -136,6 +136,8 @@ const styles = StyleSheet.create({
   },
   name: {
     ...type.title,
+    // Arabic names would otherwise align to the right edge, away from the avatar.
+    textAlign: 'left',
   },
   role: {
     ...type.body,

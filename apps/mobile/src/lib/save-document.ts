@@ -12,8 +12,11 @@ export function safeFileName(name: string, fallback = 'document.pdf'): string {
   return cleaned || fallback
 }
 
-/** Writes the document to the cache folder and opens the system share sheet. */
-export async function saveAndShareDocument(document: ExportedDocument): Promise<void> {
+/**
+ * Writes the document to the cache folder and opens the system share sheet.
+ * Returns a confirmation to show, or null when the share sheet is feedback enough.
+ */
+export async function saveAndShareDocument(document: ExportedDocument): Promise<string | null> {
   if (!FileSystem.cacheDirectory) throw new Error("This device can't save files right now.")
   const uri = `${FileSystem.cacheDirectory}${safeFileName(document.fileName)}`
   await FileSystem.writeAsStringAsync(uri, document.contentBase64, {
@@ -27,4 +30,5 @@ export async function saveAndShareDocument(document: ExportedDocument): Promise<
     UTI: 'com.adobe.pdf',
     dialogTitle: 'Save or share your payslip',
   })
+  return null
 }

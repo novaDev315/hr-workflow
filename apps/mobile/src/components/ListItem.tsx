@@ -109,5 +109,7 @@ const styles = StyleSheet.create({
   },
   detailValue: {
     ...type.body,
+    // Keep Arabic names on the same edge as their label (the app layout is left-to-right).
+    textAlign: 'left',
   },
 })
