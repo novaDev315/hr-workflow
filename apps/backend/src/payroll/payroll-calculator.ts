@@ -5,6 +5,8 @@
 // feed pay. Paid days = working days (Mon-Fri) inside the employment window and
 // the period, minus working days of approved UNPAID leave clipped to the period.
 
+import { BadRequestException } from '@nestjs/common';
+import { MAX_MONEY, moneyExceedsLimit } from '../common/money';
 import { pluralize } from '../common/document-format';
 import { countWorkingDays } from '../leave/leave-days';
 
@@ -90,6 +92,21 @@ function datesWithinRanges(ranges: DateRange[], windowStart: number, windowEnd: 
   return days;
 }
 
+/** Base plus allowance must fit the numeric(14,2) payslip columns; fail readably instead of overflowing the insert. */
+export function assertCompensationFitsMoneyLimit(
+  employee: { employeeName?: string; employeeNumber?: string; baseSalary: number; allowanceAmount: number },
+  fullPay = roundMoney(employee.baseSalary + employee.allowanceAmount),
+) {
+  if (moneyExceedsLimit(fullPay)) {
+    const who = employee.employeeName
+      ? `${employee.employeeName} (${employee.employeeNumber ?? 'unknown'}): `
+      : '';
+    throw new BadRequestException(
+      `${who}base salary plus allowance exceeds the maximum payable amount of ${MAX_MONEY.toFixed(2)}`,
+    );
+  }
+}
+
 export function calculatePayslip(
   period: DateRange,
   employee: PayrollEmployeeInput,
@@ -121,6 +138,7 @@ export function calculatePayslip(
 
   const ratio = expectedWorkdays > 0 ? Math.min(paidDays / expectedWorkdays, 1) : 1;
   const fullPay = roundMoney(employee.baseSalary + employee.allowanceAmount);
+  assertCompensationFitsMoneyLimit(employee, fullPay);
   const proratedBaseSalary = roundMoney(employee.baseSalary * ratio);
   const proratedAllowance = roundMoney(employee.allowanceAmount * ratio);
   const grossPay = roundMoney(proratedBaseSalary + proratedAllowance);

@@ -27,7 +27,11 @@ import {
   humanizeStatus,
 } from '../common/document-format';
 import { bidiIsolate, createSimplePdf, describeNameForPdf } from '../common/simple-pdf';
-import { calculatePayrollRun, PayrollEmployeeInput } from './payroll-calculator';
+import {
+  assertCompensationFitsMoneyLimit,
+  calculatePayrollRun,
+  PayrollEmployeeInput,
+} from './payroll-calculator';
 import { hasAccountManagerAccess } from '../common/access-control';
 import {
   attendanceRecords,
@@ -131,6 +135,11 @@ export class PayrollService {
     if (!employee) {
       throw new NotFoundException('Employee not found or inactive');
     }
+
+    assertCompensationFitsMoneyLimit({
+      baseSalary: input.baseSalary,
+      allowanceAmount: input.allowanceAmount ?? 0,
+    });
 
     const effectiveFrom = input.effectiveFrom?.trim() || new Date().toISOString().slice(0, 10);
     const currencyCode = input.currencyCode?.trim().toUpperCase() || 'AED';

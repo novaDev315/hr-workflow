@@ -18,6 +18,7 @@ import {
   Min,
   ValidateIf,
 } from 'class-validator';
+import { IsMoneyAmount } from '../common/money';
 import {
   APPLICATION_STATUSES,
   EMPLOYMENT_TYPES,
@@ -261,13 +262,13 @@ export class CreateJobRequisitionInput {
 
   @Field(() => Float, { nullable: true })
   @IsOptional()
-  @IsNumber()
+  @IsMoneyAmount()
   @Min(0)
   salaryMin?: number;
 
   @Field(() => Float, { nullable: true })
   @IsOptional()
-  @IsNumber()
+  @IsMoneyAmount()
   @Min(0)
   salaryMax?: number;
 
@@ -340,13 +341,13 @@ export class UpdateJobRequisitionInput {
 
   @Field(() => Float, { nullable: true })
   @IsOptional()
-  @IsNumber()
+  @IsMoneyAmount()
   @Min(0)
   salaryMin?: number;
 
   @Field(() => Float, { nullable: true })
   @IsOptional()
-  @IsNumber()
+  @IsMoneyAmount()
   @Min(0)
   salaryMax?: number;
 
@@ -422,7 +423,7 @@ export class CreateRecruitmentApplicationInput {
 
   @Field(() => Float, { nullable: true })
   @IsOptional()
-  @IsNumber()
+  @IsMoneyAmount()
   @Min(0)
   expectedSalary?: number;
 
@@ -486,7 +487,7 @@ export class UpdateRecruitmentApplicationInput {
 
   @Field(() => Float, { nullable: true })
   @IsOptional()
-  @IsNumber()
+  @IsMoneyAmount()
   @Min(0)
   expectedSalary?: number;
 

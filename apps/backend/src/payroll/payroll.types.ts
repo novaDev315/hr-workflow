@@ -13,6 +13,7 @@ import {
   MaxLength,
   Min,
 } from 'class-validator';
+import { IsMoneyAmount } from '../common/money';
 
 @ObjectType()
 export class PayrollEmployeeType {
@@ -180,16 +181,19 @@ export class UpsertEmployeeCompensationInput {
   employeeId: string;
 
   @Field(() => Float)
+  @IsMoneyAmount()
   @Min(0)
   baseSalary: number;
 
   @Field(() => Float, { nullable: true })
   @IsOptional()
+  @IsMoneyAmount()
   @Min(0)
   allowanceAmount?: number;
 
   @Field(() => Float, { nullable: true })
   @IsOptional()
+  @IsMoneyAmount()
   @Min(0)
   deductionAmount?: number;
 
