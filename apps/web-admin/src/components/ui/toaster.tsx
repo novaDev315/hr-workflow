@@ -23,7 +23,8 @@ export function Toaster() {
               'pointer-events-auto flex w-full items-start gap-3 rounded-[calc(var(--radius)-0.1rem)] border px-3.5 py-3 text-sm shadow-[0_18px_48px_rgba(39,30,20,0.18)] data-[state=closed]:animate-out data-[state=closed]:fade-out-80 data-[state=open]:animate-in data-[state=open]:slide-in-from-bottom-2 data-[swipe=end]:animate-out',
               toneClass[item.tone],
             )}
-            duration={item.tone === 'danger' ? 9000 : 5000}
+            // Errors stay until dismissed: the user usually has to act on them.
+            duration={item.tone === 'danger' ? Infinity : 5000}
             key={item.id}
             onOpenChange={(open) => {
               if (!open) dismissToast(item.id)
