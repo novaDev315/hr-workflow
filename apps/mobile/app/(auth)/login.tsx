@@ -3,6 +3,7 @@ import { gql, useMutation } from '@apollo/client'
 import {
   KeyboardAvoidingView,
   Platform,
+  Pressable,
   ScrollView,
   StyleSheet,
   Text,
@@ -12,9 +13,10 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context'
 import { StatusBar } from 'expo-status-bar'
 import { useRouter } from 'expo-router'
+import { MaterialCommunityIcons } from '@expo/vector-icons'
 import { useAuthSession } from '../../src/lib/auth-session'
 import { apolloClient } from '../../src/lib/apollo-client'
-import { errorMessage } from '../../src/lib/errors'
+import { friendlyErrorMessage } from '../../src/lib/errors'
 import { Button, Card, Notice } from '../../src/components'
 import { colors, fontSizes, fonts, radii, spacing, touchTarget, type } from '../../src/theme'
 
@@ -45,23 +47,36 @@ export default function LoginScreen() {
   const saveSession = useAuthSession((state) => state.setSession)
   const notice = useAuthSession((state) => state.notice)
   const dismissNotice = useAuthSession((state) => state.dismissNotice)
-  const [email, setEmail] = useState('')
+  const lastEmail = useAuthSession((state) => state.lastEmail)
+  const [email, setEmail] = useState(lastEmail ?? '')
   const [password, setPassword] = useState('')
+  const [showPassword, setShowPassword] = useState(false)
   const [formError, setFormError] = useState<string | null>(null)
   const passwordRef = useRef<TextInput>(null)
   const [login, { loading }] = useMutation(LOGIN_MUTATION)
 
   const handleLogin = async () => {
     if (loading) return
-    if (!email.trim() || !password) {
-      setFormError('Enter your work email and password.')
+    const trimmedEmail = email.trim()
+    if (!trimmedEmail || !password) {
+      setFormError(!trimmedEmail ? 'Enter your work email.' : 'Enter your password.')
+      if (trimmedEmail) passwordRef.current?.focus()
+      return
+    }
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmedEmail)) {
+      setFormError('Enter your full work email, for example name@company.com.')
+      return
+    }
+    // Every account password has at least 8 characters, so a shorter one can't match.
+    if (password.length < 8) {
+      setFormError("That email and password don't match. Check them and try again.")
       return
     }
 
     setFormError(null)
     try {
       const result = await login({
-        variables: { input: { email: email.trim().toLowerCase(), password } },
+        variables: { input: { email: trimmedEmail.toLowerCase(), password } },
       })
 
       const payload = result.data?.login
@@ -74,7 +89,7 @@ export default function LoginScreen() {
       await saveSession({ token: payload.accessToken, account: payload.account })
       router.replace('/(tabs)')
     } catch (error) {
-      setFormError(errorMessage(error, "We couldn't sign you in. Please try again."))
+      setFormError(friendlyErrorMessage(error, "We couldn't sign you in. Please try again."))
     }
   }
 
@@ -108,7 +123,10 @@ export default function LoginScreen() {
               <TextInput
                 style={styles.input}
                 value={email}
-                onChangeText={setEmail}
+                onChangeText={(text) => {
+                  setEmail(text)
+                  if (formError) setFormError(null)
+                }}
                 keyboardType="email-address"
                 autoCapitalize="none"
                 autoCorrect={false}
@@ -127,19 +145,38 @@ export default function LoginScreen() {
               <Text style={styles.label} nativeID="password-label">
                 Password
               </Text>
-              <TextInput
-                ref={passwordRef}
-                style={styles.input}
-                value={password}
-                onChangeText={setPassword}
-                secureTextEntry
-                autoComplete="password"
-                textContentType="password"
-                returnKeyType="go"
-                onSubmitEditing={handleLogin}
-                accessibilityLabel="Password"
-                accessibilityLabelledBy="password-label"
-              />
+              <View style={styles.passwordRow}>
+                <TextInput
+                  ref={passwordRef}
+                  style={[styles.input, styles.passwordInput]}
+                  value={password}
+                  onChangeText={(text) => {
+                    setPassword(text)
+                    if (formError) setFormError(null)
+                  }}
+                  secureTextEntry={!showPassword}
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                  autoComplete="password"
+                  textContentType="password"
+                  returnKeyType="go"
+                  onSubmitEditing={handleLogin}
+                  accessibilityLabel="Password"
+                  accessibilityLabelledBy="password-label"
+                />
+                <Pressable
+                  onPress={() => setShowPassword((value) => !value)}
+                  accessibilityRole="button"
+                  accessibilityLabel={showPassword ? 'Hide password' : 'Show password'}
+                  style={({ pressed }) => [styles.reveal, pressed && styles.revealPressed]}
+                >
+                  <MaterialCommunityIcons
+                    name={showPassword ? 'eye-off-outline' : 'eye-outline'}
+                    size={22}
+                    color={colors.muted}
+                  />
+                </Pressable>
+              </View>
             </View>
 
             {formError ? <Notice message={formError} tone="danger" /> : null}
@@ -222,6 +259,24 @@ const styles = StyleSheet.create({
     fontSize: fontSizes.body,
     fontFamily: fonts.sans,
     color: colors.ink,
+  },
+  passwordRow: {
+    justifyContent: 'center',
+  },
+  passwordInput: {
+    paddingRight: touchTarget + spacing.xs,
+  },
+  reveal: {
+    position: 'absolute',
+    right: spacing.xs,
+    width: touchTarget,
+    height: touchTarget,
+    borderRadius: touchTarget / 2,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  revealPressed: {
+    backgroundColor: colors.surfaceMuted,
   },
   footnote: {
     ...type.caption,

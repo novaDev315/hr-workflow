@@ -8,6 +8,8 @@ const SECURE_TOKEN_KEY = 'hrflow.auth_token'
 const LEGACY_TOKEN_KEY = 'auth_token'
 const AUTH_ACCOUNT_KEY = 'account'
 const LEGACY_AUTH_USER_KEY = 'user'
+/** Work email of the last sign-in, prefilled on the sign-in screen. Not a secret. */
+const LAST_EMAIL_KEY = 'hrflow.last_email'
 
 export interface AccountProfile {
   id: string
@@ -65,6 +67,8 @@ interface AuthSessionState {
   account: AccountProfile | null
   /** Calm message shown on the sign-in screen after a forced sign-out. */
   notice: string | null
+  /** Work email used for the last successful sign-in on this device. */
+  lastEmail: string | null
   hydrate: () => Promise<void>
   setSession: (payload: { token: string; account: AccountProfile }) => Promise<void>
   clearSession: (notice?: string | null) => Promise<void>
@@ -76,6 +80,7 @@ export const useAuthSession = create<AuthSessionState>((set) => ({
   token: null,
   account: null,
   notice: null,
+  lastEmail: null,
   hydrate: async () => {
     try {
       const token = (await tokenStore.get()) ?? (await migrateLegacyToken())
@@ -90,7 +95,8 @@ export const useAuthSession = create<AuthSessionState>((set) => ({
         account = null
       }
 
-      set({ token, account: token ? account : null, isHydrated: true })
+      const lastEmail = await AsyncStorage.getItem(LAST_EMAIL_KEY).catch(() => null)
+      set({ token, account: token ? account : null, lastEmail, isHydrated: true })
     } catch {
       set({ token: null, account: null, isHydrated: true })
     }
@@ -98,7 +104,8 @@ export const useAuthSession = create<AuthSessionState>((set) => ({
   setSession: async ({ token, account }) => {
     await tokenStore.set(token)
     await AsyncStorage.setItem(AUTH_ACCOUNT_KEY, JSON.stringify(account))
-    set({ token, account, notice: null, isHydrated: true })
+    await AsyncStorage.setItem(LAST_EMAIL_KEY, account.email).catch(() => undefined)
+    set({ token, account, notice: null, lastEmail: account.email, isHydrated: true })
   },
   clearSession: async (notice = null) => {
     // Update memory first so in-flight requests stop sending the old token.
