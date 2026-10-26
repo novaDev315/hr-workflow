@@ -217,7 +217,8 @@ export function PayslipTable({
   onDownload: (payslipId: string) => void
 }) {
   return (
-    <AdminTable caption="Payslips" density="compact">
+    // Fill the card and let long names wrap so the download column stays visible.
+    <AdminTable caption="Payslips" density="compact" tableClassName="w-full">
       <thead>
         <tr>
           <AdminTableHead>Employee</AdminTableHead>
@@ -235,7 +236,7 @@ export function PayslipTable({
       <tbody>
         {payslips.map((payslip) => (
           <AdminTableRow key={payslip.id}>
-            <AdminTableCell nowrap>
+            <AdminTableCell className="min-w-[10rem]">
               <div className="font-medium text-foreground"><bdi>{payslip.employee.fullName}</bdi></div>
               <div className="text-xs text-muted-foreground">{payslip.employee.employeeNumber}</div>
             </AdminTableCell>
@@ -267,13 +268,14 @@ export function PayslipTable({
                 disabled={downloadingId === payslip.id}
                 onClick={() => onDownload(payslip.id)}
                 aria-label={`Download payslip PDF for ${payslip.employee.fullName}`}
+                className="px-2.5"
+                title="Download PDF"
               >
                 {downloadingId === payslip.id ? (
-                  <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
                 ) : (
-                  <Download className="mr-1.5 h-3.5 w-3.5" />
+                  <Download className="h-3.5 w-3.5" />
                 )}
-                PDF
               </Button>
             </AdminTableCell>
           </AdminTableRow>
