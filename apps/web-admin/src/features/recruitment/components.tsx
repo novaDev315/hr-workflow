@@ -1,4 +1,5 @@
-import { ExternalLink, Pause, Pencil, Play, CheckCheck, XCircle, Undo2, FileText } from 'lucide-react'
+import { ExternalLink, Pause, Pencil, Play, CheckCheck, XCircle, Undo2, FileText, UserPlus } from 'lucide-react'
+import { Link } from 'react-router-dom'
 
 import { Button } from '@/components/ui/button'
 import { StatusBadge } from '@/components/ui/status-badge'
@@ -26,6 +27,8 @@ export type ApplicationHandlers = {
   onAdvance: (application: RecruitmentApplication, status: string, done: string) => void
   onClose: (application: RecruitmentApplication, status: 'REJECTED' | 'WITHDRAWN') => void
   onEdit: (application: RecruitmentApplication) => void
+  /** Link that opens People's new-employee sheet prefilled for a hire. */
+  employeeLinkFor: (application: RecruitmentApplication) => string
 }
 
 export function PipelineBoard({
@@ -113,7 +116,7 @@ function CandidateCard({
       <div className="flex items-start justify-between gap-1">
         <div className="min-w-0">
           <p className="truncate text-sm font-semibold text-foreground" title={application.candidateName}>
-            {application.candidateName}
+            <bdi>{application.candidateName}</bdi>
           </p>
           <p className="truncate text-xs text-muted-foreground" title={application.jobTitle}>{application.jobTitle}</p>
         </div>
@@ -155,6 +158,15 @@ function CandidateCard({
           variant={next.status === 'HIRED' ? 'default' : 'outline'}
         >
           {next.label}
+        </Button>
+      ) : null}
+
+      {application.status === 'HIRED' ? (
+        <Button asChild className="mt-2.5 h-8 w-full text-[13px]" size="sm" variant="outline">
+          <Link to={handlers.employeeLinkFor(application)}>
+            <UserPlus aria-hidden="true" className="mr-1.5 h-3.5 w-3.5" />
+            Create employee record
+          </Link>
         </Button>
       ) : null}
     </article>

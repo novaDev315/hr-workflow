@@ -6,6 +6,7 @@ import { Card, CardContent } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { MetricCard } from '@/components/ui/metric-card'
 import { Notice } from '@/components/ui/notice'
+import { toast } from '@/lib/toast'
 import { useConfirm } from '@/features/shared/confirm-dialog'
 import { FilterSelect } from '@/features/shared/controls'
 import { EmptyState } from '@/features/shared/data-table'
@@ -46,7 +47,6 @@ export function RecruitmentPage() {
   const [editingApplicationId, setEditingApplicationId] = useState<string | null>(null)
   const [requisitionForm, setRequisitionForm] = useState(requisitionFormDefaults)
   const [applicationForm, setApplicationForm] = useState(applicationFormDefaults)
-  const [notice, setNotice] = useState<{ text: string; tone: 'success' | 'danger' } | null>(null)
   const [requisitionError, setRequisitionError] = useState<string | null>(null)
   const [applicationError, setApplicationError] = useState<string | null>(null)
   const [confirm, confirmDialog] = useConfirm()
@@ -92,11 +92,11 @@ export function RecruitmentPage() {
   const currencyFor = (application: RecruitmentApplication) =>
     requisitions.find((r) => r.id === application.requisitionId)?.currencyCode ?? 'AED'
 
-  const say = (text: string, tone: 'success' | 'danger' = 'success') => setNotice({ text, tone })
+  const say = (text: string, tone: 'success' | 'danger' = 'success') =>
+    tone === 'success' ? toast.success(text) : toast.error(text)
 
   const handleSaveRequisition = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
-    setNotice(null)
     setRequisitionError(null)
     try {
       const input = {
@@ -130,7 +130,6 @@ export function RecruitmentPage() {
 
   const handleSaveApplication = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
-    setNotice(null)
     setApplicationError(null)
     try {
       const input = {
@@ -178,7 +177,6 @@ export function RecruitmentPage() {
       description: requisition.description,
       requirements: requisition.requirements ?? '',
     })
-    setNotice(null)
     setShowRequisitionForm(true)
   }
 
@@ -199,7 +197,6 @@ export function RecruitmentPage() {
       resumeUrl: application.resumeUrl ?? '',
       notes: application.notes ?? '',
     })
-    setNotice(null)
     setShowApplicationForm(true)
   }
 
@@ -220,7 +217,6 @@ export function RecruitmentPage() {
         })
         if (!ok) return
       }
-      setNotice(null)
       try {
         await changeJobRequisitionStatus({ variables: { input: { id: requisition.id, status } } })
         say(`${requisition.jobTitle} ${requisitionDone(label)}.`)
@@ -234,8 +230,20 @@ export function RecruitmentPage() {
   const applicationHandlers: ApplicationHandlers = {
     busy: advancingApplication,
     onEdit: handleEditApplication,
+    employeeLinkFor: (application) => {
+      const requisition = requisitions.find((r) => r.id === application.requisitionId)
+      const params = new URLSearchParams({
+        new: '1',
+        firstName: application.firstName,
+        lastName: application.lastName,
+        email: application.email,
+      })
+      if (application.phone) params.set('phone', application.phone)
+      if (requisition?.departmentId) params.set('departmentId', requisition.departmentId)
+      if (requisition?.designationId) params.set('designationId', requisition.designationId)
+      return `/employees?${params.toString()}`
+    },
     onAdvance: async (application, status, done) => {
-      setNotice(null)
       try {
         await advanceRecruitmentApplication({ variables: { input: { id: application.id, status, decisionNotes: null } } })
         say(`${application.candidateName} ${done}.`)
@@ -253,7 +261,6 @@ export function RecruitmentPage() {
         tone: 'danger',
       })
       if (!ok) return
-      setNotice(null)
       try {
         await advanceRecruitmentApplication({
           variables: {
@@ -332,19 +339,9 @@ export function RecruitmentPage() {
         title="Recruitment"
       />
 
-      {notice ? (
-        <Notice tone={notice.tone}>
-          <div className="flex items-start justify-between gap-3">
-            <span>{notice.text}</span>
-            <button className="shrink-0 text-xs font-semibold underline-offset-4 hover:underline" onClick={() => setNotice(null)} type="button">
-              Dismiss
-            </button>
-          </div>
-        </Notice>
-      ) : null}
       {error ? <Notice tone="danger">Recruitment could not be loaded. {readableError(error, '')}</Notice> : null}
 
-      <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
+      <div className="grid grid-cols-2 gap-2 sm:gap-3 xl:grid-cols-4">
         <MetricCard detail="Open or on hold" icon={Briefcase} label="Open requisitions" value={formatNumber(summary.openRequisitions)} />
         <MetricCard detail="Still in the pipeline" icon={UserRoundPlus} label="Active candidates" value={formatNumber(summary.activeApplications)} />
         <MetricCard detail="Screening or interviews" icon={Search} label="In screening" value={formatNumber(summary.screeningApplications)} />
