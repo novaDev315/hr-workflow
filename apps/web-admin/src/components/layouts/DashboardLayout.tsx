@@ -18,6 +18,7 @@ import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 
 import { BrandMark } from "@/components/brand-mark";
 import { Button } from "@/components/ui/button";
+import { Toaster } from "@/components/ui/toaster";
 import { clearAdminSession, useAdminSession } from "@/lib/auth-session";
 import { formatDay, formatStatus } from "@/lib/format";
 import {
@@ -256,6 +257,7 @@ export function DashboardLayout() {
           <Outlet />
         </main>
       </div>
+      <Toaster />
     </div>
   );
 }
