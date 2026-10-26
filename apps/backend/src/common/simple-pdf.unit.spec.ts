@@ -1,7 +1,21 @@
-import { bidiIsolate, createSimplePdf } from './simple-pdf';
+import { bidiIsolate, createSimplePdf, personLabelForPdf } from './simple-pdf';
 import { extractPdfTextLines } from '../__tests__/helpers/pdf-text';
 
 const now = new Date('2031-03-01T10:00:00Z');
+
+/** Per drawn line (ActualText span): its pieces in draw order with their x position. */
+function drawnLines(pdf: Buffer) {
+  const source = pdf.toString('latin1');
+  return source
+    .split('/Span << /ActualText')
+    .slice(1)
+    .map((chunk) => {
+      const body = chunk.slice(0, chunk.indexOf('\nEMC'));
+      return [...body.matchAll(/1 0 0 1 ([\d.]+) [\d.]+ Tm\n(<[0-9A-F]{4}>|\((?:\\.|[^\\)])*\)) Tj/g)].map(
+        (m) => ({ x: Number(m[1]), op: m[2] }),
+      ).filter((piece) => piece.op !== '()');
+    });
+}
 
 describe('createSimplePdf', () => {
   it('keeps Latin-only documents on Helvetica without embedding a font', () => {
@@ -70,5 +84,63 @@ describe('createSimplePdf', () => {
     const pdf = createSimplePdf('T', null, [{ lines: [`Dept: ${bidiIsolate('Sales\u202e')}`] }], { now });
     expect(extractPdfTextLines(pdf)).toContain('Dept: Sales');
     expect(pdf.toString('latin1')).not.toContain('NotoNaskhArabic');
+  });
+
+  it('closes and reopens an isolate that a line break splits', () => {
+    const leaveType = Array.from({ length: 6 }, () => 'إجازة سنوية مدفوعة').join(' ');
+    const line = `${personLabelForPdf('Ali', 'E1')} - ${bidiIsolate(leaveType)}, 12 Mar 2031 \u2013 15 Mar 2031 (4 days)`;
+    const pdf = createSimplePdf('T', null, [{ lines: [line] }], { now });
+    const body = extractPdfTextLines(pdf).slice(3, -2); // after title, stamp, blank
+    expect(body.length).toBe(2);
+    expect(body.join(' ')).toBe(line.replace(/[\u2066-\u2069]/g, ''));
+
+    const [first, second] = drawnLines(pdf).slice(-2);
+    // Continuation line: Arabic run, then the left-to-right tail in reading order.
+    const tailIndex = second.findIndex((piece) => piece.op.startsWith('(, 12 Mar 2031'));
+    expect(tailIndex).toBeGreaterThan(0);
+    expect(second[tailIndex].op).toContain('(4 days');
+    const arabicXs = second.filter((piece) => piece.op.startsWith('<')).map((piece) => piece.x);
+    expect(Math.max(...arabicXs)).toBeLessThan(second[tailIndex].x);
+    // First line is the left-to-right head followed by Arabic only.
+    expect(first[0].op).toBe('(Ali)');
+  });
+
+  it('ignores unisolated embedding and override controls when ordering a line', () => {
+    const pdf = createSimplePdf('T', null, [{ lines: ['محمد \u202e Net pay: 1000 AED'] }], { now });
+    const stream = pdf.toString('latin1');
+    expect(stream).toContain('Net pay: 1000 AED) Tj');
+    expect(extractPdfTextLines(pdf)).toContain('محمد  Net pay: 1000 AED');
+  });
+
+  it('splits words longer than the line limit even after other text', () => {
+    const long = 'x'.repeat(300);
+    const pdf = createSimplePdf('T', null, [{ lines: [`short ${long} tail`] }], { now });
+    const lines = extractPdfTextLines(pdf).filter((text) => /x|short|tail/.test(text) && !text.startsWith('Generated'));
+    expect(lines.length).toBeGreaterThanOrEqual(4);
+    lines.forEach((text) => expect(text.length).toBeLessThanOrEqual(92));
+    expect(lines.join(' ').replace(/ /g, '')).toBe(`short${long}tail`);
+
+    const emoji = createSimplePdf('T', null, [{ lines: ['😀'.repeat(100)] }], { now });
+    extractPdfTextLines(emoji)
+      .filter((text) => text.includes('😀'))
+      .forEach((text) => expect(text).not.toMatch(/[\ud800-\udbff](?![\udc00-\udfff])|(?<![\ud800-\udbff])[\udc00-\udfff]/));
+  });
+
+  it('measures Latin-1 and dash characters with Helvetica widths', () => {
+    const pdf = createSimplePdf('T', null, [{ lines: [`Müller – ${bidiIsolate('محمد')} © 2031`] }], { now });
+    const [line] = drawnLines(pdf).slice(-1);
+    const head = line.find((piece) => piece.op.startsWith('(M'))!;
+    const arabic = line.find((piece) => piece.op.startsWith('<'))!;
+    // "Müller – " at 11pt: M 833 u 556 l 222 l 222 e 556 r 333 space 278 en dash 556 space 278 = 3834
+    expect(arabic.x - head.x).toBeGreaterThan(41.5);
+    expect(arabic.x - head.x).toBeLessThan(42.9);
+  });
+
+  it('derives subset names from the glyph set', () => {
+    const name = (text: string) => /\/BaseFont \/([A-Z]{6})\+NotoNaskhArabic-Regular/.exec(
+      createSimplePdf('T', null, [{ lines: [text] }], { now }).toString('latin1'),
+    )![1];
+    expect(name('محمد')).toBe(name('محمد'));
+    expect(name('محمد')).not.toBe(name('علي'));
   });
 });

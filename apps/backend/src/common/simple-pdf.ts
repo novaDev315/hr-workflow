@@ -1,3 +1,4 @@
+import { createHash } from 'crypto';
 import { deflateSync } from 'zlib';
 import { existsSync, readFileSync } from 'fs';
 import { join } from 'path';
@@ -67,6 +68,9 @@ function sanitizePdfText(value: string) {
 // Bidi formatting characters never get a glyph and are removed from extracted text.
 const BIDI_CONTROLS = /[\u061C\u200E\u200F\u202A-\u202E\u2066-\u2069]/g;
 
+const FSI = 0x2068;
+const PDI = 0x2069;
+
 function isBidiControl(code: number) {
   return (
     code === 0x61c ||
@@ -119,12 +123,41 @@ const HELVETICA_BOLD_WIDTHS = [
   611, 611, 389, 556, 333, 611, 556, 778, 556, 556, 500, 389, 280, 389, 584,
 ];
 
+// AFM widths for WinAnsi 0xA0-0xFF (the Latin-1 half Helvetica is allowed to draw).
+const HELVETICA_LATIN1_WIDTHS = [
+  278, 333, 556, 556, 556, 556, 260, 556, 333, 737, 370, 556, 584, 333, 737, 333,
+  400, 584, 333, 333, 333, 556, 537, 278, 333, 333, 365, 556, 834, 834, 834, 611,
+  667, 667, 667, 667, 667, 667, 1000, 722, 667, 667, 667, 667, 278, 278, 278, 278,
+  722, 722, 778, 778, 778, 778, 778, 584, 778, 722, 722, 722, 722, 667, 667, 611,
+  556, 556, 556, 556, 556, 556, 889, 500, 556, 556, 556, 556, 278, 278, 278, 278,
+  556, 556, 556, 556, 556, 556, 556, 584, 611, 556, 556, 556, 556, 500, 556, 500,
+];
+const HELVETICA_BOLD_LATIN1_WIDTHS = [
+  278, 333, 556, 556, 556, 556, 280, 556, 333, 737, 370, 556, 584, 333, 737, 333,
+  400, 584, 333, 333, 333, 611, 556, 278, 333, 333, 365, 556, 834, 834, 834, 611,
+  722, 722, 722, 722, 722, 722, 1000, 722, 667, 667, 667, 667, 278, 278, 278, 278,
+  722, 722, 778, 778, 778, 778, 778, 584, 778, 722, 722, 722, 722, 667, 667, 611,
+  556, 556, 556, 556, 556, 556, 889, 556, 556, 556, 556, 556, 278, 278, 278, 278,
+  611, 611, 611, 611, 611, 611, 611, 584, 611, 611, 611, 611, 611, 556, 611, 556,
+];
+
 function helveticaWidth(text: string, fontSize: number, bold: boolean) {
   const table = bold ? HELVETICA_BOLD_WIDTHS : HELVETICA_WIDTHS;
+  const latin1 = bold ? HELVETICA_BOLD_LATIN1_WIDTHS : HELVETICA_LATIN1_WIDTHS;
   let total = 0;
   for (const char of text) {
     const code = char.codePointAt(0) ?? 63;
-    total += code >= 0x20 && code <= 0x7e ? table[code - 0x20] : 556;
+    if (code >= 0x20 && code <= 0x7e) {
+      total += table[code - 0x20];
+    } else if (code >= 0xa0 && code <= 0xff) {
+      total += latin1[code - 0xa0];
+    } else if (code === 0x2013) {
+      total += 556; // en dash
+    } else if (code === 0x2014) {
+      total += 1000; // em dash
+    } else {
+      total += 556; // drawn as '?'
+    }
   }
   return (total * fontSize) / 1000;
 }
@@ -203,11 +236,13 @@ class NaskhSubset {
   readonly subset;
   readonly widths = new Map<number, number>(); // new gid -> width in 1/1000 em
   readonly unicode = new Map<number, number[]>(); // new gid -> code points
+  readonly sourceGlyphs = new Set<number>(); // glyph ids in the source font
   constructor(readonly font: FkFont) {
     this.subset = font.createSubset();
   }
   include(glyph: FkGlyph) {
     const gid = this.subset.includeGlyph(glyph);
+    this.sourceGlyphs.add(glyph.id);
     if (!this.widths.has(gid)) {
       this.widths.set(gid, Math.round((glyph.advanceWidth * 1000) / this.font.unitsPerEm));
       this.unicode.set(gid, glyph.codePoints);
@@ -221,6 +256,32 @@ type DocumentFonts = { regular?: NaskhSubset; bold?: NaskhSubset };
 function naskhFor(fonts: DocumentFonts, face: 'regular' | 'bold') {
   fonts[face] ??= new NaskhSubset(loadFont(face));
   return fonts[face];
+}
+
+/**
+ * Drops every bidi control except the first-strong isolate pair that bidiIsolate
+ * emits, and keeps that pair balanced: unmatched PDIs are removed and isolates
+ * still open at the end are closed. Embeddings, overrides and marks can no longer
+ * steer level resolution.
+ */
+function normalizeIsolates(text: string) {
+  let output = '';
+  let depth = 0;
+  for (const char of text) {
+    const code = char.codePointAt(0) ?? 0;
+    if (code === FSI) {
+      depth += 1;
+      output += char;
+    } else if (code === PDI) {
+      if (depth > 0) {
+        depth -= 1;
+        output += char;
+      }
+    } else if (!isBidiControl(code)) {
+      output += char;
+    }
+  }
+  return output + String.fromCodePoint(PDI).repeat(depth);
 }
 
 function needsUnicodeFont(text: string) { // expects text without bidi controls
@@ -238,11 +299,12 @@ function needsUnicodeFont(text: string) { // expects text without bidi controls
  * visual-order pieces and their total width.
  */
 function layoutUnicodeLine(
-  text: string,
+  rawText: string,
   fontSize: number,
   face: 'regular' | 'bold',
   fonts: DocumentFonts,
 ) {
+  const text = normalizeIsolates(rawText);
   // Documents are English-labelled, so every line is a left-to-right paragraph in
   // which Arabic names or values form right-to-left runs.
   const embedding = bidi.getEmbeddingLevels(text, 'ltr');
@@ -392,36 +454,72 @@ function round(value: number) {
   return Math.round(value * 100) / 100;
 }
 
+function isolateDelta(code: number) {
+  if (code === FSI) {
+    return 1;
+  }
+  return code === PDI ? -1 : 0;
+}
+
+/**
+ * Greedy word wrap on visible length (bidi controls take no width). A break inside
+ * an isolated value closes it with PDI at the end of the line and reopens it with
+ * FSI at the start of the next, so each line stays a balanced, self-contained
+ * bidi unit. Words longer than the limit are split by code point, never between
+ * a base character and its combining marks.
+ */
 function wrapText(value: string, maxLength = MAX_TEXT_WIDTH) {
   const trimmed = value.trim();
   if (!trimmed) {
     return [''];
   }
 
-  const words = trimmed.split(/\s+/);
+  const closer = String.fromCodePoint(PDI);
+  const opener = String.fromCodePoint(FSI);
   const lines: string[] = [];
   let current = '';
+  let visible = 0; // visible code points on the current line
+  let open = 0; // isolates open at the end of `current`
 
-  for (const word of words) {
-    const candidate = current ? `${current} ${word}` : word;
-    if (candidate.length <= maxLength) {
-      current = candidate;
-      continue;
+  const flush = () => {
+    lines.push(current + closer.repeat(open));
+    current = opener.repeat(open);
+    visible = 0;
+  };
+  const append = (char: string) => {
+    current += char;
+    open = Math.max(0, open + isolateDelta(char.codePointAt(0) ?? 0));
+  };
+
+  for (const word of trimmed.split(/\s+/)) {
+    const chars = Array.from(word);
+    const wordVisible = chars.filter((char) => !isBidiControl(char.codePointAt(0) ?? 0)).length;
+
+    if (visible > 0 && visible + 1 + wordVisible > maxLength) {
+      flush();
+    }
+    if (visible > 0) {
+      append(' ');
+      visible += 1;
     }
 
-    if (current) {
-      lines.push(current);
-      current = word;
-      continue;
+    for (const char of chars) {
+      const code = char.codePointAt(0) ?? 0;
+      if (isBidiControl(code)) {
+        append(char);
+        continue;
+      }
+      const combining = /^[\p{M}\u200d\u200c]$/u.test(char);
+      if (visible >= maxLength && !combining) {
+        flush();
+      }
+      append(char);
+      visible += 1;
     }
-
-    const chunks = word.match(new RegExp(`.{1,${maxLength}}`, 'g')) ?? [word];
-    lines.push(...chunks.slice(0, -1));
-    current = chunks[chunks.length - 1] ?? '';
   }
 
-  if (current) {
-    lines.push(current);
+  if (visible > 0) {
+    lines.push(current + closer.repeat(open));
   }
 
   return lines;
@@ -576,6 +674,21 @@ function buildToUnicode(subset: NaskhSubset) {
   return Buffer.from(cmap, 'latin1');
 }
 
+/**
+ * Six uppercase letters derived from the subset's glyph set (PDF 32000 9.6.4), so
+ * the tag is stable for a glyph set and differs between different subsets.
+ */
+function subsetTag(name: string, glyphs: Set<number>) {
+  const digest = createHash('sha256')
+    .update(`${name}:${[...glyphs].sort((a, b) => a - b).join(',')}`)
+    .digest();
+  let tag = '';
+  for (let index = 0; index < 6; index += 1) {
+    tag += String.fromCharCode(65 + (digest[index] % 26));
+  }
+  return tag;
+}
+
 /** The five objects of one embedded subset: Type0, CIDFont, descriptor, file, ToUnicode. */
 function buildNaskhObjects(subset: NaskhSubset, firstObject: number, name: string) {
   const { font } = subset;
@@ -585,7 +698,7 @@ function buildNaskhObjects(subset: NaskhSubset, firstObject: number, name: strin
     .sort((left, right) => left[0] - right[0])
     .map(([gid, width]) => `${gid} [${width}]`)
     .join(' ');
-  const baseName = `${name === 'Bold' ? 'BAAAAA' : 'AAAAAA'}+NotoNaskhArabic-${name}`;
+  const baseName = `${subsetTag(name, subset.sourceGlyphs)}+NotoNaskhArabic-${name}`;
   const [cid, descriptor] = [firstObject + 1, firstObject + 2];
   return [
     Buffer.from(
