@@ -339,6 +339,7 @@ export function EmployeesPage() {
         currencyCode={currencyCode}
         departments={reference.departments}
         designations={reference.designations}
+        canRevoke={account?.roles.includes('ADMIN') ?? false}
         grantable={grantable}
         onClose={() => setAction(null)}
         onSaved={(text) => toast.success(text)}

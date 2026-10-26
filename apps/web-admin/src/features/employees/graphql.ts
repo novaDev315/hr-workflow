@@ -111,4 +111,13 @@ export const PROVISION_STAFF_ACCESS_MUTATION = gql`
   }
 `
 
+export const REVOKE_STAFF_ACCESS_MUTATION = gql`
+  mutation RevokeStaffAccess($input: RevokeStaffAccessInput!) {
+    revokeStaffAccess(input: $input) {
+      id
+      roles
+    }
+  }
+`
+
 export const PEOPLE_REFETCH = ['PeopleDirectory', 'OrganisationPeople', 'AttendanceWorkspace']

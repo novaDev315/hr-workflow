@@ -241,11 +241,16 @@ export function SignInFields({
   onChange,
   person,
   grantable,
+  onRevoke,
+  revoking = null,
 }: {
   form: SignInForm
   onChange: (patch: Partial<SignInForm>) => void
   person: Pick<Person, 'email' | 'hasLinkedAccount' | 'linkedAccountEmail' | 'linkedAccountRoles'> | null
   grantable: string[]
+  // Present only for viewers allowed to revoke (ADMIN); EMPLOYEE is never removable.
+  onRevoke?: (role: string) => void
+  revoking?: string | null
 }) {
   const [copied, setCopied] = useState(false)
   const hasAccount = Boolean(person?.hasLinkedAccount)
@@ -274,8 +279,18 @@ export function SignInFields({
             {(person?.linkedAccountRoles.length ? person.linkedAccountRoles : ['EMPLOYEE']).map((role) => (
               <li className="flex min-h-10 items-center justify-between gap-3 px-3 py-2 text-sm" data-role={role} key={role}>
                 <span className="font-medium text-foreground">{formatStatus(role)}</span>
-                {/* Revoke slot: a per-role "Remove" action goes here once the
-                    revoke-staff-role mutation exists (never for EMPLOYEE). */}
+                {onRevoke && role !== 'EMPLOYEE' ? (
+                  <Button
+                    aria-label={`Remove ${formatStatus(role)} role`}
+                    disabled={revoking !== null}
+                    onClick={() => onRevoke(role)}
+                    size="sm"
+                    type="button"
+                    variant="ghost"
+                  >
+                    {revoking === role ? 'Removing…' : 'Remove'}
+                  </Button>
+                ) : null}
               </li>
             ))}
           </ul>

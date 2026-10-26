@@ -3,6 +3,8 @@ import { useEffect, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Notice } from '@/components/ui/notice'
 import { readableError } from '@/lib/graphql-errors'
+import { toast } from '@/lib/toast'
+import { useConfirm } from '@/features/shared/confirm-dialog'
 import {
   useSiteAssignments,
   type Department,
@@ -56,6 +58,7 @@ export function EmployeeActionSheet({
   compensation,
   currencyCode,
   grantable,
+  canRevoke = false,
 }: {
   action: EmployeeAction | null
   person: Person | null
@@ -68,8 +71,13 @@ export function EmployeeActionSheet({
   compensation: Compensation | null
   currencyCode: string
   grantable: string[]
+  canRevoke?: boolean
 }) {
   const mutations = useEmployeeMutations()
+  const [confirm, confirmDialog] = useConfirm()
+  const [revoking, setRevoking] = useState<string | null>(null)
+  // Roles removed while the sheet is open; the person snapshot doesn't refresh.
+  const [revokedRoles, setRevokedRoles] = useState<string[]>([])
   const open = Boolean(action && person)
   const [profile, setProfile] = useState<ProfileForm | null>(null)
   const [pay, setPay] = useState<PayForm>(() => emptyPay(currencyCode))
@@ -88,6 +96,7 @@ export function EmployeeActionSheet({
     setError(null)
     setProfileErrors({})
     setPassword(null)
+    setRevokedRoles([])
     setProfile(profileFromPerson(person))
     setPay(compensation ? payFromCompensation(compensation) : emptyPay(currencyCode, person.joinDate))
     setSite({ locationId: '', isPrimary: true })
@@ -95,6 +104,28 @@ export function EmployeeActionSheet({
     // Reset when a new person/action opens.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, person?.id, action])
+
+  const revoke = async (role: string) => {
+    if (!person) return
+    const roleName = formatStatus(role)
+    const ok = await confirm({
+      title: `Remove ${roleName} from ${person.fullName}?`,
+      description: `They lose ${roleName} access right away and must sign in again. You can grant it again later.`,
+      confirmLabel: `Remove ${roleName}`,
+      tone: 'danger',
+    })
+    if (!ok) return
+    setRevoking(role)
+    try {
+      await mutations.revokeStaffRole(person.id, role)
+      setRevokedRoles((current) => [...current, role])
+      toast.success(`Removed ${roleName} from ${person.fullName}.`)
+    } catch (err) {
+      toast.error(readableError(err))
+    } finally {
+      setRevoking(null)
+    }
+  }
 
   const submit = async () => {
     if (!person || !action) return
@@ -247,12 +278,15 @@ export function EmployeeActionSheet({
                 form={signIn}
                 grantable={grantable}
                 onChange={(patch) => setSignIn((value) => ({ ...value, ...patch }))}
-                person={person}
+                onRevoke={canRevoke ? (role) => void revoke(role) : undefined}
+                person={{ ...person, linkedAccountRoles: person.linkedAccountRoles.filter((role) => !revokedRoles.includes(role)) }}
+                revoking={revoking}
               />
             ) : null}
           </form>
         )
       ) : null}
+      {confirmDialog}
     </SideSheet>
   )
 }

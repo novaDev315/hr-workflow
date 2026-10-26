@@ -6,6 +6,7 @@ import {
   CREATE_EMPLOYEE_MUTATION,
   PEOPLE_REFETCH,
   PROVISION_STAFF_ACCESS_MUTATION,
+  REVOKE_STAFF_ACCESS_MUTATION,
   UPDATE_EMPLOYEE_MUTATION,
   UPSERT_COMPENSATION_MUTATION,
 } from './graphql'
@@ -26,6 +27,7 @@ export function useEmployeeMutations() {
   const [assignSite] = useMutation(ASSIGN_SITE_MUTATION)
   const [createAccount] = useMutation(CREATE_EMPLOYEE_ACCOUNT_MUTATION, options)
   const [provisionStaff] = useMutation(PROVISION_STAFF_ACCESS_MUTATION, options)
+  const [revokeStaff] = useMutation(REVOKE_STAFF_ACCESS_MUTATION, options)
 
   return {
     async saveProfile(form: ProfileForm, employeeId?: string | null) {
@@ -85,6 +87,9 @@ export function useEmployeeMutations() {
       if (form.createSignIn && !hasAccount) {
         await createAccount({ variables: { input: { employeeId, password: form.password } } })
       }
+    },
+    async revokeStaffRole(employeeId: string, roleKey: string) {
+      await revokeStaff({ variables: { input: { employeeId, roleKey } } })
     },
   }
 }
