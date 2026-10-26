@@ -235,7 +235,29 @@ export function countWorkingDays(start: Date, end: Date): number {
   return count
 }
 
+/** The date itself when it is Monday–Friday, otherwise the following Monday. */
+export function nextWorkingDay(date: Date): Date {
+  const next = new Date(date.getFullYear(), date.getMonth(), date.getDate())
+  while (next.getDay() === 0 || next.getDay() === 6) next.setDate(next.getDate() + 1)
+  return next
+}
+
+/** "2 h 15 min" / "45 min" between a timestamp and now. */
+export function formatElapsed(since: string | Date | null | undefined, now = new Date()): string | null {
+  const start = since instanceof Date ? since : parseTimestamp(since)
+  if (!start) return null
+  const minutes = Math.max(0, Math.floor((now.getTime() - start.getTime()) / 60000))
+  if (minutes < 60) return `${minutes} min`
+  const rest = minutes % 60
+  return rest ? `${Math.floor(minutes / 60)} h ${rest} min` : `${Math.floor(minutes / 60)} h`
+}
+
+const ARABIC_SCRIPT = /[؀-ۿݐ-ݿࢠ-ࣿ]/
+
 export function initials(name: string | null | undefined): string {
   const parts = (name ?? '').trim().split(/\s+/).filter(Boolean)
-  return parts.slice(0, 2).map((part) => part[0]?.toUpperCase() ?? '').join('') || '?'
+  const letters = parts.slice(0, 2).map((part) => part[0]?.toUpperCase() ?? '')
+  // A zero-width non-joiner keeps Arabic initials as separate letters instead of one ligature.
+  const joiner = letters.some((letter) => ARABIC_SCRIPT.test(letter)) ? '‌' : ''
+  return letters.join(joiner) || '?'
 }

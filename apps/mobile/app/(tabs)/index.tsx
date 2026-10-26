@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useMutation, useQuery } from '@apollo/client'
 import { Linking, Platform, Pressable, StyleSheet, Text, View } from 'react-native'
 import { MaterialCommunityIcons } from '@expo/vector-icons'
@@ -21,7 +21,9 @@ import {
 import { useEmployee } from '../../src/lib/use-employee'
 import { useRefresh } from '../../src/lib/use-refresh'
 import { clockErrorMessage } from '../../src/lib/errors'
+import { confirmAction } from '../../src/lib/session-actions'
 import {
+  formatElapsed,
   formatHours,
   formatMoney,
   formatMonth,
@@ -66,6 +68,13 @@ export default function TodayScreen() {
   const [phase, setPhase] = useState<'idle' | 'locating' | 'saving'>('idle')
   const [notice, setNotice] = useState<ClockNotice | null>(null)
   const busyRef = useRef(false)
+  const [now, setNow] = useState(() => new Date())
+
+  // Keeps the greeting and the running shift time current while the screen is open.
+  useEffect(() => {
+    const timer = setInterval(() => setNow(new Date()), 30000)
+    return () => clearInterval(timer)
+  }, [])
 
   const locationsQuery = useQuery<{ employeeLocations: LocationAssignment[] }>(EMPLOYEE_LOCATIONS_QUERY, {
     variables: { employeeId },
@@ -114,6 +123,8 @@ export default function TodayScreen() {
     return { openRecord: open, todayRecord: open ?? latestToday }
   }, [records])
   const isClockedIn = Boolean(openRecord)
+  // The backend allows one shift per day: once today's shift is closed, there is nothing to tap.
+  const doneForToday = !isClockedIn && Boolean(todayRecord?.clockInAt)
 
   const stats = useMemo(() => {
     const balances = leaveQuery.data?.leaveBalances ?? []
@@ -140,6 +151,14 @@ export default function TodayScreen() {
   const handleClockAction = async () => {
     // Guard from the first tap: permission and GPS can take seconds.
     if (busyRef.current) return
+    if (isClockedIn) {
+      const confirmed = await confirmAction({
+        title: 'Clock out now?',
+        message: "This ends today's shift. You can't clock in again until tomorrow.",
+        confirmLabel: 'Clock out',
+      })
+      if (!confirmed) return
+    }
     busyRef.current = true
     setNotice(null)
     setPhase('locating')
@@ -159,8 +178,18 @@ export default function TodayScreen() {
       }
       if (!permission.granted) {
         setNotice(
-          permission.canAskAgain || Platform.OS === 'web'
-            ? { tone: 'warning', message: 'HRFlow Pro needs your location to confirm you are at your work site.' }
+          Platform.OS === 'web'
+            ? {
+                tone: 'warning',
+                message: "Location is blocked for HRFlow Pro. Allow location in your browser's site settings, then try again.",
+                action: { label: 'Try again', onPress: () => void handleClockAction() },
+              }
+            : permission.canAskAgain
+            ? {
+                tone: 'warning',
+                message: 'HRFlow Pro needs your location to confirm you are at your work site.',
+                action: { label: 'Try again', onPress: () => void handleClockAction() },
+              }
             : {
                 tone: 'warning',
                 message: 'Location access is off for HRFlow Pro. Turn it on in Settings to clock in or out.',
@@ -204,7 +233,6 @@ export default function TodayScreen() {
     }
   }
 
-  const now = new Date()
   const firstName = account?.firstName || account?.fullName?.split(' ')[0]
   const header = (
     <ScreenHeader
@@ -245,8 +273,9 @@ export default function TodayScreen() {
     : todayRecord?.clockOutAt
       ? "You're done for today"
       : "You're not clocked in"
+  const elapsed = isClockedIn ? formatElapsed(openRecord?.clockInAt, now) : null
   const statusDetail = isClockedIn
-    ? `Clocked in at ${formatTime(openRecord?.clockInAt)}${openRecord?.location?.name ? ` · ${openRecord.location.name}` : ''}`
+    ? `Since ${formatTime(openRecord?.clockInAt)}${elapsed ? ` · ${elapsed} so far` : ''}${openRecord?.location?.name ? `\n${openRecord.location.name}` : ''}`
     : todayRecord?.clockOutAt
       ? `${formatTime(todayRecord.clockInAt)} – ${formatTime(todayRecord.clockOutAt)} · ${formatHours(todayRecord.totalHours)}`
       : selected
@@ -284,7 +313,7 @@ export default function TodayScreen() {
               </View>
             </View>
 
-            {!isClockedIn && assignments.length > 1 ? (
+            {!isClockedIn && !doneForToday && assignments.length > 1 ? (
               <View style={styles.sites}>
                 <Text style={styles.sitesLabel}>Clock in at</Text>
                 <View style={styles.siteChips} accessibilityRole="radiogroup">
@@ -313,16 +342,37 @@ export default function TodayScreen() {
 
             {notice ? <Notice tone={notice.tone} message={notice.message} action={notice.action} /> : null}
 
-            <Button
-              label={isClockedIn ? 'Clock out' : 'Clock in'}
-              icon={isClockedIn ? 'logout' : 'login'}
-              variant={isClockedIn ? 'secondary' : 'primary'}
-              loading={busy}
-              loadingLabel={phase === 'locating' ? 'Checking your location' : isClockedIn ? 'Clocking out' : 'Clocking in'}
-              disabled={!isClockedIn && !selected}
-              onPress={handleClockAction}
-              accessibilityHint="Uses your current location to confirm you are at your work site"
-            />
+            {doneForToday ? (
+              <Text style={styles.doneHint}>Your shift is recorded. You can clock in again tomorrow.</Text>
+            ) : !isClockedIn && !selected && !locationsQuery.loading ? (
+              locationsQuery.error && !locationsQuery.data ? (
+                <Notice
+                  tone="danger"
+                  message="We couldn't load your work sites."
+                  action={{ label: 'Try again', onPress: () => void locationsQuery.refetch() }}
+                />
+              ) : (
+                <Notice
+                  tone="warning"
+                  message="Ask your HR team to assign you a work site. You can clock in once it's added."
+                />
+              )
+            ) : (
+              <Button
+                label={isClockedIn ? 'Clock out' : 'Clock in'}
+                icon={isClockedIn ? 'logout' : 'login'}
+                variant={isClockedIn ? 'secondary' : 'primary'}
+                loading={busy}
+                loadingLabel={phase === 'locating' ? 'Checking your location' : isClockedIn ? 'Clocking out' : 'Clocking in'}
+                disabled={!isClockedIn && !selected}
+                onPress={handleClockAction}
+                accessibilityHint={
+                  isClockedIn
+                    ? "Asks to confirm, then ends today's shift using your current location"
+                    : 'Uses your current location to confirm you are at your work site'
+                }
+              />
+            )}
           </>
         )}
       </Card>
@@ -436,6 +486,10 @@ const styles = StyleSheet.create({
   chipTextActive: {
     color: colors.onAccent,
     fontWeight: '600',
+  },
+  doneHint: {
+    ...type.label,
+    fontWeight: '400',
   },
   stats: {
     flexDirection: 'row',
