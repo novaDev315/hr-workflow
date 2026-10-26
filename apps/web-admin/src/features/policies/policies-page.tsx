@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from 'react'
+import { useMemo, useState, type FormEvent } from 'react'
 import { useMutation, useQuery } from '@apollo/client'
 import { Archive, ExternalLink, FileText, Paperclip, Pencil, Plus } from 'lucide-react'
 
@@ -10,7 +10,6 @@ import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import { FormDrawer } from '@/components/ui/form-drawer'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { MetricCard } from '@/components/ui/metric-card'
 import { Notice } from '@/components/ui/notice'
 import {
   Select,
@@ -21,6 +20,10 @@ import {
 } from '@/components/ui/select'
 import { StatusBadge } from '@/components/ui/status-badge'
 import { Textarea } from '@/components/ui/textarea'
+import { toast } from '@/lib/toast'
+import { SegmentedControl } from '@/features/shared/controls'
+import { ListToolbar } from '@/features/shared/list-toolbar'
+import { matchesSearch } from '@/features/shared/use-show-more'
 import { canManageAccounts, useAdminSession } from '@/lib/auth-session'
 import { readFileAsBase64 } from '@/lib/download-export'
 import { formatDay, safeExternalUrl, todayLocal } from '@/lib/format'
@@ -36,6 +39,8 @@ import {
   type PolicyDocument,
 } from './graphql'
 import { checkPolicyFile, isUploadedFile, POLICY_FILE_ACCEPT, POLICY_FILE_HINT } from './upload-rules'
+
+type PolicyView = 'active' | 'published' | 'drafts' | 'archived'
 
 type PolicyFormState = {
   title: string
@@ -117,8 +122,9 @@ export function PolicyDocumentsPage() {
   const [editingPolicyId, setEditingPolicyId] = useState<string | null>(null)
   const [selectedFile, setSelectedFile] = useState<File | null>(null)
   const [fileInputKey, setFileInputKey] = useState(0)
-  const [statusMessage, setStatusMessage] = useState<string | null>(null)
-  const [errorMessage, setErrorMessage] = useState<string | null>(null)
+  const [view, setView] = useState<PolicyView>('active')
+  const [search, setSearch] = useState('')
+  const [publishing, setPublishing] = useState<PolicyDocument | null>(null)
   const [formError, setFormError] = useState<string | null>(null)
   const [showComposer, setShowComposer] = useState(false)
   const [archiving, setArchiving] = useState<PolicyDocument | null>(null)
@@ -134,14 +140,41 @@ export function PolicyDocumentsPage() {
   const [archivePolicyDocument, { loading: archivingPolicy }] = useMutation(ARCHIVE_POLICY_DOCUMENT_MUTATION)
   const saving = creating || updating || uploading
 
-  const policies = data?.policyDocuments ?? []
+  const policies = useMemo(() => data?.policyDocuments ?? [], [data?.policyDocuments])
   const publishedCount = policies.filter((policy) => policy.status === 'PUBLISHED').length
   const draftCount = policies.filter((policy) => policy.status === 'DRAFT').length
   const archivedCount = policies.filter((policy) => policy.status === 'ARCHIVED').length
+  // Drafts first (they need action), then live policies, newest effective date first.
+  const visiblePolicies = useMemo(
+    () =>
+      policies
+        .filter((policy) =>
+          view === 'active'
+            ? policy.status !== 'ARCHIVED'
+            : view === 'published'
+              ? policy.status === 'PUBLISHED'
+              : view === 'drafts'
+                ? policy.status === 'DRAFT'
+                : policy.status === 'ARCHIVED',
+        )
+        .filter((policy) => matchesSearch(search, [policy.title, policy.category, policy.description]))
+        .sort(
+          (a, b) =>
+            Number(a.status !== 'DRAFT') - Number(b.status !== 'DRAFT') ||
+            b.effectiveDate.localeCompare(a.effectiveDate),
+        ),
+    [policies, view, search],
+  )
+  const viewTotal =
+    view === 'active'
+      ? policies.length - archivedCount
+      : view === 'published'
+        ? publishedCount
+        : view === 'drafts'
+          ? draftCount
+          : archivedCount
 
   const resetFeedback = () => {
-    setErrorMessage(null)
-    setStatusMessage(null)
     setFormError(null)
   }
 
@@ -255,7 +288,7 @@ export function PolicyDocumentsPage() {
 
     setShowComposer(false)
     resetComposer()
-    setStatusMessage(
+    toast.success(
       wasEditing
         ? 'Policy updated.'
         : selectedFile
@@ -288,26 +321,26 @@ export function PolicyDocumentsPage() {
     resetFeedback()
     try {
       await archivePolicyDocument({ variables: { input: { policyDocumentId: archiving.id } } })
-      setStatusMessage(`${archiving.title} archived.`)
+      toast.success(`${archiving.title} archived.`)
       setArchiving(null)
       await refetch()
     } catch (mutationError) {
       setArchiving(null)
-      setErrorMessage(readableError(mutationError, 'Could not archive the policy.'))
+      toast.error(readableError(mutationError, 'Could not archive the policy.'))
     }
   }
 
   const handlePublishPolicy = async (policy: PolicyDocument) => {
-    resetFeedback()
     setPublishingId(policy.id)
     try {
       await publishPolicyDocument({ variables: { input: { policyDocumentId: policy.id } } })
-      setStatusMessage(`${policy.title} published. Employees can see it now.`)
+      toast.success(`${policy.title} published. Employees can see it now.`)
       await refetch()
     } catch (mutationError) {
-      setErrorMessage(readableError(mutationError, 'Could not publish the policy.'))
+      toast.error(readableError(mutationError, 'Could not publish the policy.'))
     } finally {
       setPublishingId(null)
+      setPublishing(null)
     }
   }
 
@@ -328,17 +361,6 @@ export function PolicyDocumentsPage() {
         }
       />
 
-      <div className="grid gap-3 sm:grid-cols-3">
-        <MetricCard
-          label="Published"
-          value={String(publishedCount)}
-          detail="Visible to employees"
-        />
-        <MetricCard label="Drafts" value={String(draftCount)} detail="Not visible to employees yet" />
-        <MetricCard label="Archived" value={String(archivedCount)} detail="Kept for the record" />
-      </div>
-
-      <PageFeedback errorMessage={errorMessage} statusMessage={statusMessage} />
 
       {loading && !data ? (
         <Card>
@@ -359,8 +381,42 @@ export function PolicyDocumentsPage() {
           </CardContent>
         </Card>
       ) : (
+        <div className="space-y-4">
+          <div className="flex flex-col gap-3 lg:flex-row lg:items-start">
+            <div className="-mx-1 overflow-x-auto px-1 pb-1">
+              <SegmentedControl
+                label="Show policies"
+                onChange={setView}
+                options={[
+                  { value: 'active', label: `Active ${policies.length - archivedCount}` },
+                  { value: 'published', label: `Published ${publishedCount}` },
+                  { value: 'drafts', label: `Drafts ${draftCount}` },
+                  { value: 'archived', label: `Archived ${archivedCount}` },
+                ]}
+                value={view}
+              />
+            </div>
+            <ListToolbar
+              className="min-w-0 flex-1"
+              noun={['policy', 'policies']}
+              onClear={() => setSearch('')}
+              onSearchChange={setSearch}
+              search={search}
+              searchLabel="Search policies"
+              searchPlaceholder="Search title, category or description"
+              shown={visiblePolicies.length}
+              total={viewTotal}
+            />
+          </div>
+          {visiblePolicies.length === 0 ? (
+            <Card>
+              <CardContent className="p-6 text-sm text-muted-foreground">
+                {search ? 'No policies match this search.' : view === 'archived' ? 'Nothing archived.' : view === 'drafts' ? 'No drafts. New policies start here until you publish them.' : 'No policies in this view.'}
+              </CardContent>
+            </Card>
+          ) : null}
         <div className="grid min-w-0 gap-4 md:grid-cols-2 xl:grid-cols-3">
-          {policies.map((policy) => (
+          {visiblePolicies.map((policy) => (
             <Card key={policy.id} className="flex min-w-0 flex-col">
               <CardContent className="flex flex-1 flex-col gap-3 p-4 sm:p-5">
                 <div className="flex min-w-0 items-start justify-between gap-3">
@@ -380,9 +436,9 @@ export function PolicyDocumentsPage() {
                   <p className="line-clamp-3 text-[13px] leading-5 text-muted-foreground">{policy.content}</p>
                 ) : null}
                 <PolicyDocumentLink policy={policy} />
-                <p className="text-xs text-muted-foreground">
-                  {policy.publishedAt ? `Published ${formatDay(policy.publishedAt)}` : 'Not published'}
-                </p>
+                {policy.publishedAt ? (
+                  <p className="text-xs text-muted-foreground">Published {formatDay(policy.publishedAt)}</p>
+                ) : null}
                 {canManagePolicies ? (
                   <div className="mt-auto flex flex-wrap gap-2 pt-1">
                     {policy.status !== 'PUBLISHED' ? (
@@ -390,7 +446,8 @@ export function PolicyDocumentsPage() {
                         type="button"
                         size="sm"
                         disabled={publishingId === policy.id}
-                        onClick={() => handlePublishPolicy(policy)}
+                        onClick={() => setPublishing(policy)}
+                        aria-label={`Publish ${policy.title}`}
                       >
                         {publishingId === policy.id ? 'Publishing…' : 'Publish'}
                       </Button>
@@ -422,6 +479,7 @@ export function PolicyDocumentsPage() {
               </CardContent>
             </Card>
           ))}
+        </div>
         </div>
       )}
 
@@ -580,6 +638,20 @@ export function PolicyDocumentsPage() {
         tone="destructive"
         busy={archivingPolicy}
         onConfirm={handleArchivePolicy}
+      />
+
+      <ConfirmDialog
+        open={Boolean(publishing)}
+        onOpenChange={(open) => (open ? undefined : setPublishing(null))}
+        title={publishing ? `Publish ${publishing.title}?` : 'Publish policy?'}
+        description={
+          publishing
+            ? `Every employee can read version ${publishing.version} straight away, effective ${formatDay(publishing.effectiveDate)}.`
+            : undefined
+        }
+        confirmLabel="Publish"
+        busy={Boolean(publishingId)}
+        onConfirm={() => (publishing ? handlePublishPolicy(publishing) : undefined)}
       />
     </div>
   )
