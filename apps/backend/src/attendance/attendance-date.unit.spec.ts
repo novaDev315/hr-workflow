@@ -3,7 +3,7 @@ import {
   resolveTimeZone,
   toIsoTimestamp,
 } from './attendance-date';
-import { describeNameForPdf, isLatin1Text } from '../common/simple-pdf';
+import { describeNameForPdf, personLabelForPdf } from '../common/simple-pdf';
 
 describe('attendance date helpers', () => {
   it('dates a 22:30 UTC clock-in on the next day in Asia/Dubai', () => {
@@ -44,13 +44,10 @@ describe('attendance date helpers', () => {
   });
 });
 
-describe('pdf name fallback', () => {
-  it('prints Latin-1 names and falls back for other scripts', () => {
-    expect(isLatin1Text('José Müller')).toBe(true);
-    expect(isLatin1Text('محمد علي')).toBe(false);
-    expect(describeNameForPdf('Name', 'José Müller', 'EMP001')).toBe('Name: José Müller');
-    expect(describeNameForPdf('Name', 'محمد علي', 'EMP002')).toBe(
-      'Name: see employee record (EMP002)',
-    );
+describe('pdf name labels', () => {
+  it('keeps Latin and Arabic names in the printed label, isolated from the surrounding text', () => {
+    expect(describeNameForPdf('Name', 'José Müller', 'EMP001')).toBe('Name: \u2068José Müller\u2069');
+    expect(describeNameForPdf('Name', 'محمد علي', 'EMP002')).toBe('Name: \u2068محمد علي\u2069');
+    expect(personLabelForPdf('محمد علي', 'EMP002')).toBe('\u2068محمد علي\u2069 (\u2068EMP002\u2069)');
   });
 });

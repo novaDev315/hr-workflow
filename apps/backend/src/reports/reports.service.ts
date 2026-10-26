@@ -15,7 +15,7 @@ import {
   formatPeriodMonth,
   pluralize,
 } from '../common/document-format';
-import { createSimplePdf, personLabelForPdf } from '../common/simple-pdf';
+import { bidiIsolate, createSimplePdf, personLabelForPdf } from '../common/simple-pdf';
 import {
   EmployeeVisibilityScope,
   hasAccountManagerAccess,
@@ -103,8 +103,8 @@ export class ReportsService {
     const dashboard = await this.dashboard(currentUser, normalizedMonth);
     const { companyName, timeZone, currencyCode } = await this.companyProfile();
     const pdf = createSimplePdf(
-      `${companyName} Operational Report`,
-      `Reporting month: ${formatPeriodMonth(normalizedMonth)} | Scope: ${dashboard.accessScopeLabel}`,
+      `${bidiIsolate(companyName)} Operational Report`,
+      `Reporting month: ${formatPeriodMonth(normalizedMonth)} | Scope: ${bidiIsolate(dashboard.accessScopeLabel)}`,
       [
         {
           heading: 'Overview',
@@ -121,7 +121,7 @@ export class ReportsService {
         {
           heading: 'Department Headcount',
           lines: dashboard.departmentHeadcount.map(
-            (row) => `${row.departmentName}: ${pluralize(row.employeeCount, 'employee')}`,
+            (row) => `${bidiIsolate(row.departmentName)}: ${pluralize(row.employeeCount, 'employee')}`,
           ),
         },
         {
@@ -140,7 +140,7 @@ export class ReportsService {
             dashboard.pendingLeaveApprovals.length > 0
               ? dashboard.pendingLeaveApprovals.map(
                   (row) =>
-                    `${personLabelForPdf(row.fullName, row.employeeNumber)} - ${row.leaveTypeName}, ${formatDateRange(row.startDate, row.endDate)} (${pluralize(row.totalDays, 'day')})`,
+                    `${personLabelForPdf(row.fullName, row.employeeNumber)} - ${bidiIsolate(row.leaveTypeName)}, ${formatDateRange(row.startDate, row.endDate)} (${pluralize(row.totalDays, 'day')})`,
                 )
               : ['No pending leave approvals.'],
         },
@@ -150,7 +150,7 @@ export class ReportsService {
                 heading: 'Payroll Cost By Department',
                 lines: dashboard.payrollDepartmentCosts.map(
                   (row) =>
-                    `${row.departmentName}: ${pluralize(row.payslipCount, 'payslip')}, total net pay ${formatMoney(row.totalNetPay, currencyCode)}`,
+                    `${bidiIsolate(row.departmentName)}: ${pluralize(row.payslipCount, 'payslip')}, total net pay ${formatMoney(row.totalNetPay, currencyCode)}`,
                 ),
               },
             ]
@@ -161,7 +161,7 @@ export class ReportsService {
             dashboard.publishedPolicies.length > 0
               ? dashboard.publishedPolicies.map(
                   (row) =>
-                    `${row.title} (${row.category}) v${row.version} effective ${formatIsoDate(row.effectiveDate)}`,
+                    `${bidiIsolate(row.title)} (${bidiIsolate(row.category)}) v${row.version} effective ${formatIsoDate(row.effectiveDate)}`,
                 )
               : ['No published policies found.'],
         },

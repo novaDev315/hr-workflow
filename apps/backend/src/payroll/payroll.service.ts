@@ -26,7 +26,7 @@ import {
   formatPeriodMonth,
   humanizeStatus,
 } from '../common/document-format';
-import { createSimplePdf, describeNameForPdf } from '../common/simple-pdf';
+import { bidiIsolate, createSimplePdf, describeNameForPdf } from '../common/simple-pdf';
 import { calculatePayrollRun, PayrollEmployeeInput } from './payroll-calculator';
 import { hasAccountManagerAccess } from '../common/access-control';
 import {
@@ -430,14 +430,14 @@ export class PayrollService {
     }
 
     const pdf = createSimplePdf(
-      `${row.companyName ?? 'HRFlow Pro'} Payslip`,
+      `${bidiIsolate(row.companyName ?? 'HRFlow Pro')} Payslip`,
       `${formatPeriodMonth(row.periodMonth)} payroll statement`,
       [
         {
           heading: 'Employee',
           lines: [
             describeNameForPdf('Name', row.employeeName, row.employeeNumber),
-            `Employee Number: ${row.employeeNumber}`,
+            `Employee Number: ${bidiIsolate(row.employeeNumber)}`,
             `Payroll Period: ${formatPeriodMonth(row.periodMonth)} (${formatDateRange(row.startDate, row.endDate)})`,
             `Status: ${humanizeStatus(row.status)}`,
           ],

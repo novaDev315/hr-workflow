@@ -196,7 +196,7 @@ describe('Payroll pay basis, concurrency, visibility and attendance dates', () =
       },
     ]);
 
-    await insertEmployee(ids.full, 'Full');
+    await insertEmployee(ids.full, 'محمد');
     await insertEmployee(ids.leaver, 'Leaver', { exitDate: '2031-03-12', isActive: false, status: 'INACTIVE' });
     await insertEmployee(ids.joiner, 'Joiner', { joinDate: '2031-03-17' });
     await insertEmployee(ids.unpaid, 'Unpaid');
@@ -499,6 +499,8 @@ describe('Payroll pay basis, concurrency, visibility and attendance dates', () =
     const lines = extractPdfTextLines(pdf.contentBase64);
     // eslint-disable-next-line no-console
     expect(lines).toContain('Status: Paid');
+    expect(lines).toContain(`Name: محمد Payroll${suffix}`);
+    expect(lines.join('\n')).not.toMatch(/see employee record/);
     expect(lines).toContain('Payroll Period: March 2031 (1 – 31 Mar 2031)');
     expect(lines.some((line) => /^Generated at \d{1,2} \w{3} \d{4}, \d{2}:\d{2} \([A-Za-z_\/]+\)$/.test(line))).toBe(true);
     expect(lines.some((line) => /^Net Pay: [A-Z]{3} \d{1,3}(,\d{3})*\.\d{2}$/.test(line))).toBe(true);

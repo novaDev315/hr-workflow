@@ -25,6 +25,8 @@ COPY --from=deps /app/apps/backend/node_modules ./apps/backend/node_modules
 COPY --from=builder /app/apps/backend/dist ./apps/backend/dist
 # Versioned SQL migrations; dist/src/scripts/migrate.js resolves them as ../../../drizzle.
 COPY --from=builder /app/apps/backend/drizzle ./apps/backend/drizzle
+# Arabic PDF fonts; simple-pdf.ts resolves them as ../../../assets/fonts from dist/src/common.
+COPY --from=builder /app/apps/backend/assets ./apps/backend/assets
 COPY --from=builder /app/apps/backend/package.json ./apps/backend/package.json
 WORKDIR /app/apps/backend
 

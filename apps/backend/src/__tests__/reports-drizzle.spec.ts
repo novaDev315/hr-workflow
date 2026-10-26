@@ -103,7 +103,7 @@ describe('Reports Drizzle migration', () => {
     await database.drizzle.insert(employees).values({
       id: openEmployeeId,
       employeeNumber: `REO${suffix}`.slice(0, 24).toUpperCase(),
-      firstName: 'Reports',
+      firstName: 'محمد',
       lastName: `Clocked In ${suffix}`,
       email: `reports.open.${suffix}@example.test`,
       departmentId,
@@ -302,6 +302,7 @@ describe('Reports Drizzle migration', () => {
     expect(lines.some((line) => line.startsWith(`Reporting month: ${label} |`))).toBe(true);
     expect(lines.some((line) => /^Generated at \d{1,2} \w{3} \d{4}, \d{2}:\d{2} \([A-Za-z_\/]+\)$/.test(line))).toBe(true);
     expect(lines.some((line) => line.includes(`${departmentName}: 2 employees`))).toBe(true);
+    expect(flat).toContain(`محمد Clocked In ${suffix} (REO`);
     expect(flat).toMatch(/1 attendance day, 1\.00 overtime hours/);
     expect(flat).toMatch(/1 attendance day, 0\.00 overtime hours/);
     expect(flat).toMatch(/, 10 \w{3} \d{4} \(1 day\)/);
