@@ -1,6 +1,7 @@
 import { HttpException } from '@nestjs/common';
 import {
   getClientIp,
+  isTrustProxyEnabled,
   LOGIN_WINDOW_MS,
   LoginRateLimiter,
 } from './login-rate-limiter';
@@ -108,5 +109,17 @@ describe('getClientIp', () => {
   it('falls back to the socket address and tolerates a missing request', () => {
     expect(getClientIp({ socket: { remoteAddress: '::1' } }, true)).toBe('::1');
     expect(getClientIp(undefined, true)).toBeNull();
+  });
+});
+
+describe('isTrustProxyEnabled', () => {
+  it('accepts "true" and "1" and rejects everything else', () => {
+    expect(isTrustProxyEnabled('true')).toBe(true);
+    expect(isTrustProxyEnabled(' TRUE ')).toBe(true);
+    expect(isTrustProxyEnabled('1')).toBe(true);
+    expect(isTrustProxyEnabled('0')).toBe(false);
+    expect(isTrustProxyEnabled('false')).toBe(false);
+    expect(isTrustProxyEnabled('')).toBe(false);
+    expect(isTrustProxyEnabled(undefined)).toBe(false);
   });
 });

@@ -102,13 +102,18 @@ interface RequestLike {
   socket?: { remoteAddress?: string };
 }
 
+export function isTrustProxyEnabled(value: string | undefined): boolean {
+  const normalized = value?.trim().toLowerCase();
+  return normalized === 'true' || normalized === '1';
+}
+
 /**
  * Resolves the client IP. The first X-Forwarded-For hop is honored only when
- * TRUST_PROXY=true; otherwise the socket address is used.
+ * TRUST_PROXY is "true" or "1"; otherwise the socket address is used.
  */
 export function getClientIp(
   req: RequestLike | undefined,
-  trustProxy: boolean = process.env.TRUST_PROXY?.trim().toLowerCase() === 'true',
+  trustProxy: boolean = isTrustProxyEnabled(process.env.TRUST_PROXY),
 ): string | null {
   if (!req) {
     return null;
