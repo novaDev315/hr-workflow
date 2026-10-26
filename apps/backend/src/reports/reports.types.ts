@@ -118,6 +118,9 @@ export class ReportsDashboardType {
   @Field()
   accessScopeLabel: string;
 
+  @Field()
+  canViewPayroll: boolean;
+
   @Field(() => ReportsOverviewType)
   overview: ReportsOverviewType;
 

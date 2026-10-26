@@ -3,17 +3,27 @@ import {
   ForbiddenException,
   Injectable,
 } from '@nestjs/common';
-import { and, asc, desc, eq, gte, lte, or, sql, SQL } from 'drizzle-orm';
+import { and, asc, desc, eq, gte, isNotNull, lte, or, sql, SQL } from 'drizzle-orm';
 import { DatabaseService } from '../database/database.service';
 import { AuthenticatedUser } from '../common/current-user.decorator';
 import { ADMIN_ACCESS_ROLE_KEYS } from '../common/system-roles';
-import { createSimplePdf } from '../common/simple-pdf';
+import {
+  formatAmount,
+  formatDateRange,
+  formatIsoDate,
+  formatMoney,
+  formatPeriodMonth,
+  pluralize,
+} from '../common/document-format';
+import { createSimplePdf, personLabelForPdf } from '../common/simple-pdf';
 import {
   EmployeeVisibilityScope,
+  hasAccountManagerAccess,
   resolveEmployeeVisibilityScope,
 } from '../common/access-control';
 import {
   attendanceRecords,
+  companySettings,
   departments,
   designations,
   employees,
@@ -35,6 +45,9 @@ export class ReportsService {
     const { startDate, endDate } = this.getPeriodRange(normalizedMonth);
     const scope = await resolveEmployeeVisibilityScope(this.database, currentUser);
     const visibilityCondition = this.buildEmployeeVisibilityCondition(scope);
+    // Salary figures are restricted to ADMIN / HR_ADMIN; managers and supervisors
+    // would otherwise infer individual pay from small teams.
+    const canViewPayroll = hasAccountManagerAccess(currentUser.roles);
 
     const [
       activeEmployees,
@@ -53,17 +66,22 @@ export class ReportsService {
       this.countPendingLeaveRequests(visibilityCondition),
       this.countProcessedPayrollPeriods(visibilityCondition),
       this.countPublishedPolicies(),
-      this.sumMonthlyPayrollNetPay(normalizedMonth, visibilityCondition),
+      canViewPayroll
+        ? this.sumMonthlyPayrollNetPay(normalizedMonth, visibilityCondition)
+        : Promise.resolve(undefined),
       this.departmentHeadcount(visibilityCondition),
-      this.recentHires(visibilityCondition),
+      this.recentHires(endDate, visibilityCondition),
       this.attendanceSummary(startDate, endDate, visibilityCondition),
-      this.payrollDepartmentCosts(normalizedMonth, visibilityCondition),
+      canViewPayroll
+        ? this.payrollDepartmentCosts(normalizedMonth, visibilityCondition)
+        : Promise.resolve([]),
       this.pendingLeaveApprovals(visibilityCondition),
       this.publishedPolicyRows(),
     ]);
 
     return {
       accessScopeLabel: scope.label,
+      canViewPayroll,
       overview: {
         activeEmployees: Number(activeEmployees?.count ?? '0'),
         pendingLeaveRequests: Number(pendingLeaveRequests?.count ?? '0'),
@@ -83,9 +101,10 @@ export class ReportsService {
   async exportDashboardPdf(currentUser: AuthenticatedUser, periodMonth?: string) {
     const normalizedMonth = this.normalizePeriodMonth(periodMonth);
     const dashboard = await this.dashboard(currentUser, normalizedMonth);
+    const { companyName, timeZone, currencyCode } = await this.companyProfile();
     const pdf = createSimplePdf(
-      'HRFlow Operational Report',
-      `Reporting month: ${normalizedMonth} | Scope: ${dashboard.accessScopeLabel}`,
+      `${companyName} Operational Report`,
+      `Reporting month: ${formatPeriodMonth(normalizedMonth)} | Scope: ${dashboard.accessScopeLabel}`,
       [
         {
           heading: 'Overview',
@@ -94,13 +113,15 @@ export class ReportsService {
             `Pending Leave Requests: ${dashboard.overview.pendingLeaveRequests}`,
             `Processed Payroll Periods: ${dashboard.overview.processedPayrollPeriods}`,
             `Published Policies: ${dashboard.overview.publishedPolicies}`,
-            `Monthly Net Pay: ${dashboard.overview.monthlyPayrollNetPay.toFixed(2)}`,
+            ...(dashboard.canViewPayroll
+              ? [`Monthly Net Pay: ${formatMoney(dashboard.overview.monthlyPayrollNetPay, currencyCode)}`]
+              : []),
           ],
         },
         {
           heading: 'Department Headcount',
           lines: dashboard.departmentHeadcount.map(
-            (row) => `${row.departmentName}: ${row.employeeCount} employees`,
+            (row) => `${row.departmentName}: ${pluralize(row.employeeCount, 'employee')}`,
           ),
         },
         {
@@ -109,7 +130,7 @@ export class ReportsService {
             dashboard.attendanceSummary.length > 0
               ? dashboard.attendanceSummary.map(
                   (row) =>
-                    `${row.fullName} (${row.employeeNumber}) - ${row.attendanceDays} attendance days, ${row.overtimeHours.toFixed(2)} overtime hours`,
+                    `${personLabelForPdf(row.fullName, row.employeeNumber)} - ${pluralize(row.attendanceDays, 'attendance day')}, ${formatAmount(row.overtimeHours)} overtime hours`,
                 )
               : ['No attendance records found for this month.'],
         },
@@ -119,34 +140,57 @@ export class ReportsService {
             dashboard.pendingLeaveApprovals.length > 0
               ? dashboard.pendingLeaveApprovals.map(
                   (row) =>
-                    `${row.fullName} (${row.employeeNumber}) - ${row.leaveTypeName} from ${row.startDate} to ${row.endDate} for ${row.totalDays} day(s)`,
+                    `${personLabelForPdf(row.fullName, row.employeeNumber)} - ${row.leaveTypeName}, ${formatDateRange(row.startDate, row.endDate)} (${pluralize(row.totalDays, 'day')})`,
                 )
               : ['No pending leave approvals.'],
         },
-        {
-          heading: 'Payroll Cost By Department',
-          lines: dashboard.payrollDepartmentCosts.map(
-            (row) =>
-              `${row.departmentName}: ${row.payslipCount} payslips, total net pay ${row.totalNetPay.toFixed(2)}`,
-          ),
-        },
+        ...(dashboard.canViewPayroll
+          ? [
+              {
+                heading: 'Payroll Cost By Department',
+                lines: dashboard.payrollDepartmentCosts.map(
+                  (row) =>
+                    `${row.departmentName}: ${pluralize(row.payslipCount, 'payslip')}, total net pay ${formatMoney(row.totalNetPay, currencyCode)}`,
+                ),
+              },
+            ]
+          : []),
         {
           heading: 'Published Policies',
           lines:
             dashboard.publishedPolicies.length > 0
               ? dashboard.publishedPolicies.map(
                   (row) =>
-                    `${row.title} (${row.category}) v${row.version} effective ${row.effectiveDate}`,
+                    `${row.title} (${row.category}) v${row.version} effective ${formatIsoDate(row.effectiveDate)}`,
                 )
               : ['No published policies found.'],
         },
       ],
+      { timeZone },
     );
 
     return {
       fileName: `reports-${normalizedMonth}.pdf`,
       mimeType: 'application/pdf',
       contentBase64: pdf.toString('base64'),
+    };
+  }
+
+  private async companyProfile() {
+    const [row] = await this.database.drizzle
+      .select({
+        companyName: companySettings.companyName,
+        timeZone: companySettings.timezone,
+        currencyCode: companySettings.currencyCode,
+      })
+      .from(companySettings)
+      .where(eq(companySettings.singletonKey, 'default'))
+      .limit(1);
+
+    return {
+      companyName: row?.companyName?.trim() || 'HRFlow Pro',
+      timeZone: row?.timeZone ?? null,
+      currencyCode: row?.currencyCode ?? 'AED',
     };
   }
 
@@ -209,7 +253,9 @@ export class ReportsService {
     visibilityCondition?: SQL,
   ) {
     const [row] = await this.database.drizzle
-      .select({ total: sql<string>`COALESCE(SUM(${payslips.netPay}), 0)::text` })
+      .select({
+        total: sql<string>`COALESCE(ROUND(SUM(${payslips.netPay})::numeric, 2), 0)::float8::text`,
+      })
       .from(payslips)
       .innerJoin(payrollPeriods, eq(payrollPeriods.id, payslips.payrollPeriodId))
       .innerJoin(employees, eq(employees.id, payslips.employeeId))
@@ -243,7 +289,12 @@ export class ReportsService {
       .orderBy(sql`COUNT(${employees.id}) DESC`, asc(departments.name));
   }
 
-  private async recentHires(visibilityCondition?: SQL) {
+  private async recentHires(monthEndDate: string, visibilityCondition?: SQL) {
+    // Hires within the 90 days ending at the selected month's end.
+    const windowStart = new Date(Date.parse(`${monthEndDate}T00:00:00.000Z`));
+    windowStart.setUTCDate(windowStart.getUTCDate() - 89);
+    const windowStartDate = windowStart.toISOString().slice(0, 10);
+
     return this.database.drizzle
       .select({
         employeeNumber: employees.employeeNumber,
@@ -255,7 +306,13 @@ export class ReportsService {
       .from(employees)
       .innerJoin(departments, eq(departments.id, employees.departmentId))
       .innerJoin(designations, eq(designations.id, employees.designationId))
-      .where(visibilityCondition)
+      .where(
+        this.combineConditions(
+          gte(employees.joinDate, windowStartDate),
+          lte(employees.joinDate, monthEndDate),
+          visibilityCondition,
+        ),
+      )
       .orderBy(desc(employees.joinDate))
       .limit(8);
   }
@@ -269,8 +326,10 @@ export class ReportsService {
       .select({
         employeeNumber: employees.employeeNumber,
         fullName: sql<string>`CONCAT(${employees.firstName}, ' ', ${employees.lastName})`,
-        attendanceDays: sql<number>`COUNT(${attendanceRecords.id})::float`,
-        overtimeHours: sql<number>`COALESCE(SUM(${attendanceRecords.overtimeHours}), 0)`,
+        // A day counts once the employee has clocked in (open or completed);
+        // hours stay based on completed records only.
+        attendanceDays: sql<number>`COUNT(DISTINCT ${attendanceRecords.attendanceDate})::float`,
+        overtimeHours: sql<number>`COALESCE(SUM(${attendanceRecords.overtimeHours}) FILTER (WHERE ${attendanceRecords.status} = 'COMPLETED'), 0)`,
       })
       .from(employees)
       .leftJoin(
@@ -279,17 +338,14 @@ export class ReportsService {
           eq(attendanceRecords.employeeId, employees.id),
           gte(attendanceRecords.attendanceDate, startDate),
           lte(attendanceRecords.attendanceDate, endDate),
-          or(
-            eq(attendanceRecords.status, 'COMPLETED'),
-            eq(attendanceRecords.status, 'CLOCKED_IN'),
-          ),
+          isNotNull(attendanceRecords.clockInAt),
         ),
       )
       .where(this.combineConditions(eq(employees.isActive, true), visibilityCondition))
       .groupBy(employees.id)
       .orderBy(
-        sql`COUNT(${attendanceRecords.id}) DESC`,
-        sql`SUM(${attendanceRecords.overtimeHours}) DESC NULLS LAST`,
+        sql`COUNT(DISTINCT ${attendanceRecords.attendanceDate}) DESC`,
+        sql`SUM(${attendanceRecords.overtimeHours}) FILTER (WHERE ${attendanceRecords.status} = 'COMPLETED') DESC NULLS LAST`,
         asc(employees.lastName),
       )
       .limit(10);
@@ -303,22 +359,25 @@ export class ReportsService {
       .select({
         departmentName: departments.name,
         payslipCount: sql<number>`COUNT(${payslips.id})::int`,
-        totalNetPay: sql<number>`COALESCE(SUM(${payslips.netPay}), 0)`,
+        totalNetPay: sql<number>`COALESCE(ROUND(SUM(${payslips.netPay})::numeric, 2), 0)::float8`,
       })
       .from(departments)
       .leftJoin(employees, eq(employees.departmentId, departments.id))
-      .leftJoin(payslips, eq(payslips.employeeId, employees.id))
+      .leftJoin(payrollPeriods, eq(payrollPeriods.periodMonth, periodMonth))
       .leftJoin(
-        payrollPeriods,
+        payslips,
         and(
-          eq(payrollPeriods.id, payslips.payrollPeriodId),
-          eq(payrollPeriods.periodMonth, periodMonth),
+          eq(payslips.employeeId, employees.id),
+          eq(payslips.payrollPeriodId, payrollPeriods.id),
         ),
       )
       .where(visibilityCondition)
       .groupBy(departments.id)
       .having(sql`COUNT(${employees.id}) > 0`)
-      .orderBy(sql`COALESCE(SUM(${payslips.netPay}), 0) DESC`, asc(departments.name));
+      .orderBy(
+        sql`COALESCE(ROUND(SUM(${payslips.netPay})::numeric, 2), 0) DESC`,
+        asc(departments.name),
+      );
   }
 
   private async pendingLeaveApprovals(visibilityCondition?: SQL) {

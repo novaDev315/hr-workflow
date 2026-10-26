@@ -10,6 +10,7 @@ import {
   MarkPayrollPeriodPaidInput,
   PayslipFilterInput,
   PayslipType,
+  PayrollPeriodPreviewType,
   PayrollPeriodType,
   ProcessPayrollPeriodInput,
   UpsertEmployeeCompensationInput,
@@ -29,6 +30,14 @@ export class PayrollResolver {
   @Query(() => [PayrollPeriodType], { name: 'payrollPeriods' })
   async payrollPeriods(@CurrentUser() currentUser: AuthenticatedUser) {
     return this.payrollService.payrollPeriods(currentUser);
+  }
+
+  @Query(() => PayrollPeriodPreviewType, { name: 'payrollPeriodPreview' })
+  async payrollPeriodPreview(
+    @CurrentUser() currentUser: AuthenticatedUser,
+    @Args('payrollPeriodId', { type: () => String }) payrollPeriodId: string,
+  ) {
+    return this.payrollService.payrollPeriodPreview(currentUser, payrollPeriodId);
   }
 
   @Query(() => [PayslipType], { name: 'payslips' })

@@ -6,8 +6,8 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { randomUUID } from 'crypto';
-import { and, asc, desc, eq, gte, lte, or, sql, SQL } from 'drizzle-orm';
-import { DatabaseService } from '../database/database.service';
+import { and, asc, desc, eq, gte, isNotNull, isNull, lte, or, sql, SQL } from 'drizzle-orm';
+import { AppDrizzleDatabase, DatabaseService } from '../database/database.service';
 import { AuthenticatedUser } from '../common/current-user.decorator';
 import {
   ACCOUNT_MANAGER_ROLE_KEYS,
@@ -20,7 +20,14 @@ import {
   ProcessPayrollPeriodInput,
   UpsertEmployeeCompensationInput,
 } from './payroll.types';
-import { createSimplePdf } from '../common/simple-pdf';
+import {
+  formatDateRange,
+  formatMoney,
+  formatPeriodMonth,
+  humanizeStatus,
+} from '../common/document-format';
+import { createSimplePdf, describeNameForPdf } from '../common/simple-pdf';
+import { calculatePayrollRun, PayrollEmployeeInput } from './payroll-calculator';
 import { hasAccountManagerAccess } from '../common/access-control';
 import {
   attendanceRecords,
@@ -28,6 +35,7 @@ import {
   employeeCompensations,
   employees as employeesTable,
   leaveRequests,
+  leaveTypes,
   payrollPeriods as payrollPeriodsTable,
   payslips as payslipsTable,
   users,
@@ -85,6 +93,7 @@ interface PayslipExportRow extends PayslipRow {
   startDate: string;
   endDate: string;
   companyName: string | null;
+  periodStatus: string;
 }
 
 @Injectable()
@@ -212,120 +221,75 @@ export class PayrollService {
     return this.findPayrollPeriod(created.id);
   }
 
+  async payrollPeriodPreview(
+    currentUser: AuthenticatedUser,
+    payrollPeriodId: string,
+  ) {
+    this.assertCanManagePayroll(currentUser.roles);
+
+    const period = await this.getRawPayrollPeriod(payrollPeriodId);
+    const run = await this.buildPayrollRun(this.database.drizzle, {
+      id: period.id,
+      periodMonth: period.periodMonth,
+      startDate: period.startDate,
+      endDate: period.endDate,
+      status: period.status,
+    });
+
+    return {
+      periodMonth: period.periodMonth,
+      employeeCount: run.employeeCount,
+      missingCompensationCount: run.missingCompensationCount,
+      missingCompensationNames: run.missingCompensationNames,
+      estimatedGross: run.estimatedGross,
+      estimatedNet: run.estimatedNet,
+      currencyCode: run.currencyCode,
+      warnings: run.warnings,
+    };
+  }
+
   async processPayrollPeriod(
     currentUser: AuthenticatedUser,
     input: ProcessPayrollPeriodInput,
   ) {
     this.assertCanManagePayroll(currentUser.roles);
 
-    const period = await this.getRawPayrollPeriod(input.payrollPeriodId);
-    if (period.status === 'PAID') {
-      throw new BadRequestException('Paid payroll periods cannot be reprocessed');
-    }
+    const periodId = await this.database.drizzle.transaction(async (tx) => {
+      // Row lock serialises Process / Mark Paid / Delete on the same period.
+      const period = await this.lockPayrollPeriod(tx as unknown as AppDrizzleDatabase, input.payrollPeriodId);
+      if (period.status === 'PAID') {
+        throw new BadRequestException('Paid payroll periods cannot be reprocessed');
+      }
 
-    const compensatedEmployees = await this.database.drizzle
-      .select({
-        compensationId: employeeCompensations.id,
-        employeeId: employeeCompensations.employeeId,
-        baseSalary: employeeCompensations.baseSalary,
-        allowanceAmount: employeeCompensations.allowanceAmount,
-        deductionAmount: employeeCompensations.deductionAmount,
-        currencyCode: employeeCompensations.currencyCode,
-        employeeNumber: employeesTable.employeeNumber,
-        employeeName: sql<string>`CONCAT(${employeesTable.firstName}, ' ', ${employeesTable.lastName})`,
-      })
-      .from(employeeCompensations)
-      .innerJoin(
-        employeesTable,
-        eq(employeesTable.id, employeeCompensations.employeeId),
-      )
-      .where(eq(employeesTable.isActive, true))
-      .orderBy(asc(employeesTable.lastName), asc(employeesTable.firstName));
+      const run = await this.buildPayrollRun(tx as unknown as AppDrizzleDatabase, period);
+      if (run.payslips.length === 0) {
+        throw new BadRequestException(
+          'At least one employee compensation profile is required before processing payroll',
+        );
+      }
 
-    if (compensatedEmployees.length === 0) {
-      throw new BadRequestException(
-        'At least one employee compensation profile is required before processing payroll',
-      );
-    }
-
-    const expectedWorkdays = this.countWeekdays(period.startDate, period.endDate);
-
-    await this.database.drizzle.transaction(async (tx) => {
       await tx
         .delete(payslipsTable)
         .where(eq(payslipsTable.payrollPeriodId, period.id));
 
-      for (const employee of compensatedEmployees) {
-        const [attendance] = await tx
-          .select({
-            attendedDays: sql<string>`COUNT(*)::text`,
-          })
-          .from(attendanceRecords)
-          .where(
-            and(
-              eq(attendanceRecords.employeeId, employee.employeeId),
-              gte(attendanceRecords.attendanceDate, period.startDate),
-              lte(attendanceRecords.attendanceDate, period.endDate),
-              or(
-                eq(attendanceRecords.status, 'COMPLETED'),
-                eq(attendanceRecords.status, 'CLOCKED_IN'),
-              ),
-            ),
-          );
-
-        const [approvedLeave] = await tx
-          .select({
-            approvedLeaveDays: sql<string>`COALESCE(SUM(${leaveRequests.totalDays}), 0)::text`,
-          })
-          .from(leaveRequests)
-          .where(
-            and(
-              eq(leaveRequests.employeeId, employee.employeeId),
-              eq(leaveRequests.status, 'APPROVED'),
-              lte(leaveRequests.startDate, period.endDate),
-              gte(leaveRequests.endDate, period.startDate),
-            ),
-          );
-
-        const attendedDays = Number(attendance?.attendedDays ?? '0');
-        const approvedLeaveDays = Number(approvedLeave?.approvedLeaveDays ?? '0');
-        const paidDays = Number(
-          Math.min(expectedWorkdays, attendedDays + approvedLeaveDays).toFixed(2),
-        );
-        const unpaidDays = Number(Math.max(expectedWorkdays - paidDays, 0).toFixed(2));
-        const proratedBaseSalary = this.toMoney(
-          expectedWorkdays > 0
-            ? (employee.baseSalary * paidDays) / expectedWorkdays
-            : employee.baseSalary,
-        );
-        const attendanceDeduction = this.toMoney(
-          Math.max(employee.baseSalary - proratedBaseSalary, 0),
-        );
-        const grossPay = this.toMoney(employee.baseSalary + employee.allowanceAmount);
-        const netPay = this.toMoney(
-          Math.max(
-            grossPay - employee.deductionAmount - attendanceDeduction,
-            0,
-          ),
-        );
-
+      for (const payslip of run.payslips) {
         await tx.insert(payslipsTable).values({
           id: randomUUID(),
           payrollPeriodId: period.id,
-          employeeId: employee.employeeId,
-          expectedWorkdays,
-          attendedDays,
-          approvedLeaveDays,
-          paidDays,
-          unpaidDays,
-          baseSalary: employee.baseSalary,
-          proratedBaseSalary,
-          allowanceAmount: employee.allowanceAmount,
-          deductionAmount: employee.deductionAmount,
-          attendanceDeduction,
-          grossPay,
-          netPay,
-          currencyCode: employee.currencyCode,
+          employeeId: payslip.employeeId,
+          expectedWorkdays: payslip.expectedWorkdays,
+          attendedDays: payslip.attendedDays,
+          approvedLeaveDays: payslip.approvedLeaveDays,
+          paidDays: payslip.paidDays,
+          unpaidDays: payslip.unpaidDays,
+          baseSalary: payslip.baseSalary,
+          proratedBaseSalary: payslip.proratedBaseSalary,
+          allowanceAmount: payslip.allowanceAmount,
+          deductionAmount: payslip.deductionAmount,
+          attendanceDeduction: payslip.attendanceDeduction,
+          grossPay: payslip.grossPay,
+          netPay: payslip.netPay,
+          currencyCode: payslip.currencyCode,
           status: 'GENERATED',
         });
       }
@@ -338,9 +302,11 @@ export class PayrollService {
           updatedAt: sql`NOW()`,
         })
         .where(eq(payrollPeriodsTable.id, period.id));
+
+      return period.id;
     });
 
-    return this.findPayrollPeriod(period.id);
+    return this.findPayrollPeriod(periodId);
   }
 
   async markPayrollPeriodPaid(
@@ -349,12 +315,12 @@ export class PayrollService {
   ) {
     this.assertCanManagePayroll(currentUser.roles);
 
-    const period = await this.getRawPayrollPeriod(input.payrollPeriodId);
-    if (period.status !== 'PROCESSED') {
-      throw new BadRequestException('Only processed payroll periods can be marked as paid');
-    }
+    const periodId = await this.database.drizzle.transaction(async (tx) => {
+      const period = await this.lockPayrollPeriod(tx as unknown as AppDrizzleDatabase, input.payrollPeriodId);
+      if (period.status !== 'PROCESSED') {
+        throw new BadRequestException('Only processed payroll periods can be marked as paid');
+      }
 
-    await this.database.drizzle.transaction(async (tx) => {
       await tx
         .update(payrollPeriodsTable)
         .set({
@@ -368,9 +334,11 @@ export class PayrollService {
         .update(payslipsTable)
         .set({ status: 'PAID' })
         .where(eq(payslipsTable.payrollPeriodId, period.id));
+
+      return period.id;
     });
 
-    return this.findPayrollPeriod(period.id);
+    return this.findPayrollPeriod(periodId);
   }
 
   async deletePayrollPeriod(
@@ -378,13 +346,14 @@ export class PayrollService {
     input: DeletePayrollPeriodInput,
   ) {
     this.assertCanManagePayroll(currentUser.roles);
-    const period = await this.getRawPayrollPeriod(input.payrollPeriodId);
-
-    if (period.status === 'PAID') {
-      throw new BadRequestException('Paid payroll periods cannot be deleted');
-    }
 
     await this.database.drizzle.transaction(async (tx) => {
+      const period = await this.lockPayrollPeriod(tx as unknown as AppDrizzleDatabase, input.payrollPeriodId);
+
+      if (period.status === 'PAID') {
+        throw new BadRequestException('Paid payroll periods cannot be deleted');
+      }
+
       await tx
         .delete(payslipsTable)
         .where(eq(payslipsTable.payrollPeriodId, period.id));
@@ -406,6 +375,11 @@ export class PayrollService {
 
     if (scopedEmployeeId) {
       where.push(eq(payslipsTable.employeeId, scopedEmployeeId));
+    }
+
+    // Employees only see payslips once payroll for the period is final.
+    if (!this.canViewPayrollAcrossEmployees(currentUser.roles)) {
+      where.push(eq(payrollPeriodsTable.status, 'PAID'));
     }
 
     if (filter?.payrollPeriodId) {
@@ -448,17 +422,24 @@ export class PayrollService {
 
     await this.resolveEmployeeScopeForPayslips(currentUser, row.employeeId);
 
+    if (
+      !this.canViewPayrollAcrossEmployees(currentUser.roles) &&
+      row.periodStatus !== 'PAID'
+    ) {
+      throw new NotFoundException('Payslip not found');
+    }
+
     const pdf = createSimplePdf(
-      `${row.companyName ?? 'HRFlow'} Payslip`,
-      `${row.periodMonth} payroll statement`,
+      `${row.companyName ?? 'HRFlow Pro'} Payslip`,
+      `${formatPeriodMonth(row.periodMonth)} payroll statement`,
       [
         {
           heading: 'Employee',
           lines: [
-            `Name: ${row.employeeName}`,
+            describeNameForPdf('Name', row.employeeName, row.employeeNumber),
             `Employee Number: ${row.employeeNumber}`,
-            `Payroll Period: ${row.periodMonth} (${row.startDate} to ${row.endDate})`,
-            `Status: ${row.status}`,
+            `Payroll Period: ${formatPeriodMonth(row.periodMonth)} (${formatDateRange(row.startDate, row.endDate)})`,
+            `Status: ${humanizeStatus(row.status)}`,
           ],
         },
         {
@@ -474,16 +455,17 @@ export class PayrollService {
         {
           heading: 'Earnings And Deductions',
           lines: [
-            `Base Salary: ${row.currencyCode} ${row.baseSalary.toFixed(2)}`,
-            `Prorated Base Salary: ${row.currencyCode} ${row.proratedBaseSalary.toFixed(2)}`,
-            `Allowance Amount: ${row.currencyCode} ${row.allowanceAmount.toFixed(2)}`,
-            `Fixed Deductions: ${row.currencyCode} ${row.deductionAmount.toFixed(2)}`,
-            `Attendance Deduction: ${row.currencyCode} ${row.attendanceDeduction.toFixed(2)}`,
-            `Gross Pay: ${row.currencyCode} ${row.grossPay.toFixed(2)}`,
-            `Net Pay: ${row.currencyCode} ${row.netPay.toFixed(2)}`,
+            `Base Salary: ${formatMoney(row.baseSalary, row.currencyCode)}`,
+            `Prorated Base Salary: ${formatMoney(row.proratedBaseSalary, row.currencyCode)}`,
+            `Allowance Amount: ${formatMoney(row.allowanceAmount, row.currencyCode)}`,
+            `Fixed Deductions: ${formatMoney(row.deductionAmount, row.currencyCode)}`,
+            `Attendance Deduction: ${formatMoney(row.attendanceDeduction, row.currencyCode)}`,
+            `Gross Pay: ${formatMoney(row.grossPay, row.currencyCode)}`,
+            `Net Pay: ${formatMoney(row.netPay, row.currencyCode)}`,
           ],
         },
       ],
+      { timeZone: row.companyTimeZone },
     );
 
     return {
@@ -540,6 +522,138 @@ export class PayrollService {
     }
 
     return row;
+  }
+
+  private async lockPayrollPeriod(tx: AppDrizzleDatabase, id: string) {
+    const result = await tx.execute(sql`
+      SELECT
+        id,
+        period_month AS "periodMonth",
+        start_date::text AS "startDate",
+        end_date::text AS "endDate",
+        status
+      FROM payroll_periods
+      WHERE id = ${id}
+      FOR UPDATE
+    `);
+    const row = result.rows[0] as
+      | { id: string; periodMonth: string; startDate: string; endDate: string; status: string }
+      | undefined;
+
+    if (!row) {
+      throw new NotFoundException('Payroll period not found');
+    }
+
+    return row;
+  }
+
+  /**
+   * Loads employment, compensation, leave and attendance facts for a period and
+   * feeds them to the pure calculator. Read-only; shared by process and preview.
+   */
+  private async buildPayrollRun(
+    db: AppDrizzleDatabase,
+    period: { id: string; periodMonth: string; startDate: string; endDate: string; status: string },
+  ) {
+    const cohort = await db
+      .select({
+        employeeId: employeesTable.id,
+        employeeNumber: employeesTable.employeeNumber,
+        employeeName: sql<string>`CONCAT(${employeesTable.firstName}, ' ', ${employeesTable.lastName})`,
+        joinDate: sql<string>`${employeesTable.joinDate}::text`,
+        exitDate: sql<string | null>`${employeesTable.exitDate}::text`,
+        compensationId: employeeCompensations.id,
+        baseSalary: employeeCompensations.baseSalary,
+        allowanceAmount: employeeCompensations.allowanceAmount,
+        deductionAmount: employeeCompensations.deductionAmount,
+        currencyCode: employeeCompensations.currencyCode,
+      })
+      .from(employeesTable)
+      .leftJoin(
+        employeeCompensations,
+        eq(employeeCompensations.employeeId, employeesTable.id),
+      )
+      .where(
+        and(
+          lte(employeesTable.joinDate, period.endDate),
+          or(isNull(employeesTable.exitDate), gte(employeesTable.exitDate, period.startDate)),
+          // Deactivated staff without an exit date are not on payroll; leavers keep
+          // their final month because they carry an exit date.
+          or(eq(employeesTable.isActive, true), isNotNull(employeesTable.exitDate)),
+        ),
+      )
+      .orderBy(asc(employeesTable.lastName), asc(employeesTable.firstName));
+
+    const attendanceRows = await db
+      .select({
+        employeeId: attendanceRecords.employeeId,
+        days: sql<string>`COUNT(*)::text`,
+      })
+      .from(attendanceRecords)
+      .where(
+        and(
+          gte(attendanceRecords.attendanceDate, period.startDate),
+          lte(attendanceRecords.attendanceDate, period.endDate),
+          eq(attendanceRecords.status, 'COMPLETED'),
+        ),
+      )
+      .groupBy(attendanceRecords.employeeId);
+    const attendedByEmployee = new Map(
+      attendanceRows.map((row) => [row.employeeId, Number(row.days)]),
+    );
+
+    const leaveRows = await db
+      .select({
+        employeeId: leaveRequests.employeeId,
+        startDate: sql<string>`${leaveRequests.startDate}::text`,
+        endDate: sql<string>`${leaveRequests.endDate}::text`,
+        isPaid: leaveTypes.isPaid,
+      })
+      .from(leaveRequests)
+      .innerJoin(leaveTypes, eq(leaveTypes.id, leaveRequests.leaveTypeId))
+      .where(
+        and(
+          eq(leaveRequests.status, 'APPROVED'),
+          lte(leaveRequests.startDate, period.endDate),
+          gte(leaveRequests.endDate, period.startDate),
+        ),
+      );
+    const leavesByEmployee = new Map<string, typeof leaveRows>();
+    for (const row of leaveRows) {
+      const list = leavesByEmployee.get(row.employeeId) ?? [];
+      list.push(row);
+      leavesByEmployee.set(row.employeeId, list);
+    }
+
+    const compensated: PayrollEmployeeInput[] = [];
+    const missing: Array<{ employeeNumber: string; employeeName: string }> = [];
+
+    for (const row of cohort) {
+      if (row.compensationId === null || row.baseSalary === null) {
+        missing.push({ employeeNumber: row.employeeNumber, employeeName: row.employeeName });
+        continue;
+      }
+
+      const leaves = leavesByEmployee.get(row.employeeId) ?? [];
+      compensated.push({
+        employeeId: row.employeeId,
+        employeeNumber: row.employeeNumber,
+        employeeName: row.employeeName,
+        joinDate: row.joinDate,
+        exitDate: row.exitDate,
+        baseSalary: row.baseSalary,
+        allowanceAmount: row.allowanceAmount ?? 0,
+        deductionAmount: row.deductionAmount ?? 0,
+        currencyCode: row.currencyCode ?? 'AED',
+        approvedLeaves: leaves,
+        unpaidLeaves: leaves.filter((leave) => !leave.isPaid),
+        attendedDays: attendedByEmployee.get(row.employeeId) ?? 0,
+      });
+    }
+
+    return calculatePayrollRun(period, compensated, missing, {
+      periodStatus: period.status,
+    });
   }
 
   private async findPayrollPeriod(id: string) {
@@ -614,7 +728,7 @@ export class PayrollService {
       processedAt: sql<string | null>`${payrollPeriodsTable.processedAt}::text`,
       paidAt: sql<string | null>`${payrollPeriodsTable.paidAt}::text`,
       payslipCount: sql<number>`COUNT(${payslipsTable.id})::int`,
-      totalNetPay: sql<number>`COALESCE(SUM(${payslipsTable.netPay}), 0)`,
+      totalNetPay: sql<number>`COALESCE(ROUND(SUM(${payslipsTable.netPay})::numeric, 2), 0)::float8`,
     };
   }
 
@@ -648,10 +762,17 @@ export class PayrollService {
       ...this.payslipSelectFields(),
       startDate: sql<string>`${payrollPeriodsTable.startDate}::text`,
       endDate: sql<string>`${payrollPeriodsTable.endDate}::text`,
+      periodStatus: payrollPeriodsTable.status,
+      companyTimeZone: sql<string | null>`(
+        SELECT ${companySettings.timezone}
+        FROM ${companySettings}
+        WHERE ${companySettings.singletonKey} = 'default'
+        LIMIT 1
+      )`,
       companyName: sql<string | null>`(
         SELECT ${companySettings.companyName}
         FROM ${companySettings}
-        WHERE ${companySettings.singletonKey} = 'primary'
+        WHERE ${companySettings.singletonKey} = 'default'
         LIMIT 1
       )`,
     };
@@ -671,26 +792,6 @@ export class PayrollService {
     const endDate = end.toISOString().slice(0, 10);
 
     return { startDate, endDate };
-  }
-
-  private countWeekdays(startDate: string, endDate: string) {
-    let count = 0;
-    const cursor = new Date(`${startDate}T00:00:00.000Z`);
-    const end = new Date(`${endDate}T00:00:00.000Z`);
-
-    while (cursor <= end) {
-      const day = cursor.getUTCDay();
-      if (day !== 0 && day !== 6) {
-        count += 1;
-      }
-      cursor.setUTCDate(cursor.getUTCDate() + 1);
-    }
-
-    return count;
-  }
-
-  private toMoney(value: number) {
-    return Number(value.toFixed(2));
   }
 
   private mapEmployeeCompensation(row: EmployeeCompensationRow) {

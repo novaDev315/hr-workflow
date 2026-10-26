@@ -429,16 +429,17 @@ describe('Mobile self-service flows', () => {
     const selectedLeaveType = leaveTypes.leaveTypes[0];
     expect(selectedLeaveType).toBeDefined();
 
+    // Leave days now exclude weekends, so request a Monday-Tuesday (2 working days).
     const nextMonth = new Date();
-    nextMonth.setUTCMonth(nextMonth.getUTCMonth() + 1);
-    const leaveStartDate = new Date(
+    nextMonth.setUTCMonth(nextMonth.getUTCMonth() + 1, 1);
+    const firstMonday = new Date(
       Date.UTC(nextMonth.getUTCFullYear(), nextMonth.getUTCMonth(), 5),
-    )
-      .toISOString()
-      .slice(0, 10);
-    const leaveEndDate = new Date(
-      Date.UTC(nextMonth.getUTCFullYear(), nextMonth.getUTCMonth(), 6),
-    )
+    );
+    while (firstMonday.getUTCDay() !== 1) {
+      firstMonday.setUTCDate(firstMonday.getUTCDate() + 1);
+    }
+    const leaveStartDate = firstMonday.toISOString().slice(0, 10);
+    const leaveEndDate = new Date(firstMonday.getTime() + 24 * 60 * 60 * 1000)
       .toISOString()
       .slice(0, 10);
 
@@ -471,7 +472,11 @@ describe('Mobile self-service flows', () => {
     expect(leaveRequest.requestLeave.totalDays).toBe(2);
 
     const leaveBalances = await graphqlRequest<{
-      leaveBalances: Array<{ leaveType: { id: string }; availableDays: number }>;
+      leaveBalances: Array<{
+        leaveType: { id: string };
+        pendingDays: number;
+        availableDays: number;
+      }>;
     }>(
       `
         query LeaveBalances($employeeId: ID!) {
@@ -479,6 +484,7 @@ describe('Mobile self-service flows', () => {
             leaveType {
               id
             }
+            pendingDays
             availableDays
           }
         }
@@ -574,29 +580,49 @@ describe('Mobile self-service flows', () => {
       adminToken,
     );
 
-    const payslips = await graphqlRequest<{
+    const payslipsQuery = `
+      query Payslips($filter: PayslipFilterInput) {
+        payslips(filter: $filter) {
+          id
+          employeeId
+          periodMonth
+          netPay
+        }
+      }
+    `;
+    type PayslipsResult = {
       payslips: Array<{
         id: string;
         employeeId: string;
         periodMonth: string;
         netPay: number;
       }>;
-    }>(
+    };
+
+    // Employees only see payslips once the period is marked paid.
+    const unpaidPayslips = await graphqlRequest<PayslipsResult>(
+      payslipsQuery,
+      { filter: { payrollPeriodId } },
+      employeeToken,
+    );
+    expect(unpaidPayslips.payslips).toHaveLength(0);
+
+    await graphqlRequest(
       `
-        query Payslips($filter: PayslipFilterInput) {
-          payslips(filter: $filter) {
+        mutation MarkPayrollPeriodPaid($input: MarkPayrollPeriodPaidInput!) {
+          markPayrollPeriodPaid(input: $input) {
             id
-            employeeId
-            periodMonth
-            netPay
+            status
           }
         }
       `,
-      {
-        filter: {
-          payrollPeriodId,
-        },
-      },
+      { input: { payrollPeriodId } },
+      adminToken,
+    );
+
+    const payslips = await graphqlRequest<PayslipsResult>(
+      payslipsQuery,
+      { filter: { payrollPeriodId } },
       employeeToken,
     );
 

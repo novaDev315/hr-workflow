@@ -146,6 +146,33 @@ export class PayslipType {
   employee: PayrollEmployeeType;
 }
 
+@ObjectType()
+export class PayrollPeriodPreviewType {
+  @Field()
+  periodMonth: string;
+
+  @Field(() => Int)
+  employeeCount: number;
+
+  @Field(() => Int)
+  missingCompensationCount: number;
+
+  @Field(() => [String])
+  missingCompensationNames: string[];
+
+  @Field(() => Float)
+  estimatedGross: number;
+
+  @Field(() => Float)
+  estimatedNet: number;
+
+  @Field()
+  currencyCode: string;
+
+  @Field(() => [String])
+  warnings: string[];
+}
+
 @InputType()
 export class UpsertEmployeeCompensationInput {
   @Field()

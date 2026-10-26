@@ -1,7 +1,7 @@
 import { ConfigModule } from '@nestjs/config';
 import { TestingModule, Test } from '@nestjs/testing';
 import { randomUUID } from 'crypto';
-import { eq } from 'drizzle-orm';
+import { eq, inArray } from 'drizzle-orm';
 
 import { AuthenticatedUser } from '../common/current-user.decorator';
 import { DatabaseModule } from '../database/database.module';
@@ -19,6 +19,7 @@ import {
   policyDocuments,
 } from '../database/drizzle/schema';
 import { ReportsService } from '../reports/reports.service';
+import { extractPdfTextLines } from './helpers/pdf-text';
 
 jest.setTimeout(180000);
 
@@ -37,6 +38,8 @@ describe('Reports Drizzle migration', () => {
   const leaveTypeId = randomUUID();
   const leaveRequestId = randomUUID();
   const attendanceId = randomUUID();
+  const openEmployeeId = randomUUID();
+  const openAttendanceId = randomUUID();
   const payrollPeriodId = randomUUID();
   const payslipId = randomUUID();
   const policyDocumentId = randomUUID();
@@ -97,6 +100,20 @@ describe('Reports Drizzle migration', () => {
       isActive: true,
     });
 
+    await database.drizzle.insert(employees).values({
+      id: openEmployeeId,
+      employeeNumber: `REO${suffix}`.slice(0, 24).toUpperCase(),
+      firstName: 'Reports',
+      lastName: `Clocked In ${suffix}`,
+      email: `reports.open.${suffix}@example.test`,
+      departmentId,
+      designationId,
+      employmentType: 'FULL_TIME',
+      joinDate: `${periodMonth}-01`,
+      status: 'ACTIVE',
+      isActive: true,
+    });
+
     await database.drizzle.insert(leaveTypes).values({
       id: leaveTypeId,
       code: `REP_LT_${suffix}`.slice(0, 24).toUpperCase(),
@@ -141,6 +158,15 @@ describe('Reports Drizzle migration', () => {
       regularHours: 8,
       overtimeHours: 1,
       status: 'COMPLETED',
+    });
+
+    await database.drizzle.insert(attendanceRecords).values({
+      id: openAttendanceId,
+      employeeId: openEmployeeId,
+      locationId,
+      attendanceDate: `${periodMonth}-12`,
+      clockInAt: new Date(`${periodMonth}-12T08:00:00.000Z`),
+      status: 'CLOCKED_IN',
     });
 
     await database.drizzle.insert(payrollPeriods).values({
@@ -192,7 +218,7 @@ describe('Reports Drizzle migration', () => {
         .where(eq(payrollPeriods.id, payrollPeriodId));
       await database.drizzle
         .delete(attendanceRecords)
-        .where(eq(attendanceRecords.id, attendanceId));
+        .where(inArray(attendanceRecords.id, [attendanceId, openAttendanceId]));
       await database.drizzle.delete(locations).where(eq(locations.id, locationId));
       await database.drizzle
         .delete(leaveRequests)
@@ -203,7 +229,9 @@ describe('Reports Drizzle migration', () => {
       await database.drizzle
         .delete(policyDocuments)
         .where(eq(policyDocuments.id, policyDocumentId));
-      await database.drizzle.delete(employees).where(eq(employees.id, employeeId));
+      await database.drizzle
+        .delete(employees)
+        .where(inArray(employees.id, [employeeId, openEmployeeId]));
       await database.drizzle
         .delete(designations)
         .where(eq(designations.id, designationId));
@@ -242,5 +270,42 @@ describe('Reports Drizzle migration', () => {
     expect(pdf.fileName).toBe(`reports-${periodMonth}.pdf`);
     expect(pdf.mimeType).toBe('application/pdf');
     expect(pdf.contentBase64.length).toBeGreaterThan(200);
+  });
+
+  it('counts a clocked-in (open) day as attendance while hours stay on completed records', async () => {
+    const dashboard = await reports.dashboard(adminUser, periodMonth);
+    const open = dashboard.attendanceSummary.find(
+      (row) => row.employeeNumber === `REO${suffix}`.slice(0, 24).toUpperCase(),
+    );
+    expect(open).toBeDefined();
+    expect(open!.attendanceDays).toBe(1);
+    expect(open!.overtimeHours).toBe(0);
+
+    const completed = dashboard.attendanceSummary.find(
+      (row) => row.employeeNumber === `REP${suffix}`.slice(0, 24).toUpperCase(),
+    );
+    expect(completed!.attendanceDays).toBe(1);
+    expect(completed!.overtimeHours).toBe(1);
+  });
+
+  it('prints human-readable months, dates, plurals and money in the report PDF', async () => {
+    const pdf = await reports.exportDashboardPdf(adminUser, periodMonth);
+    const lines = extractPdfTextLines(pdf.contentBase64);
+    const flat = lines.join(' ');
+    // eslint-disable-next-line no-console
+
+    const monthName = [
+      'January', 'February', 'March', 'April', 'May', 'June', 'July',
+      'August', 'September', 'October', 'November', 'December',
+    ][Number(periodMonth.slice(5)) - 1];
+    const label = `${monthName} ${periodMonth.slice(0, 4)}`;
+    expect(lines.some((line) => line.startsWith(`Reporting month: ${label} |`))).toBe(true);
+    expect(lines.some((line) => /^Generated at \d{1,2} \w{3} \d{4}, \d{2}:\d{2} \([A-Za-z_\/]+\)$/.test(line))).toBe(true);
+    expect(lines.some((line) => line.includes(`${departmentName}: 2 employees`))).toBe(true);
+    expect(flat).toMatch(/1 attendance day, 1\.00 overtime hours/);
+    expect(flat).toMatch(/1 attendance day, 0\.00 overtime hours/);
+    expect(flat).toMatch(/, 10 \w{3} \d{4} \(1 day\)/);
+    expect(lines.some((line) => /total net pay [A-Z]{3} [\d,]+\.\d{2}$/.test(line) && line.includes('1 payslip,'))).toBe(true);
+    expect(flat).not.toMatch(/\(s\)| to \d{4}-\d{2}-\d{2}|effective \d{4}-/);
   });
 });

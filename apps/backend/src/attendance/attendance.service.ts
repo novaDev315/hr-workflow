@@ -5,7 +5,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { randomUUID } from 'crypto';
-import { and, desc, eq, gte, lte, or, sql, SQL } from 'drizzle-orm';
+import { and, desc, eq, gte, isNull, lte, or, sql, SQL } from 'drizzle-orm';
 import { AuthenticatedUser } from '../common/current-user.decorator';
 import {
   canAccessEmployeeWithinScope,
@@ -15,9 +15,17 @@ import {
 import { DatabaseService } from '../database/database.service';
 import {
   attendanceRecords,
+  companySettings,
   employees,
   locations,
+  users,
 } from '../database/drizzle/schema';
+import {
+  attendanceDateInTimeZone,
+  MAX_OPEN_SHIFT_MS,
+  resolveTimeZone,
+  toIsoTimestamp,
+} from './attendance-date';
 import { LocationService } from '../location/location.service';
 import {
   AttendanceFilterInput,
@@ -30,8 +38,8 @@ interface AttendanceRow {
   employeeId: string;
   locationId: string;
   attendanceDate: string;
-  clockInAt: string | null;
-  clockOutAt: string | null;
+  clockInAt: Date | null;
+  clockOutAt: Date | null;
   clockInDistance: number | null;
   clockOutDistance: number | null;
   totalHours: number | null;
@@ -58,11 +66,13 @@ export class AttendanceService {
       currentUser,
       input.employeeId,
     );
-    const today = new Date().toISOString().slice(0, 10);
+    const now = new Date();
+    const today = attendanceDateInTimeZone(now, await this.companyTimeZone());
+
     const [existing] = await this.database.drizzle
       .select({
         id: attendanceRecords.id,
-        clockInAt: sql<string | null>`${attendanceRecords.clockInAt}::text`,
+        clockInAt: attendanceRecords.clockInAt,
       })
       .from(attendanceRecords)
       .where(
@@ -77,6 +87,23 @@ export class AttendanceService {
       throw new BadRequestException('Employee has already clocked in today');
     }
 
+    // A shift that started before the company-day boundary is still open.
+    const [openShift] = await this.database.drizzle
+      .select({ id: attendanceRecords.id, clockInAt: attendanceRecords.clockInAt })
+      .from(attendanceRecords)
+      .where(this.openRecordCondition(employeeId))
+      .orderBy(desc(attendanceRecords.clockInAt))
+      .limit(1);
+
+    if (
+      openShift?.clockInAt &&
+      now.getTime() - openShift.clockInAt.getTime() <= MAX_OPEN_SHIFT_MS
+    ) {
+      throw new BadRequestException(
+        'Employee is still clocked in from an earlier shift. Clock out first.',
+      );
+    }
+
     const { location, geofence } = await this.locationService.validateAttendanceContext(
       employeeId,
       input.locationId,
@@ -84,7 +111,7 @@ export class AttendanceService {
       input.longitude,
     );
 
-    const now = new Date();
+    const notes = await this.composeNotes(currentUser, employeeId, input.notes);
 
     if (existing) {
       await this.database.drizzle
@@ -96,7 +123,7 @@ export class AttendanceService {
           clockInLongitude: input.longitude,
           clockInDistance: geofence.distance,
           clockInPhotoUrl: input.photoUrl?.trim() ?? null,
-          clockInNotes: input.notes?.trim() ?? null,
+          clockInNotes: notes,
           clockInGeofenceValid: true,
           status: 'CLOCKED_IN',
           updatedAt: sql`NOW()`,
@@ -118,7 +145,7 @@ export class AttendanceService {
         clockInLongitude: input.longitude,
         clockInDistance: geofence.distance,
         clockInPhotoUrl: input.photoUrl?.trim() ?? null,
-        clockInNotes: input.notes?.trim() ?? null,
+        clockInNotes: notes,
         clockInGeofenceValid: true,
         status: 'CLOCKED_IN',
       })
@@ -132,51 +159,67 @@ export class AttendanceService {
       currentUser,
       input.employeeId,
     );
-    const today = new Date().toISOString().slice(0, 10);
+
+    // Close the most recent open record regardless of its calendar date, so a
+    // shift crossing midnight can still be closed.
     const [attendance] = await this.database.drizzle
       .select({
         id: attendanceRecords.id,
         locationId: attendanceRecords.locationId,
-        clockInAt: sql<string | null>`${attendanceRecords.clockInAt}::text`,
-        clockOutAt: sql<string | null>`${attendanceRecords.clockOutAt}::text`,
+        clockInAt: attendanceRecords.clockInAt,
       })
       .from(attendanceRecords)
-      .where(
-        and(
-          eq(attendanceRecords.employeeId, employeeId),
-          eq(attendanceRecords.attendanceDate, today),
-        ),
-      )
+      .where(this.openRecordCondition(employeeId))
+      .orderBy(desc(attendanceRecords.clockInAt))
       .limit(1);
 
-    if (!attendance) {
-      throw new NotFoundException('No attendance record found for today');
+    if (!attendance || !attendance.clockInAt) {
+      const [latest] = await this.database.drizzle
+        .select({ status: attendanceRecords.status })
+        .from(attendanceRecords)
+        .where(
+          and(
+            eq(attendanceRecords.employeeId, employeeId),
+            eq(
+              attendanceRecords.attendanceDate,
+              attendanceDateInTimeZone(new Date(), await this.companyTimeZone()),
+            ),
+          ),
+        )
+        .limit(1);
+
+      if (latest?.status === 'COMPLETED') {
+        throw new BadRequestException('Employee has already clocked out today');
+      }
+
+      throw new NotFoundException(
+        'No open attendance record found. Employee must clock in before clocking out',
+      );
     }
 
-    if (!attendance.clockInAt) {
-      throw new BadRequestException('Employee must clock in before clocking out');
+    const clockOutAt = new Date();
+    if (clockOutAt.getTime() - attendance.clockInAt.getTime() > MAX_OPEN_SHIFT_MS) {
+      throw new BadRequestException(
+        `The open attendance record from ${attendance.clockInAt.toISOString()} is older than 24 hours. Ask an admin to correct it before clocking in again.`,
+      );
     }
 
-    if (attendance.clockOutAt) {
-      throw new BadRequestException('Employee has already clocked out today');
-    }
-
-    const { geofence } = await this.locationService.validateAttendanceContext(
-      employeeId,
+    // Geofence is checked against the record's own location, so a deactivated
+    // location or released assignment cannot trap an open shift.
+    const { geofence } = await this.locationService.validateRecordedLocationGeofence(
       attendance.locationId,
       input.latitude,
       input.longitude,
     );
 
-    const clockInAt = new Date(attendance.clockInAt);
-    const clockOutAt = new Date();
     const totalMinutes = Math.max(
       0,
-      Math.round((clockOutAt.getTime() - clockInAt.getTime()) / 60000),
+      Math.round((clockOutAt.getTime() - attendance.clockInAt.getTime()) / 60000),
     );
     const totalHours = Number((totalMinutes / 60).toFixed(2));
     const regularHours = Number(Math.min(totalHours, 8).toFixed(2));
     const overtimeHours = Number(Math.max(totalHours - 8, 0).toFixed(2));
+    const notes = await this.composeNotes(currentUser, employeeId, input.notes);
 
     await this.database.drizzle
       .update(attendanceRecords)
@@ -186,7 +229,7 @@ export class AttendanceService {
         clockOutLongitude: input.longitude,
         clockOutDistance: geofence.distance,
         clockOutPhotoUrl: input.photoUrl?.trim() ?? null,
-        clockOutNotes: input.notes?.trim() ?? null,
+        clockOutNotes: notes,
         clockOutGeofenceValid: true,
         totalMinutes,
         totalHours,
@@ -279,6 +322,52 @@ export class AttendanceService {
     return this.mapAttendance(row);
   }
 
+  private openRecordCondition(employeeId: string) {
+    return and(
+      eq(attendanceRecords.employeeId, employeeId),
+      eq(attendanceRecords.status, 'CLOCKED_IN'),
+      isNull(attendanceRecords.clockOutAt),
+    );
+  }
+
+  private async companyTimeZone() {
+    const [row] = await this.database.drizzle
+      .select({ timezone: companySettings.timezone })
+      .from(companySettings)
+      .where(eq(companySettings.singletonKey, 'default'))
+      .limit(1);
+
+    return resolveTimeZone(row?.timezone);
+  }
+
+  /** Adds "Recorded by <actor>" when someone other than the employee clocks them in or out. */
+  private async composeNotes(
+    currentUser: AuthenticatedUser,
+    employeeId: string,
+    notes?: string | null,
+  ) {
+    const trimmed = notes?.trim() || null;
+    const [actor] = await this.database.drizzle
+      .select({
+        employeeId: users.employeeId,
+        firstName: users.firstName,
+        lastName: users.lastName,
+      })
+      .from(users)
+      .where(eq(users.id, currentUser.userId))
+      .limit(1);
+
+    if (actor?.employeeId === employeeId) {
+      return trimmed;
+    }
+
+    const actorName = actor
+      ? `${actor.firstName} ${actor.lastName}`.trim()
+      : currentUser.email;
+    const marker = `Recorded by ${actorName}`;
+    return trimmed ? `${trimmed} | ${marker}` : marker;
+  }
+
   private async resolveScopedEmployeeId(
     currentUser: AuthenticatedUser,
     employeeId: string,
@@ -333,8 +422,8 @@ export class AttendanceService {
       employeeId: attendanceRecords.employeeId,
       locationId: attendanceRecords.locationId,
       attendanceDate: sql<string>`${attendanceRecords.attendanceDate}::text`,
-      clockInAt: sql<string | null>`${attendanceRecords.clockInAt}::text`,
-      clockOutAt: sql<string | null>`${attendanceRecords.clockOutAt}::text`,
+      clockInAt: attendanceRecords.clockInAt,
+      clockOutAt: attendanceRecords.clockOutAt,
       clockInDistance: attendanceRecords.clockInDistance,
       clockOutDistance: attendanceRecords.clockOutDistance,
       totalHours: attendanceRecords.totalHours,
@@ -356,8 +445,8 @@ export class AttendanceService {
       employeeId: row.employeeId,
       locationId: row.locationId,
       attendanceDate: row.attendanceDate,
-      clockInAt: row.clockInAt,
-      clockOutAt: row.clockOutAt,
+      clockInAt: toIsoTimestamp(row.clockInAt),
+      clockOutAt: toIsoTimestamp(row.clockOutAt),
       clockInDistance: row.clockInDistance,
       clockOutDistance: row.clockOutDistance,
       totalHours: row.totalHours,

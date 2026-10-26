@@ -1,3 +1,5 @@
+import { formatGeneratedAt } from './document-format';
+
 type PdfLine = {
   text: string;
   fontSize?: number;
@@ -18,12 +20,57 @@ const DEFAULT_FONT_SIZE = 11;
 const DEFAULT_LINE_HEIGHT = 16;
 const MAX_TEXT_WIDTH = 92;
 
+// Fonts are the standard Helvetica pair with WinAnsiEncoding, so printable ASCII
+// and Latin-1 (0xA0-0xFF) characters render. Everything else becomes '?'.
+// Known limitation: no embedded Unicode font, so Arabic and other non-Latin
+// scripts cannot be drawn; see isLatin1Text / describeNameForPdf.
 function sanitizePdfText(value: string) {
-  return value
-    .replace(/[^\x20-\x7E]/g, '?')
-    .replace(/\\/g, '\\\\')
-    .replace(/\(/g, '\\(')
-    .replace(/\)/g, '\\)');
+  let output = '';
+  for (const char of value) {
+    const code = char.codePointAt(0) ?? 63;
+    if (code === 0x5c) {
+      output += '\\\\';
+    } else if (code === 0x28) {
+      output += '\\(';
+    } else if (code === 0x29) {
+      output += '\\)';
+    } else if (code >= 0x20 && code <= 0x7e) {
+      output += char;
+    } else if (code >= 0xa0 && code <= 0xff) {
+      output += `\\${code.toString(8).padStart(3, '0')}`;
+    } else if (code === 0x2013) {
+      output += '\\226'; // WinAnsi en dash
+    } else if (code === 0x2014) {
+      output += '\\227'; // WinAnsi em dash
+    } else {
+      output += '?';
+    }
+  }
+  return output;
+}
+
+/** True when every character can be drawn with the built-in Latin-1 fonts. */
+export function isLatin1Text(value: string) {
+  for (const char of value) {
+    const code = char.codePointAt(0) ?? 0;
+    const printable = (code >= 0x20 && code <= 0x7e) || (code >= 0xa0 && code <= 0xff);
+    if (!printable) {
+      return false;
+    }
+  }
+  return true;
+}
+
+/** "Name: Jane Doe", or a pointer to the employee record when the name is not printable. */
+export function describeNameForPdf(label: string, name: string, employeeNumber: string) {
+  return isLatin1Text(name)
+    ? `${label}: ${name}`
+    : `${label}: see employee record (${employeeNumber})`;
+}
+
+/** "Jane Doe (EMP001)", or "Employee EMP001" when the name is not printable. */
+export function personLabelForPdf(name: string, employeeNumber: string) {
+  return isLatin1Text(name) ? `${name} (${employeeNumber})` : `Employee ${employeeNumber}`;
 }
 
 function wrapText(value: string, maxLength = MAX_TEXT_WIDTH) {
@@ -61,7 +108,19 @@ function wrapText(value: string, maxLength = MAX_TEXT_WIDTH) {
   return lines;
 }
 
-function buildLineLayout(title: string, subtitle: string | null, sections: PdfSection[]) {
+export type SimplePdfOptions = {
+  /** IANA zone for the "Generated at" stamp; falls back to UTC. */
+  timeZone?: string | null;
+  /** Overrides the generation time (tests). */
+  now?: Date;
+};
+
+function buildLineLayout(
+  title: string,
+  subtitle: string | null,
+  sections: PdfSection[],
+  options: SimplePdfOptions = {},
+) {
   const lines: PdfLine[] = [
     { text: title, fontSize: 20, font: 'bold' },
   ];
@@ -71,7 +130,7 @@ function buildLineLayout(title: string, subtitle: string | null, sections: PdfSe
   }
 
   lines.push({
-    text: `Generated at ${new Date().toISOString().replace('T', ' ').slice(0, 16)} UTC`,
+    text: `Generated at ${formatGeneratedAt(options.now ?? new Date(), options.timeZone)}`,
     fontSize: 9,
   });
 
@@ -139,7 +198,7 @@ function buildPageContent(page: PdfLine[], pageIndex: number, pageCount: number)
 
   commands.push(`/F1 9 Tf`);
   commands.push(`1 0 0 1 ${PAGE_MARGIN_LEFT} 36 Tm`);
-  commands.push(`(HRFlow | Page ${pageIndex + 1} of ${pageCount}) Tj`);
+  commands.push(`(HRFlow Pro | Page ${pageIndex + 1} of ${pageCount}) Tj`);
   commands.push('ET');
 
   return commands.join('\n');
@@ -151,8 +210,8 @@ function renderPdfDocument(pageContents: string[]) {
 
   objects.push('<< /Type /Catalog /Pages 2 0 R >>');
   objects.push('');
-  objects.push('<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>');
-  objects.push('<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold >>');
+  objects.push('<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>');
+  objects.push('<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold /Encoding /WinAnsiEncoding >>');
 
   for (let index = 0; index < pageContents.length; index += 1) {
     const pageObjectNumber = 5 + index * 2;
@@ -196,8 +255,9 @@ export function createSimplePdf(
   title: string,
   subtitle: string | null,
   sections: PdfSection[],
+  options: SimplePdfOptions = {},
 ) {
-  const lines = buildLineLayout(title, subtitle, sections);
+  const lines = buildLineLayout(title, subtitle, sections, options);
   const pages = paginateLines(lines);
   const pageContents = pages.map((page, index) =>
     buildPageContent(page, index, pages.length),

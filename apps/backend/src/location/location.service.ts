@@ -345,6 +345,34 @@ export class LocationService {
     };
   }
 
+  /**
+   * Clock-out check: validates the geofence against the location stored on the
+   * attendance record itself. Deliberately ignores the location's active flag
+   * and the employee's current assignment, which may have changed since clock-in.
+   */
+  async validateRecordedLocationGeofence(
+    locationId: string,
+    latitude: number,
+    longitude: number,
+  ) {
+    const location = await this.findLocationById(locationId);
+    const geofence = this.geofence.getGeofenceStatus(
+      latitude,
+      longitude,
+      location.latitude,
+      location.longitude,
+      location.geofenceRadius,
+    );
+
+    if (!geofence.isWithinGeofence) {
+      throw new BadRequestException(
+        `Outside geofence by ${geofence.distanceFromBoundary} meters`,
+      );
+    }
+
+    return { location, geofence };
+  }
+
   private async findLocationById(id: string) {
     const [row] = await this.database.drizzle
       .select(this.locationSelectFields())
