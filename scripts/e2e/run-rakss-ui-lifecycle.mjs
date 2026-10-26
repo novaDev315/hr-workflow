@@ -17,9 +17,22 @@ try {
   }
 }
 
-const adminEmail = process.env.RAKSS_ADMIN_EMAIL || 'admin@rakss.lab.novadev.tech';
+
+function assertLocalTarget(label, value) {
+  const { hostname } = new URL(value);
+  const local = ['localhost', '127.0.0.1', '::1', '[::1]'].includes(hostname);
+  if (!local && process.env.RAKSS_E2E_ALLOW_REMOTE !== '1') {
+    throw new Error(
+      `Refusing to run the destructive UI lifecycle sweep against non-local ${label} ${value}. ` +
+        'It creates and deletes data. Use a local stack (default http://localhost:5173) or set RAKSS_E2E_ALLOW_REMOTE=1 to override.',
+    );
+  }
+}
+
+const adminEmail = process.env.RAKSS_ADMIN_EMAIL || 'admin@hrflow.lab.novadev.tech';
 const adminPassword = process.env.RAKSS_ADMIN_PASSWORD;
-const baseUrl = process.env.RAKSS_ADMIN_URL || 'https://admin.rakss.lab.novadev.tech';
+const baseUrl = process.env.RAKSS_ADMIN_URL || 'http://localhost:5173';
+assertLocalTarget('RAKSS_ADMIN_URL', baseUrl);
 const executablePath = process.env.PLAYWRIGHT_MCP_EXECUTABLE_PATH || process.env.PLAYWRIGHT_CHROME;
 
 await mkdir('output/playwright', { recursive: true });

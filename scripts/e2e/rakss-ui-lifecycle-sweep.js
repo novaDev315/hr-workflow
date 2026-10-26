@@ -1,7 +1,19 @@
 (page) => (async () => {
-  const adminEmail = process.env.RAKSS_ADMIN_EMAIL || 'admin@rakss.lab.novadev.tech';
-  const apiUrl = process.env.RAKSS_API_URL || 'https://api.rakss.lab.novadev.tech/graphql';
-  const baseUrl = process.env.RAKSS_ADMIN_URL || 'https://admin.rakss.lab.novadev.tech';
+  function assertLocalTarget(label, value) {
+    const { hostname } = new URL(value);
+    const local = ['localhost', '127.0.0.1', '::1', '[::1]'].includes(hostname);
+    if (!local && process.env.RAKSS_E2E_ALLOW_REMOTE !== '1') {
+      throw new Error(
+        `Refusing to run the destructive UI lifecycle sweep against non-local ${label} ${value}. ` +
+          'It creates and deletes data. Use a local stack (default http://localhost:5173) or set RAKSS_E2E_ALLOW_REMOTE=1 to override.',
+      );
+    }
+  }
+  const adminEmail = process.env.RAKSS_ADMIN_EMAIL || 'admin@hrflow.lab.novadev.tech';
+  const apiUrl = process.env.RAKSS_API_URL || 'http://localhost:4001/graphql';
+  assertLocalTarget('RAKSS_API_URL', apiUrl);
+  const baseUrl = process.env.RAKSS_ADMIN_URL || 'http://localhost:5173';
+  assertLocalTarget('RAKSS_ADMIN_URL', baseUrl);
   const runId = new Date().toISOString().replace(/[-:.TZ]/g, '').slice(0, 14);
   const today = new Date().toISOString().slice(0, 10);
   const runMinuteIndex = Number(runId.slice(8, 10)) * 60 + Number(runId.slice(10, 12));
@@ -129,7 +141,7 @@
   await page.getByText('Designation updated.').waitFor();
   check('ui update designation');
 
-  const employeeEmail = `ui.e2e.${runId}@rakss.lab.novadev.tech`;
+  const employeeEmail = `ui.e2e.${runId}@hrflow.lab.novadev.tech`;
   await page.locator('#employee-first-name').fill('UI');
   await page.locator('#employee-last-name').fill(`Employee ${runId}`);
   await page.locator('#employee-email').fill(employeeEmail);
@@ -322,7 +334,7 @@
   await page.locator('input[placeholder="Category"]').fill('UI E2E');
   await page.locator('input[placeholder="Version"]').fill('1.0');
   await page.locator('input[placeholder="Short description"]').fill('Created by UI lifecycle sweep');
-  await page.locator('input[placeholder="Optional document URL"]').fill('https://admin.rakss.lab.novadev.tech/health');
+  await page.locator('input[placeholder="Optional document URL"]').fill('https://admin.hrflow.lab.novadev.tech/health');
   await page.locator('textarea[placeholder="Policy summary or text content"]').fill('UI policy content from lifecycle sweep');
   await page.getByRole('button', { name: 'Save policy' }).click();
   await page.getByText('Policy document created.').waitFor();
@@ -394,13 +406,13 @@
   await selectValue('application-requisition', requisition.id);
   await page.locator('#candidate-first-name').fill('Recruitment');
   await page.locator('#candidate-last-name').fill(`Candidate ${runId}`);
-  const candidateEmail = `candidate.${runId}@rakss.lab.novadev.tech`;
+  const candidateEmail = `candidate.${runId}@hrflow.lab.novadev.tech`;
   await page.locator('#candidate-email').fill(candidateEmail);
   await page.locator('#candidate-phone').fill('+971500003333');
   await page.locator('#candidate-source').fill('UI lifecycle');
   await page.locator('#candidate-experience').fill('5');
   await page.locator('#candidate-expected-salary').fill('16000');
-  await page.locator('#candidate-resume-url').fill('https://admin.rakss.lab.novadev.tech/health');
+  await page.locator('#candidate-resume-url').fill('https://admin.hrflow.lab.novadev.tech/health');
   await page.locator('#candidate-notes').fill('Created by UI lifecycle sweep');
   await page.locator('form').filter({ has: page.locator('#candidate-email') }).getByRole('button', { name: 'Add Candidate' }).click();
   await page.getByText('Recruitment application created.').waitFor();
@@ -453,7 +465,7 @@
         requisitionId: requisition.id,
         firstName: 'Blocked',
         lastName: 'Candidate',
-        email: `blocked.${runId}@rakss.lab.novadev.tech`,
+        email: `blocked.${runId}@hrflow.lab.novadev.tech`,
       },
     }, token);
   } catch {
