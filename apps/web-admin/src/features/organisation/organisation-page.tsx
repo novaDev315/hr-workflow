@@ -1,10 +1,11 @@
 import { useQuery } from '@apollo/client'
 import { Building2, Briefcase, MapPin, Network } from 'lucide-react'
-import { useEffect, useMemo, useState, type ReactNode } from 'react'
+import { useEffect, useMemo, type ReactNode } from 'react'
 import { useLocation } from 'react-router-dom'
 
 import { Card, CardContent } from '@/components/ui/card'
 import { Notice } from '@/components/ui/notice'
+import { toast } from '@/lib/toast'
 import { PageIntro, SectionHeading } from '@/features/shared/page-intro'
 import { useReferenceData, useSiteAssignments } from '@/features/shared/reference-data'
 import { canManageAccounts, useAdminSession } from '@/lib/auth-session'
@@ -30,7 +31,6 @@ export function OrganisationPage() {
   const location = useLocation()
   const reference = useReferenceData()
   const peopleQuery = useQuery<{ employees: PersonRef[] }>(ORGANISATION_PEOPLE_QUERY)
-  const [notice, setNotice] = useState<{ message: ReactNode; tone: 'success' | 'danger' } | null>(null)
 
   const activePeople = useMemo(
     () => (peopleQuery.data?.employees ?? []).filter((person) => person.isActive),
@@ -51,10 +51,8 @@ export function OrganisationPage() {
     return count
   }
 
-  const onNotice = (message: ReactNode, tone: 'success' | 'danger') => {
-    setNotice({ message, tone })
-    window.scrollTo({ top: 0, behavior: 'smooth' })
-  }
+  const onNotice = (message: ReactNode, tone: 'success' | 'danger') =>
+    tone === 'success' ? toast.success(message) : toast.error(message)
 
   useEffect(() => {
     if (!location.hash || reference.loading) return
@@ -76,20 +74,6 @@ export function OrganisationPage() {
         title="Organisation"
       />
 
-      {notice ? (
-        <Notice tone={notice.tone}>
-          <div className="flex items-start justify-between gap-3">
-            <span>{notice.message}</span>
-            <button
-              className="shrink-0 text-xs font-semibold underline-offset-4 hover:underline"
-              onClick={() => setNotice(null)}
-              type="button"
-            >
-              Dismiss
-            </button>
-          </div>
-        </Notice>
-      ) : null}
       {reference.error ? (
         <Notice tone="danger">Organisation details could not be loaded. {reference.error.message}</Notice>
       ) : null}

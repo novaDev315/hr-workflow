@@ -1,4 +1,5 @@
 import { useQuery } from '@apollo/client'
+import type { ReactNode } from 'react'
 import {
   ArrowRight,
   Building2,
@@ -42,7 +43,7 @@ import {
 type AttentionItem = {
   id: string
   icon: LucideIcon
-  title: string
+  title: ReactNode
   detail: string
   to: string
   actionLabel: string
@@ -51,7 +52,7 @@ type AttentionItem = {
 type ActivityItem = {
   id: string
   icon: LucideIcon
-  title: string
+  title: ReactNode
   detail: string
   date: string
 }
@@ -99,7 +100,11 @@ export function DashboardPage() {
     attention.push({
       id: `leave-${leave.employeeNumber}-${leave.startDate}`,
       icon: CalendarClock,
-      title: `${leave.fullName} · ${leave.leaveTypeName}`,
+      title: (
+        <>
+          <bdi>{leave.fullName}</bdi> · {leave.leaveTypeName}
+        </>
+      ),
       detail: `${formatDayRange(leave.startDate, leave.endDate)} · ${plural(leave.totalDays, 'day')}`,
       to: '/leave',
       actionLabel: 'Review',
@@ -160,7 +165,11 @@ export function DashboardPage() {
     ...recentHires.map((hire) => ({
       id: `hire-${hire.employeeNumber}`,
       icon: UserPlus,
-      title: `${hire.fullName} joined ${hire.departmentName}`,
+      title: (
+        <>
+          <bdi>{hire.fullName}</bdi> joined {hire.departmentName}
+        </>
+      ),
       detail: hire.designationTitle,
       date: hire.joinDate,
     })),

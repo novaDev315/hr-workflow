@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { gql, useApolloClient, useQuery } from '@apollo/client'
-import { Download, Loader2 } from 'lucide-react'
+import { ArrowRight, Download, Loader2 } from 'lucide-react'
+import { Link } from 'react-router-dom'
 
 import { AdminHero } from '@/components/admin/admin-hero'
 import {
@@ -222,7 +223,7 @@ export function ReportsPage() {
         <PageFeedback loadError={error} loadErrorPrefix="Reports could not be loaded." />
       ) : (
         <>
-          <div className={canViewPayroll ? 'grid gap-3 sm:grid-cols-2 xl:grid-cols-4' : 'grid gap-3 sm:grid-cols-2'}>
+          <div className={canViewPayroll ? 'grid grid-cols-2 gap-2 sm:gap-3 xl:grid-cols-4' : 'grid grid-cols-2 gap-2 sm:gap-3'}>
             <MetricCard
               label="Active employees"
               value={String(dashboard?.overview.activeEmployees ?? 0)}
@@ -324,7 +325,7 @@ export function ReportsPage() {
                       {attendance.map((row) => (
                         <AdminTableRow key={row.employeeNumber}>
                           <AdminTableCell nowrap>
-                            <span className="font-medium text-foreground">{row.fullName}</span>
+                            <bdi className="font-medium text-foreground">{row.fullName}</bdi>
                             <span className="ml-2 hidden text-xs text-muted-foreground sm:inline">{row.employeeNumber}</span>
                           </AdminTableCell>
                           <AdminTableCell numeric>{formatNumber(row.attendanceDays)}</AdminTableCell>
@@ -353,7 +354,7 @@ export function ReportsPage() {
                       {recentHires.map((hire) => (
                         <li key={hire.employeeNumber} className="flex min-w-0 items-center justify-between gap-3 py-2.5">
                           <div className="min-w-0">
-                            <p className="truncate text-sm font-medium text-foreground">{hire.fullName}</p>
+                            <p className="truncate text-sm font-medium text-foreground"><bdi>{hire.fullName}</bdi></p>
                             <p className="truncate text-[13px] text-muted-foreground">
                               {hire.designationTitle} · {hire.departmentName}
                             </p>
@@ -369,8 +370,17 @@ export function ReportsPage() {
               </Card>
 
               <Card className="min-w-0">
-                <CardHeader className="pb-2">
+                <CardHeader className="flex-row items-center justify-between gap-3 space-y-0 pb-2">
                   <CardTitle>Leave waiting for review</CardTitle>
+                  {pendingLeave.length > 0 ? (
+                    <Link
+                      className="inline-flex shrink-0 items-center gap-1 text-sm font-semibold text-primary underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                      to="/leave"
+                    >
+                      Review
+                      <ArrowRight aria-hidden="true" className="h-3.5 w-3.5" />
+                    </Link>
+                  ) : null}
                 </CardHeader>
                 <CardContent>
                   {pendingLeave.length === 0 ? (
@@ -380,7 +390,7 @@ export function ReportsPage() {
                       {pendingLeave.map((leave) => (
                         <li key={`${leave.employeeNumber}-${leave.startDate}`} className="flex min-w-0 items-center justify-between gap-3 py-2.5">
                           <div className="min-w-0">
-                            <p className="truncate text-sm font-medium text-foreground">{leave.fullName}</p>
+                            <p className="truncate text-sm font-medium text-foreground"><bdi>{leave.fullName}</bdi></p>
                             <p className="truncate text-[13px] text-muted-foreground">
                               {leave.leaveTypeName} · {formatDayRange(leave.startDate, leave.endDate)}
                             </p>

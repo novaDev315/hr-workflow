@@ -60,7 +60,7 @@ export function AttendancePage() {
         title="Attendance"
       />
 
-      <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
+      <div className="grid grid-cols-2 gap-2 sm:gap-3 xl:grid-cols-4">
         <MetricCard detail={scope.charAt(0).toUpperCase() + scope.slice(1)} icon={Clock3} label="Records shown" value={String(records.length)} />
         <MetricCard detail="In this view" icon={UserCheck} label="Still clocked in" value={String(stillIn)} />
         <MetricCard
