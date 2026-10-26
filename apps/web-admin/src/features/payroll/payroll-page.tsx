@@ -129,19 +129,20 @@ export function PayrollPage() {
     (profile) => profile.employeeId === compensationForm.employeeId,
   )
 
-  // Choosing someone who already has pay fills in their current figures.
+  // Switching employee never carries the previous person's figures over:
+  // someone who already has pay gets their current amounts, anyone else
+  // starts from the defaults.
   const changeCompensationForm = (next: CompensationFormState) => {
     if (next.employeeId !== compensationForm.employeeId) {
       const existing = compensationProfiles.find((profile) => profile.employeeId === next.employeeId)
-      if (existing) {
-        setCompensationForm({
-          ...next,
-          baseSalary: String(existing.baseSalary),
-          allowanceAmount: String(existing.allowanceAmount),
-          deductionAmount: String(existing.deductionAmount),
-        })
-        return
-      }
+      const defaults = compensationDefaults()
+      setCompensationForm({
+        ...next,
+        baseSalary: existing ? String(existing.baseSalary) : defaults.baseSalary,
+        allowanceAmount: existing ? String(existing.allowanceAmount) : defaults.allowanceAmount,
+        deductionAmount: existing ? String(existing.deductionAmount) : defaults.deductionAmount,
+      })
+      return
     }
     setCompensationForm(next)
   }
