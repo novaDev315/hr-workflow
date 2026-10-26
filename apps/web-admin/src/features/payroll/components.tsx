@@ -1,5 +1,5 @@
 import { useQuery } from '@apollo/client'
-import { Download, Loader2, Trash2 } from 'lucide-react'
+import { Download, Loader2, Pencil, Trash2 } from 'lucide-react'
 import type { FormEvent, ReactNode } from 'react'
 
 import {
@@ -22,6 +22,7 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { StatusBadge } from '@/components/ui/status-badge'
+import { StepIndicator, type StepState } from '@/features/shared/step-indicator'
 import { formatDateTime, formatDay, formatMoney, formatMonth, plural } from '@/lib/format'
 import { isSchemaMismatch, readableError } from '@/lib/graphql-errors'
 import { cn } from '@/lib/utils'
@@ -92,6 +93,17 @@ export function PayrollPeriodList({
 
 /* ---------- Selected period summary ---------- */
 
+// Where this period is in the run: process, then review and pay, then done.
+function runSteps(status: string): { label: string; state: StepState }[] {
+  const order = ['OPEN', 'PROCESSED', 'PAID']
+  const at = Math.max(0, order.indexOf(status))
+  const labels = ['Process', 'Mark paid', 'Paid']
+  return labels.map((label, index) => ({
+    label,
+    state: status === 'PAID' || index < at ? 'done' : index === at ? 'current' : 'upcoming',
+  }))
+}
+
 function SummaryStat({ label, value }: { label: string; value: ReactNode }) {
   return (
     <div className="min-w-0">
@@ -141,6 +153,8 @@ export function PayrollPeriodSummary({
         </div>
         <StatusBadge tone={periodTone(period.status)}>{periodStatusLabel(period.status)}</StatusBadge>
       </div>
+
+      <StepIndicator steps={runSteps(period.status)} />
 
       <dl className="grid grid-cols-2 gap-x-4 gap-y-3 sm:grid-cols-4">
         <SummaryStat
@@ -222,7 +236,7 @@ export function PayslipTable({
         {payslips.map((payslip) => (
           <AdminTableRow key={payslip.id}>
             <AdminTableCell nowrap>
-              <div className="font-medium text-foreground">{payslip.employee.fullName}</div>
+              <div className="font-medium text-foreground"><bdi>{payslip.employee.fullName}</bdi></div>
               <div className="text-xs text-muted-foreground">{payslip.employee.employeeNumber}</div>
             </AdminTableCell>
             <AdminTableCell nowrap className="tabular-nums">
@@ -271,9 +285,15 @@ export function PayslipTable({
 
 /* ---------- Compensation register ---------- */
 
-export function CompensationRegister({ profiles }: { profiles: CompensationProfile[] }) {
+export function CompensationRegister({
+  profiles,
+  onEdit,
+}: {
+  profiles: CompensationProfile[]
+  onEdit: (profile: CompensationProfile) => void
+}) {
   if (profiles.length === 0) {
-    return <AdminTableEmpty>No compensation profiles yet. Open compensation setup to add one.</AdminTableEmpty>
+    return <AdminTableEmpty>No compensation profiles match.</AdminTableEmpty>
   }
 
   return (
@@ -285,19 +305,34 @@ export function CompensationRegister({ profiles }: { profiles: CompensationProfi
           <AdminTableHead numeric>Allowances</AdminTableHead>
           <AdminTableHead numeric>Fixed deductions</AdminTableHead>
           <AdminTableHead>Effective from</AdminTableHead>
+          <AdminTableHead>
+            <span className="sr-only">Actions</span>
+          </AdminTableHead>
         </tr>
       </thead>
       <tbody>
         {profiles.map((profile) => (
           <AdminTableRow key={profile.id}>
             <AdminTableCell nowrap>
-              <div className="font-medium text-foreground">{profile.employee.fullName}</div>
+              <div className="font-medium text-foreground"><bdi>{profile.employee.fullName}</bdi></div>
               <div className="text-xs text-muted-foreground">{profile.employee.employeeNumber}</div>
             </AdminTableCell>
             <AdminTableCell numeric>{formatMoney(profile.baseSalary, profile.currencyCode)}</AdminTableCell>
             <AdminTableCell numeric>{formatMoney(profile.allowanceAmount, profile.currencyCode)}</AdminTableCell>
             <AdminTableCell numeric>{formatMoney(profile.deductionAmount, profile.currencyCode)}</AdminTableCell>
             <AdminTableCell nowrap>{formatDay(profile.effectiveFrom)}</AdminTableCell>
+            <AdminTableCell nowrap className="text-right">
+              <Button
+                aria-label={`Edit pay for ${profile.employee.fullName}`}
+                onClick={() => onEdit(profile)}
+                size="sm"
+                type="button"
+                variant="outline"
+              >
+                <Pencil className="mr-1.5 h-3.5 w-3.5" />
+                Edit
+              </Button>
+            </AdminTableCell>
           </AdminTableRow>
         ))}
       </tbody>
@@ -321,18 +356,28 @@ export function CompensationForm({
   onChange,
   employees,
   saving,
+  error,
+  replacing,
   onSubmit,
 }: {
   value: CompensationFormState
   onChange: (next: CompensationFormState) => void
   employees: PayrollEmployee[]
   saving: boolean
+  error?: string | null
+  /** True when the chosen employee already has pay on record. */
+  replacing?: boolean
   onSubmit: (event: FormEvent<HTMLFormElement>) => void
 }) {
   const set = (patch: Partial<CompensationFormState>) => onChange({ ...value, ...patch })
 
   return (
     <form className="space-y-4" onSubmit={onSubmit}>
+      {error ? (
+        <Notice role="alert" tone="danger">
+          {error}
+        </Notice>
+      ) : null}
       <div className="space-y-2">
         <Label htmlFor="compensation-employee">Employee</Label>
         <Select
@@ -352,6 +397,11 @@ export function CompensationForm({
             ))}
           </SelectContent>
         </Select>
+        {replacing ? (
+          <p className="text-[13px] text-muted-foreground">
+            Their current pay is filled in below. Saving replaces it from the effective date.
+          </p>
+        ) : null}
       </div>
       <div className="grid gap-4 sm:grid-cols-2">
         <div className="space-y-2">

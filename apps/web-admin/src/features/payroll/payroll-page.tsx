@@ -13,6 +13,9 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { MetricCard } from '@/components/ui/metric-card'
 import { Notice } from '@/components/ui/notice'
+import { toast } from '@/lib/toast'
+import { ListToolbar } from '@/features/shared/list-toolbar'
+import { matchesSearch } from '@/features/shared/use-show-more'
 import { canManageAccounts, useAdminSession } from '@/lib/auth-session'
 import { downloadBase64File } from '@/lib/download-export'
 import { currentMonthLocal, formatMoney, formatMonth, plural, todayLocal } from '@/lib/format'
@@ -68,8 +71,8 @@ export function PayrollPage() {
   const [selectedPeriodId, setSelectedPeriodId] = useState<string | null>(null)
   const [newPeriodMonth, setNewPeriodMonth] = useState(currentMonthLocal())
   const [compensationForm, setCompensationForm] = useState(compensationDefaults)
-  const [statusMessage, setStatusMessage] = useState<string | null>(null)
-  const [errorMessage, setErrorMessage] = useState<string | null>(null)
+  const [compensationError, setCompensationError] = useState<string | null>(null)
+  const [registerSearch, setRegisterSearch] = useState('')
   const [showSetup, setShowSetup] = useState(false)
   const [dialog, setDialog] = useState<'process' | 'paid' | 'delete' | null>(null)
   const [downloadingId, setDownloadingId] = useState<string | null>(null)
@@ -119,9 +122,44 @@ export function PayrollPage() {
   const coveredCount = activeEmployees.filter((employee) => employeesWithCompensation.has(employee.id)).length
   const periodCurrency = payslips[0]?.currencyCode ?? compensationProfiles[0]?.currencyCode ?? 'AED'
 
-  const resetFeedback = () => {
-    setErrorMessage(null)
-    setStatusMessage(null)
+  const filteredProfiles = compensationProfiles.filter((profile) =>
+    matchesSearch(registerSearch, [profile.employee.fullName, profile.employee.employeeNumber]),
+  )
+  const replacingCompensation = compensationProfiles.some(
+    (profile) => profile.employeeId === compensationForm.employeeId,
+  )
+
+  // Choosing someone who already has pay fills in their current figures.
+  const changeCompensationForm = (next: CompensationFormState) => {
+    if (next.employeeId !== compensationForm.employeeId) {
+      const existing = compensationProfiles.find((profile) => profile.employeeId === next.employeeId)
+      if (existing) {
+        setCompensationForm({
+          ...next,
+          baseSalary: String(existing.baseSalary),
+          allowanceAmount: String(existing.allowanceAmount),
+          deductionAmount: String(existing.deductionAmount),
+        })
+        return
+      }
+    }
+    setCompensationForm(next)
+  }
+
+  const openCompensation = (profile?: CompensationProfile) => {
+    setCompensationError(null)
+    setCompensationForm(
+      profile
+        ? {
+            ...compensationDefaults(),
+            employeeId: profile.employeeId,
+            baseSalary: String(profile.baseSalary),
+            allowanceAmount: String(profile.allowanceAmount),
+            deductionAmount: String(profile.deductionAmount),
+          }
+        : compensationDefaults(),
+    )
+    setShowSetup(true)
   }
 
   const refreshAll = async () => {
@@ -130,7 +168,11 @@ export function PayrollPage() {
 
   const handleSaveCompensation = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
-    resetFeedback()
+    setCompensationError(null)
+    if (!compensationForm.employeeId) {
+      setCompensationError('Choose the employee whose pay you are setting.')
+      return
+    }
     try {
       await upsertCompensation({
         variables: {
@@ -144,72 +186,69 @@ export function PayrollPage() {
           },
         },
       })
+      const person = employees.find((employee) => employee.id === compensationForm.employeeId)
       setCompensationForm(compensationDefaults())
-      setStatusMessage('Compensation saved.')
+      setShowSetup(false)
+      toast.success(`Pay saved${person ? ` for ${person.fullName}` : ''}.`)
       await refetch()
     } catch (mutationError) {
-      setErrorMessage(readableError(mutationError, 'Could not save compensation.'))
+      setCompensationError(readableError(mutationError, 'Could not save compensation.'))
     }
   }
 
   const handleCreatePeriod = async () => {
-    resetFeedback()
     try {
       const result = await createPayrollPeriod({ variables: { input: { periodMonth: newPeriodMonth } } })
       const createdId = result.data?.createPayrollPeriod?.id as string | undefined
       if (createdId) setSelectedPeriodId(createdId)
-      setStatusMessage(`${formatMonth(newPeriodMonth)} payroll period created.`)
+      toast.success(`${formatMonth(newPeriodMonth)} payroll period created.`)
       await refetch()
     } catch (mutationError) {
-      setErrorMessage(readableError(mutationError, 'Could not create the payroll period.'))
+      toast.error(readableError(mutationError, 'Could not create the payroll period.'))
     }
   }
 
   const handleProcess = async () => {
     if (!selectedPeriod) return
-    resetFeedback()
     try {
       await processPayrollPeriod({ variables: { input: { payrollPeriodId: selectedPeriod.id } } })
       setDialog(null)
-      setStatusMessage(`${formatMonth(selectedPeriod.periodMonth)} payroll processed.`)
+      toast.success(`${formatMonth(selectedPeriod.periodMonth)} payroll processed.`)
       await refreshAll()
     } catch (mutationError) {
       setDialog(null)
-      setErrorMessage(readableError(mutationError, 'Could not process payroll.'))
+      toast.error(readableError(mutationError, 'Could not process payroll.'))
     }
   }
 
   const handleMarkPaid = async () => {
     if (!selectedPeriod) return
-    resetFeedback()
     try {
       await markPayrollPeriodPaid({ variables: { input: { payrollPeriodId: selectedPeriod.id } } })
       setDialog(null)
-      setStatusMessage(`${formatMonth(selectedPeriod.periodMonth)} payroll marked as paid.`)
+      toast.success(`${formatMonth(selectedPeriod.periodMonth)} payroll marked as paid.`)
       await refreshAll()
     } catch (mutationError) {
       setDialog(null)
-      setErrorMessage(readableError(mutationError, 'Could not mark the period as paid.'))
+      toast.error(readableError(mutationError, 'Could not mark the period as paid.'))
     }
   }
 
   const handleDelete = async () => {
     if (!selectedPeriod) return
-    resetFeedback()
     try {
       await deletePayrollPeriod({ variables: { input: { payrollPeriodId: selectedPeriod.id } } })
       setDialog(null)
       setSelectedPeriodId(null)
-      setStatusMessage(`${formatMonth(selectedPeriod.periodMonth)} payroll period deleted.`)
+      toast.success(`${formatMonth(selectedPeriod.periodMonth)} payroll period deleted.`)
       await refetch()
     } catch (mutationError) {
       setDialog(null)
-      setErrorMessage(readableError(mutationError, 'Could not delete the payroll period.'))
+      toast.error(readableError(mutationError, 'Could not delete the payroll period.'))
     }
   }
 
   const handleDownloadPayslip = async (payslipId: string) => {
-    resetFeedback()
     setDownloadingId(payslipId)
     try {
       const { data: exportData } = await apolloClient.query({
@@ -220,8 +259,9 @@ export function PayrollPage() {
       const payload = exportData?.exportPayslipPdf
       if (!payload) throw new Error('This payslip could not be exported.')
       downloadBase64File(payload.fileName, payload.mimeType, payload.contentBase64)
+      toast.success(`Downloaded ${payload.fileName}.`)
     } catch (queryError) {
-      setErrorMessage(readableError(queryError, 'Could not download the payslip.'))
+      toast.error(readableError(queryError, 'Could not download the payslip.'))
     } finally {
       setDownloadingId(null)
     }
@@ -242,14 +282,14 @@ export function PayrollPage() {
         title="Payroll"
         description="Create a period, check it, process payroll, then mark it as paid."
         actions={
-          <Button variant="outline" onClick={() => setShowSetup(true)}>
+          <Button variant="outline" onClick={() => openCompensation()}>
             <Settings2 className="mr-2 h-4 w-4" />
             Compensation setup
           </Button>
         }
       />
 
-      <div className="grid gap-3 sm:grid-cols-3">
+      <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 sm:gap-3">
         <MetricCard
           label="Compensation"
           value={`${coveredCount} of ${activeEmployees.length}`}
@@ -265,13 +305,13 @@ export function PayrollPage() {
           detail={selectedPeriod ? formatMonth(selectedPeriod.periodMonth) : 'No period selected'}
         />
         <MetricCard
+          className="col-span-2 sm:col-span-1"
           label="Payslips"
           value={String(selectedPeriod?.payslipCount ?? 0)}
           detail={selectedPeriod ? `Generated for ${formatMonth(selectedPeriod.periodMonth)}` : 'No period selected'}
         />
       </div>
 
-      <PageFeedback errorMessage={errorMessage} statusMessage={statusMessage} />
       {error ? <PageFeedback loadError={error} loadErrorPrefix="Payroll data could not be loaded." /> : null}
 
       <div className="grid min-w-0 gap-4 lg:grid-cols-[minmax(0,360px)_minmax(0,1fr)]">
@@ -312,8 +352,7 @@ export function PayrollPage() {
                 periods={payrollPeriods}
                 selectedId={selectedId}
                 onSelect={(id) => {
-                  resetFeedback()
-                  setSelectedPeriodId(id)
+                                setSelectedPeriodId(id)
                 }}
               />
             )}
@@ -370,7 +409,23 @@ export function PayrollPage() {
           <CardTitle>Compensation register</CardTitle>
         </CardHeader>
         <CardContent>
-          <CompensationRegister profiles={compensationProfiles} />
+          {compensationProfiles.length === 0 ? (
+            <AdminTableEmpty>No compensation yet. Use Compensation setup to add someone's pay.</AdminTableEmpty>
+          ) : (
+            <div className="space-y-3">
+              <ListToolbar
+                noun={['person', 'people']}
+                onClear={() => setRegisterSearch('')}
+                onSearchChange={setRegisterSearch}
+                search={registerSearch}
+                searchLabel="Search compensation register"
+                searchPlaceholder="Search name or number"
+                shown={filteredProfiles.length}
+                total={compensationProfiles.length}
+              />
+              <CompensationRegister onEdit={openCompensation} profiles={filteredProfiles} />
+            </div>
+          )}
         </CardContent>
       </Card>
 
@@ -382,9 +437,11 @@ export function PayrollPage() {
       >
         <CompensationForm
           value={compensationForm}
-          onChange={setCompensationForm}
+          onChange={changeCompensationForm}
           employees={employees}
           saving={savingCompensation}
+          error={compensationError}
+          replacing={replacingCompensation}
           onSubmit={handleSaveCompensation}
         />
       </FormDrawer>
