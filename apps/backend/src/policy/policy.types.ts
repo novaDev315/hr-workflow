@@ -5,10 +5,24 @@ import {
   ObjectType,
 } from '@nestjs/graphql';
 import {
-  IsOptional,
   IsString,
+  IsOptional,
+  IsUrl,
   MaxLength,
+  ValidateIf,
 } from 'class-validator';
+
+const DOCUMENT_URL_OPTIONS = {
+  protocols: ['http', 'https'],
+  require_protocol: true,
+  require_tld: false,
+};
+
+/** Skips validation for null/undefined/empty so a document link can be cleared. */
+const hasDocumentUrl = (input: { documentUrl?: string | null }) =>
+  input.documentUrl !== undefined &&
+  input.documentUrl !== null &&
+  input.documentUrl.trim() !== '';
 
 @ObjectType()
 export class PolicyDocumentType {
@@ -79,8 +93,10 @@ export class CreatePolicyDocumentInput {
   description: string;
 
   @Field({ nullable: true })
-  @IsOptional()
-  @IsString()
+  @ValidateIf(hasDocumentUrl)
+  @IsUrl(DOCUMENT_URL_OPTIONS, {
+    message: 'must be a valid http or https URL',
+  })
   @MaxLength(1000)
   documentUrl?: string;
 
@@ -133,8 +149,10 @@ export class UpdatePolicyDocumentInput {
   description?: string;
 
   @Field({ nullable: true })
-  @IsOptional()
-  @IsString()
+  @ValidateIf(hasDocumentUrl)
+  @IsUrl(DOCUMENT_URL_OPTIONS, {
+    message: 'must be a valid http or https URL',
+  })
   @MaxLength(1000)
   documentUrl?: string;
 

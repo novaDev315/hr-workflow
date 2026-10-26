@@ -6,7 +6,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { randomUUID } from 'crypto';
-import { mkdir, writeFile } from 'fs/promises';
+import { mkdir, unlink, writeFile } from 'fs/promises';
 import path from 'path';
 import { and, desc, eq, ne, sql } from 'drizzle-orm';
 import { DatabaseService } from '../database/database.service';
@@ -21,6 +21,12 @@ import {
   UpdatePolicyDocumentInput,
   UploadPolicyDocumentFileInput,
 } from './policy.types';
+import {
+  getPolicyFileType,
+  POLICY_FILE_MAX_BASE64_LENGTH,
+  POLICY_FILE_MAX_BYTES,
+  STORED_POLICY_FILE_NAME_PATTERN,
+} from './policy-file-types';
 
 interface PolicyDocumentRow {
   id: string;
@@ -71,6 +77,7 @@ export class PolicyService {
       throw new BadRequestException('Policy status must be DRAFT or PUBLISHED');
     }
 
+    const documentUrl = this.normalizeDocumentUrl(input.documentUrl);
     const title = input.title.trim();
     const version = input.version.trim();
     const [existing] = await this.database.drizzle
@@ -98,7 +105,7 @@ export class PolicyService {
         effectiveDate: input.effectiveDate.trim(),
         description: input.description.trim(),
         status,
-        documentUrl: input.documentUrl?.trim() ?? null,
+        documentUrl,
         content: input.content?.trim() ?? null,
         publishedAt: status === 'PUBLISHED' ? sql`NOW()` : null,
       })
@@ -116,6 +123,10 @@ export class PolicyService {
     const title = input.title?.trim() ?? existing.title;
     const version = input.version?.trim() ?? existing.version;
     const status = input.status?.trim().toUpperCase() ?? existing.status;
+    const documentUrl =
+      input.documentUrl !== undefined
+        ? this.normalizeDocumentUrl(input.documentUrl)
+        : existing.documentUrl;
 
     if (!['DRAFT', 'PUBLISHED', 'ARCHIVED'].includes(status)) {
       throw new BadRequestException('Policy status must be DRAFT, PUBLISHED, or ARCHIVED');
@@ -149,10 +160,7 @@ export class PolicyService {
             ? input.description?.trim() || existing.description
             : existing.description,
         status,
-        documentUrl:
-          input.documentUrl !== undefined
-            ? input.documentUrl?.trim() || null
-            : existing.documentUrl,
+        documentUrl,
         content:
           input.content !== undefined
             ? input.content?.trim() || null
@@ -228,7 +236,10 @@ export class PolicyService {
     this.assertCanManagePolicies(currentUser.roles);
 
     const [existing] = await this.database.drizzle
-      .select({ id: policyDocumentsTable.id })
+      .select({
+        id: policyDocumentsTable.id,
+        storedFileName: policyDocumentsTable.storedFileName,
+      })
       .from(policyDocumentsTable)
       .where(eq(policyDocumentsTable.id, input.policyDocumentId))
       .limit(1);
@@ -237,13 +248,13 @@ export class PolicyService {
       throw new NotFoundException('Policy document not found');
     }
 
-    const fileBuffer = Buffer.from(input.contentBase64, 'base64');
-    if (fileBuffer.length === 0) {
-      throw new BadRequestException('Uploaded policy file cannot be empty');
+    // Reject oversized payloads before allocating the decoded buffer.
+    if (input.contentBase64.length > POLICY_FILE_MAX_BASE64_LENGTH) {
+      throw new BadRequestException('Uploaded policy file must be 10 MB or smaller');
     }
 
-    if (fileBuffer.length > 10 * 1024 * 1024) {
-      throw new BadRequestException('Uploaded policy file must be 10 MB or smaller');
+    if (!/^[A-Za-z0-9+/]*={0,2}$/.test(input.contentBase64)) {
+      throw new BadRequestException('Uploaded policy file content must be valid base64');
     }
 
     const safeOriginalName = path.basename(input.fileName.trim());
@@ -251,37 +262,86 @@ export class PolicyService {
       throw new BadRequestException('Uploaded policy file must include a valid file name');
     }
 
-    const extension = path.extname(safeOriginalName) || '.bin';
-    const storedFileName = `${randomUUID()}${extension}`;
+    const extension = path.extname(safeOriginalName).slice(1).toLowerCase();
+    const fileType = getPolicyFileType(extension);
+    if (!fileType) {
+      throw new BadRequestException(
+        'Policy files must be PDF, DOC, DOCX, TXT, PNG, or JPG',
+      );
+    }
+
+    const declaredMime = input.mimeType.split(';')[0].trim().toLowerCase();
+    if (declaredMime !== fileType.mimeType) {
+      throw new BadRequestException(
+        `File type ${declaredMime || 'unknown'} does not match the .${extension} extension`,
+      );
+    }
+
+    const fileBuffer = Buffer.from(input.contentBase64, 'base64');
+    if (fileBuffer.length === 0) {
+      throw new BadRequestException('Uploaded policy file cannot be empty');
+    }
+
+    if (fileBuffer.length > POLICY_FILE_MAX_BYTES) {
+      throw new BadRequestException('Uploaded policy file must be 10 MB or smaller');
+    }
+
+    const storedFileName = `${randomUUID()}.${extension}`;
     const storageDir = this.getPolicyStorageDir();
     const absolutePath = path.join(storageDir, storedFileName);
 
     await mkdir(storageDir, { recursive: true });
     await writeFile(absolutePath, fileBuffer);
 
-    await this.database.drizzle
-      .update(policyDocumentsTable)
-      .set({
-        documentUrl: `${this.getBackendPublicUrl()}/policy-files/${storedFileName}`,
-        documentOriginalName: safeOriginalName,
-        documentMimeType: input.mimeType.trim(),
-        storedFileName,
-        updatedAt: sql`NOW()`,
-      })
-      .where(eq(policyDocumentsTable.id, input.policyDocumentId));
+    try {
+      await this.database.drizzle
+        .update(policyDocumentsTable)
+        .set({
+          documentUrl: `${this.getBackendPublicUrl()}/policy-files/${storedFileName}`,
+          documentOriginalName: safeOriginalName,
+          documentMimeType: fileType.mimeType,
+          storedFileName,
+          updatedAt: sql`NOW()`,
+        })
+        .where(eq(policyDocumentsTable.id, input.policyDocumentId));
+    } catch (error) {
+      await this.removeStoredFile(storedFileName);
+      throw error;
+    }
+
+    if (existing.storedFileName && existing.storedFileName !== storedFileName) {
+      await this.removeStoredFile(existing.storedFileName);
+    }
 
     return this.findPolicyDocument(input.policyDocumentId);
   }
 
+  /**
+   * Resolves a stored file for public download. Only files that belong to a
+   * PUBLISHED policy are served; everything else is reported as missing.
+   */
   async getStoredPolicyFile(storedFileName: string) {
+    if (!STORED_POLICY_FILE_NAME_PATTERN.test(storedFileName)) {
+      return null;
+    }
+
+    const fileType = getPolicyFileType(path.extname(storedFileName));
+    if (!fileType) {
+      return null;
+    }
+
     const [file] = await this.database.drizzle
       .select({
         documentOriginalName: policyDocumentsTable.documentOriginalName,
-        documentMimeType: policyDocumentsTable.documentMimeType,
         storedFileName: policyDocumentsTable.storedFileName,
       })
       .from(policyDocumentsTable)
-      .where(eq(policyDocumentsTable.storedFileName, storedFileName))
+      .where(
+        and(
+          eq(policyDocumentsTable.storedFileName, storedFileName),
+          eq(policyDocumentsTable.status, 'PUBLISHED'),
+        ),
+      )
       .limit(1);
 
     if (!file?.storedFileName) {
@@ -290,9 +350,45 @@ export class PolicyService {
 
     return {
       originalName: file.documentOriginalName ?? file.storedFileName,
-      mimeType: file.documentMimeType ?? 'application/octet-stream',
+      mimeType: fileType.mimeType,
+      fileType,
       absolutePath: path.join(this.getPolicyStorageDir(), file.storedFileName),
     };
+  }
+
+  private async removeStoredFile(storedFileName: string) {
+    if (!STORED_POLICY_FILE_NAME_PATTERN.test(storedFileName)) {
+      return;
+    }
+
+    try {
+      await unlink(path.join(this.getPolicyStorageDir(), storedFileName));
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
+        console.warn(`Could not remove policy file ${storedFileName}`);
+      }
+    }
+  }
+
+  /** Empty clears the link; anything else must be an http(s) URL. */
+  private normalizeDocumentUrl(value: string | null | undefined) {
+    const trimmed = value?.trim();
+    if (!trimmed) {
+      return null;
+    }
+
+    let parsed: URL;
+    try {
+      parsed = new URL(trimmed);
+    } catch {
+      throw new BadRequestException('documentUrl must be a valid http or https URL');
+    }
+
+    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+      throw new BadRequestException('documentUrl must be a valid http or https URL');
+    }
+
+    return trimmed;
   }
 
   private assertCanManagePolicies(roles: string[]) {
