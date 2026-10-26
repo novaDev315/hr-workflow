@@ -27,6 +27,7 @@ import {
 } from './auth.types';
 import * as bcrypt from 'bcryptjs';
 import { randomUUID } from 'crypto';
+import { LAST_ADMIN_REVOKE_MESSAGE, lockActiveAdmins } from './admin-guard';
 import { findUniqueViolation } from '../employee/unique-violation';
 import { createFirstAdminAccount, ensureSystemRole } from './bootstrap-admin';
 import { LoginRateLimiter } from './login-rate-limiter';
@@ -423,23 +424,15 @@ export class AuthService {
           );
         }
 
-        // Serialize concurrent ADMIN revocations so two admins cannot remove
-        // each other and leave the system without an administrator.
-        const adminAssignments = await tx
-          .select({ userId: userRoleAssignments.userId, isActive: users.isActive })
-          .from(userRoleAssignments)
-          .innerJoin(roles, eq(roles.id, userRoleAssignments.roleId))
-          .innerJoin(users, eq(users.id, userRoleAssignments.userId))
-          .where(eq(roles.key, 'ADMIN'))
-          .for('update', { of: userRoleAssignments });
-
-        const otherActiveAdmins = adminAssignments.filter(
-          (assignment) => assignment.isActive && assignment.userId !== account.id,
-        );
-        if (otherActiveAdmins.length === 0) {
-          throw new ConflictException(
-            'Cannot remove the last remaining ADMIN. Grant ADMIN to another account first.',
-          );
+        // Serialize concurrent ADMIN changes: lock all active ADMIN rows (and
+        // their users) in a stable order, then re-check under the lock that the
+        // acting admin still holds an active ADMIN assignment and that another
+        // active ADMIN remains once the target loses the role.
+        const lockedAdmins = await lockActiveAdmins(tx);
+        const actorStillAdmin = lockedAdmins.some((row) => row.userId === currentUser.userId);
+        const otherActiveAdmins = lockedAdmins.filter((row) => row.userId !== account.id);
+        if (!actorStillAdmin || otherActiveAdmins.length === 0) {
+          throw new ConflictException(LAST_ADMIN_REVOKE_MESSAGE);
         }
       }
 

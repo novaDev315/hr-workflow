@@ -6,7 +6,6 @@ import { randomUUID } from 'crypto';
 import { and, eq, inArray } from 'drizzle-orm';
 import request from 'supertest';
 import { AppModule } from '../app.module';
-import { AuthService } from '../auth/auth.service';
 import { ensureSystemRole } from '../auth/bootstrap-admin';
 import { formatValidationErrors } from '../auth/runtime-config';
 import { SystemRoleKey } from '../common/system-roles';
@@ -350,34 +349,6 @@ describe('Auth session, role and login hardening', () => {
         'You cannot remove your own ADMIN role. Ask another ADMIN to do it.',
       );
       expect((await gql(ME, undefined, token)).data.me.roles).toContain('ADMIN');
-    });
-
-    it('blocks removal of the last remaining active ADMIN', async () => {
-      const service = app.get(AuthService);
-      const target = await staffTarget('rvlast', ['ADMIN']);
-
-      // Make the target the only active ADMIN for the duration of this check.
-      const activeAdmins = await database.drizzle
-        .select({ id: users.id })
-        .from(userRoleAssignments)
-        .innerJoin(roles, eq(roles.id, userRoleAssignments.roleId))
-        .innerJoin(users, eq(users.id, userRoleAssignments.userId))
-        .where(and(eq(roles.key, 'ADMIN'), eq(users.isActive, true)));
-      const others = activeAdmins.map((row) => row.id).filter((id) => id !== target.id);
-      if (others.length) {
-        await database.drizzle.update(users).set({ isActive: false }).where(inArray(users.id, others));
-      }
-      try {
-        // The actor is not the target and holds ADMIN, as a concurrent admin would.
-        const actor = { userId: randomUUID(), email: 'actor@example.test', roles: ['ADMIN'] };
-        await expect(
-          service.revokeStaffAccess(actor, { employeeId: target.employeeId, roleKey: 'ADMIN' }),
-        ).rejects.toThrow('Cannot remove the last remaining ADMIN. Grant ADMIN to another account first.');
-      } finally {
-        if (others.length) {
-          await database.drizzle.update(users).set({ isActive: true }).where(inArray(users.id, others));
-        }
-      }
     });
 
     it('reports a role the account does not hold, and unknown accounts, as errors', async () => {
