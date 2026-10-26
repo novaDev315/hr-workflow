@@ -10,39 +10,28 @@
     }
   }
   const adminEmail = process.env.RAKSS_ADMIN_EMAIL || 'admin@hrflow.lab.novadev.tech';
-  const apiUrl = process.env.RAKSS_API_URL || 'http://localhost:4001/graphql';
-  assertLocalTarget('RAKSS_API_URL', apiUrl);
   const baseUrl = process.env.RAKSS_ADMIN_URL || 'http://localhost:5173';
   assertLocalTarget('RAKSS_ADMIN_URL', baseUrl);
+  // The admin dev server proxies /graphql, so the API defaults to the same origin.
+  const apiUrl = process.env.RAKSS_API_URL || `${baseUrl}/graphql`;
+  assertLocalTarget('RAKSS_API_URL', apiUrl);
   const runId = new Date().toISOString().replace(/[-:.TZ]/g, '').slice(0, 14);
   const today = new Date().toISOString().slice(0, 10);
   const runMinuteIndex = Number(runId.slice(8, 10)) * 60 + Number(runId.slice(10, 12));
   const runMonth = String((Number(runId.slice(12, 14)) % 12) + 1).padStart(2, '0');
   const payrollMonth = `${2500 + runMinuteIndex}-${runMonth}`;
   const payrollDeleteMonth = `${4100 + runMinuteIndex}-${runMonth}`;
-  const proof = {
-    runId,
-    adminEmail,
-    checks: [],
-    gaps: [],
-    created: {},
-  };
+  const proof = { runId, adminEmail, checks: [], gaps: [], created: {} };
 
-  page.on('dialog', (dialog) => dialog.accept());
   await page.setViewportSize({ width: 1280, height: 900 });
 
   function check(name, detail = {}) {
     proof.checks.push({ name, ok: true, ...detail });
   }
 
-  function gap(module, missing, reason) {
-    proof.gaps.push({ module, missing, reason });
-  }
-
   async function gql(query, variables = {}, token = null) {
     let payload = null;
     let lastError = null;
-
     for (let attempt = 1; attempt <= 3; attempt += 1) {
       try {
         payload = await page.evaluate(async ({ apiUrl, query, variables, token }) => {
@@ -63,395 +52,434 @@
         await page.waitForTimeout(1000 * attempt);
       }
     }
-
-    if (!payload) {
-      throw lastError ?? new Error('GraphQL request failed');
-    }
-
+    if (!payload) throw lastError ?? new Error('GraphQL request failed');
     if (!payload.ok || payload.body.errors?.length) {
       throw new Error(payload.body.errors?.map((error) => error.message).join('; ') || payload.statusText);
     }
-
     return payload.body.data;
   }
 
-  async function closeForm() {
-    await page.getByLabel('Close form').click();
-    await page.getByLabel('Close form').waitFor({ state: 'hidden' });
+  // Every page action reports through one toast region. Wait for the message,
+  // then dismiss it so it never covers controls the next step needs.
+  async function toastSeen(text) {
+    const region = page.getByRole('region', { name: /Notifications/ });
+    const item = region.locator('li').filter({ hasText: text }).first();
+    await item.waitFor({ state: 'visible', timeout: 15000 });
+    await item.getByRole('button', { name: 'Dismiss' }).click();
+    await item.waitFor({ state: 'hidden' });
   }
 
-  async function selectValue(controlId, value) {
-    const escapedValue = String(value).replace(/\\/g, '\\\\').replace(/"/g, '\\"');
-    await page.locator(`#${controlId}`).click();
-    const option = page.locator(`[role="option"][data-value="${escapedValue}"]`).last();
-    await option.waitFor({ state: 'visible' });
-    await option.click();
+  async function pickOption(triggerId, name) {
+    await page.locator(`#${triggerId}`).click();
+    const option = page.getByRole('option', { name, exact: typeof name === 'string' });
+    await option.first().waitFor({ state: 'visible' });
+    await option.first().click();
   }
 
-  await page.goto(baseUrl, { waitUntil: 'networkidle' });
+  function dialog(name) {
+    return page.getByRole('dialog', { name });
+  }
+
+  function alertDialog(name) {
+    return page.getByRole('alertdialog', { name });
+  }
+
+  async function rowAction(menuLabel, item) {
+    await page.getByRole('button', { name: menuLabel, exact: true }).click();
+    await page.getByRole('menuitem', { name: item }).click();
+  }
+
+  async function goto(path) {
+    await page.goto(`${baseUrl}${path}`, { waitUntil: 'networkidle' });
+  }
+
+  await goto('/');
   const token = await page.evaluate(() => localStorage.getItem('auth_token'));
   const account = await page.evaluate(() => {
     const raw = localStorage.getItem('admin_account');
     return raw ? JSON.parse(raw) : null;
   });
-  if (!token || !account) {
-    throw new Error('Expected authenticated admin browser session');
-  }
+  if (!token || !account) throw new Error('Expected authenticated admin browser session');
   check('ui login', { roles: account.roles });
 
-  await page.goto(`${baseUrl}/employees`, { waitUntil: 'networkidle' });
-  await page.getByRole('button', { name: 'Add records' }).click();
-  await page.getByRole('button', { name: 'Create Department' }).click();
-  check('department negative required form blocked', {
-    valid: await page.locator('#department-name').evaluate((element) => element.validity.valid),
-  });
+  /* ---------- Organisation: department, designation, work site ---------- */
 
-  await page.locator('#department-name').fill(`UI E2E Ops ${runId}`);
-  await page.locator('#department-code').fill(`UI_OPS_${runId}`);
+  const deptName = `UI E2E Ops ${runId}`;
+  const deptCode = `UI_OPS_${runId}`;
+  await goto('/organisation');
+  await page.locator('#departments').getByRole('button', { name: 'Add department' }).click();
+  const deptSheet = dialog('New department');
+  await deptSheet.waitFor();
+  await page.getByRole('button', { name: 'Add department' }).last().click();
+  const deptNameValid = await page.locator('#department-name').evaluate((element) => element.validity.valid);
+  if (deptNameValid) throw new Error('Department name required validation did not block submission');
+  check('department negative required form blocked');
+  await page.locator('#department-name').fill(deptName);
+  await page.locator('#department-code').fill(deptCode);
   await page.locator('#department-description').fill('Created by UI lifecycle sweep');
-  await page.getByRole('button', { name: 'Create Department' }).click();
-  await page.getByText('Department created.').waitFor();
+  await deptSheet.getByRole('button', { name: 'Add department' }).click();
+  await toastSeen(`${deptName} added.`);
   const department = await gql(`
-    query Departments { departments(includeInactive: true) { id name code description isActive } }
-  `, {}, token).then((data) => data.departments.find((row) => row.code === `UI_OPS_${runId}`));
+    query Departments { departments(includeInactive: true) { id name code isActive } }
+  `, {}, token).then((data) => data.departments.find((row) => row.code === deptCode));
   proof.created.department = department;
   check('ui create department');
 
-  await page.locator('.app-muted-surface').filter({ hasText: `UI_OPS_${runId}` }).getByRole('button', { name: 'Edit' }).click();
+  await rowAction(`Actions for ${deptName}`, 'Edit');
   await page.locator('#department-description').fill('Updated by UI lifecycle sweep');
-  await page.getByRole('button', { name: 'Update Department' }).click();
-  await page.getByText('Department updated.').waitFor();
+  await dialog('Edit department').getByRole('button', { name: 'Save department' }).click();
+  await toastSeen(`${deptName} updated.`);
   check('ui update department');
 
-  await page.locator('#designation-title').fill(`UI E2E Coordinator ${runId}`);
-  await page.locator('#designation-code').fill(`UI_COORD_${runId}`);
-  await selectValue('designation-department', department.id);
+  const desTitle = `UI E2E Coordinator ${runId}`;
+  const desCode = `UI_COORD_${runId}`;
+  await page.locator('#designations').getByRole('button', { name: 'Add designation' }).click();
+  const desSheet = dialog('New designation');
+  await desSheet.waitFor();
+  await page.locator('#designation-title').fill(desTitle);
+  await pickOption('designation-department', deptName);
+  await page.locator('#designation-code').fill(desCode);
   await page.locator('#designation-level').fill('2');
-  await page.getByRole('button', { name: 'Create Designation' }).click();
-  await page.getByText('Designation created.').waitFor();
+  await desSheet.getByRole('button', { name: 'Add designation' }).click();
+  await toastSeen(`${desTitle} added.`);
   const designation = await gql(`
-    query Designations { designations(includeInactive: true) { id title code departmentId level isActive } }
-  `, {}, token).then((data) => data.designations.find((row) => row.code === `UI_COORD_${runId}`));
+    query Designations { designations(includeInactive: true) { id title code departmentId level } }
+  `, {}, token).then((data) => data.designations.find((row) => row.code === desCode));
   proof.created.designation = designation;
   check('ui create designation');
 
-  await page.locator('.app-muted-surface').filter({ hasText: `UI_COORD_${runId}` }).getByRole('button', { name: 'Edit' }).click();
+  await rowAction(`Actions for ${desTitle}`, 'Edit');
   await page.locator('#designation-level').fill('3');
-  await page.getByRole('button', { name: 'Update Designation' }).click();
-  await page.getByText('Designation updated.').waitFor();
+  await dialog('Edit designation').getByRole('button', { name: 'Save designation' }).click();
+  await toastSeen(`${desTitle} updated.`);
   check('ui update designation');
 
+  const siteName = `UI E2E HQ ${runId}`;
+  await page.locator('#sites').getByRole('button', { name: 'Add work site' }).click();
+  const siteSheet = dialog('New work site');
+  await siteSheet.waitFor();
+  await page.locator('#site-name').fill(siteName);
+  await page.locator('#site-code').fill(`UI_HQ_${runId}`);
+  await page.locator('#site-address').fill('UI E2E Office');
+  await page.locator('#site-city').fill('Dubai');
+  await page.locator('#site-latitude').fill('25.2048');
+  await page.locator('#site-longitude').fill('55.2708');
+  await page.locator('#site-radius').fill('100');
+  await siteSheet.getByRole('button', { name: 'Add work site' }).click();
+  await siteSheet.waitFor({ state: 'hidden' });
+  const location = await gql(`
+    query Locations { locations(activeOnly: false) { id code name isActive } }
+  `, {}, token).then((data) => data.locations.find((row) => row.code === `UI_HQ_${runId}`));
+  if (!location) throw new Error('Work site was not created');
+  proof.created.location = location;
+  check('ui create work site');
+
+  /* ---------- People: guided onboarding with staff access ---------- */
+
   const employeeEmail = `ui.e2e.${runId}@hrflow.lab.novadev.tech`;
-  await page.locator('#employee-first-name').fill('UI');
-  await page.locator('#employee-last-name').fill(`Employee ${runId}`);
-  await page.locator('#employee-email').fill(employeeEmail);
-  await page.locator('#employee-phone').fill('+971500001111');
-  await selectValue('employee-department', department.id);
-  await selectValue('employee-designation', designation.id);
-  await page.locator('#employee-join-date').fill(today);
-  await page.getByRole('button', { name: 'Create Employee', exact: true }).click();
-  await page.getByText('Employee created.').waitFor();
-  await closeForm();
-  await page.getByPlaceholder('Search employees').fill(employeeEmail);
-  await page.getByRole('cell', { name: employeeEmail }).waitFor();
+  const employeeName = `UI Employee ${runId}`;
+  await goto('/employees');
+  await page.getByRole('button', { name: 'New employee' }).first().click();
+  const newSheet = dialog(/New employee/);
+  await newSheet.waitFor();
+  await newSheet.getByRole('button', { name: 'Add and continue' }).click();
+  await newSheet.getByText('Enter the first name.').waitFor();
+  if ((await page.locator('#profile-first-name').getAttribute('aria-invalid')) !== 'true') {
+    throw new Error('First name was not marked invalid');
+  }
+  check('employee profile inline validation', { focused: await page.evaluate(() => document.activeElement?.id) });
+
+  await page.locator('#profile-first-name').fill('UI');
+  await page.locator('#profile-last-name').fill(`Employee ${runId}`);
+  await page.locator('#profile-email').fill(employeeEmail);
+  await page.locator('#profile-phone').fill('+971500001111');
+  await pickOption('profile-department', deptName);
+  await pickOption('profile-designation', desTitle);
+  await page.locator('#profile-join-date').fill(today);
+  await newSheet.getByRole('button', { name: 'Add and continue' }).click();
+  await page.locator('#pay-base').waitFor();
+  await page.locator('#pay-base').fill('14000');
+  await page.locator('#pay-allowance').fill('1500');
+  await page.locator('#pay-deduction').fill('300');
+  await newSheet.getByRole('button', { name: 'Continue' }).click();
+  await pickOption('site-location', new RegExp(siteName));
+  await newSheet.getByRole('button', { name: 'Continue' }).click();
+  await page.locator('#signin-staff-role').waitFor();
+  await pickOption('signin-staff-role', 'Supervisor');
+  await newSheet.getByRole('button', { name: 'Finish', exact: true }).click();
+  await dialog('Employee added').waitFor();
+  await dialog('Employee added').getByRole('button', { name: 'Done' }).click();
   const employee = await gql(`
     query Employees($filter: EmployeeFilterInput) {
       employees(filter: $filter) { id employeeNumber email fullName hasLinkedAccount linkedAccountRoles isActive }
     }
   `, { filter: { search: employeeEmail } }, token).then((data) => data.employees[0]);
+  if (!employee?.hasLinkedAccount || !employee.linkedAccountRoles.includes('SUPERVISOR')) {
+    throw new Error(`Onboarding did not create a supervisor sign-in: ${JSON.stringify(employee)}`);
+  }
   proof.created.employee = employee;
-  check('ui create employee and read via search');
+  check('ui onboard employee with pay, site and staff access', { roles: employee.linkedAccountRoles });
 
-  let employeeRow = page.locator('tbody tr').filter({ hasText: employeeEmail }).first();
-  await employeeRow.getByRole('button', { name: 'Edit' }).click();
-  await page.locator('#employee-phone').fill('+971500002222');
-  await page.getByRole('button', { name: 'Update Employee' }).click();
-  await page.getByText('Employee updated.').waitFor();
+  await page.getByRole('searchbox', { name: 'Search people' }).fill(employeeEmail);
+  await page.getByRole('cell', { name: new RegExp(`^${employeeName}`) }).waitFor();
+  check('ui read employee via search');
+
+  await rowAction(`Actions for ${employeeName}`, 'Edit employee');
+  await page.locator('#profile-phone').fill('+971500002222');
+  await dialog('Edit employee').getByRole('button', { name: 'Save changes' }).click();
+  await toastSeen(`${employeeName} updated.`);
   check('ui update employee');
 
-  await selectValue('employee-account-employee', employee.id);
-  await page.locator('#employee-account-password').fill(`Ui.${runId}.Pass1`);
-  await page.getByRole('button', { name: 'Create Employee Account', exact: true }).click();
-  await page.waitForTimeout(1500);
-  const linkedEmployee = await gql(`
-    query Employees($filter: EmployeeFilterInput) {
-      employees(filter: $filter) { id hasLinkedAccount linkedAccountRoles }
-    }
-  `, { filter: { search: employeeEmail } }, token).then((data) => data.employees[0]);
-  if (!linkedEmployee.hasLinkedAccount) {
-    throw new Error('Employee account UI action did not link an account');
-  }
-  check('ui create employee account');
+  await rowAction(`Actions for ${employeeName}`, 'Staff access');
+  const accessSheet = dialog('Staff access');
+  await accessSheet.getByRole('list', { name: 'Current roles' }).getByText('Supervisor').waitFor();
+  await accessSheet.getByRole('button', { name: 'Cancel' }).click();
+  check('ui staff access shows current roles');
 
-  await selectValue('staff-access-employee', employee.id);
-  await selectValue('staff-access-role', 'SUPERVISOR');
-  await page.getByRole('button', { name: 'Provision Staff Access' }).click();
-  await page.waitForTimeout(1500);
-  const staffAccount = await gql(`
-    query Employees($filter: EmployeeFilterInput) {
-      employees(filter: $filter) { id linkedAccountRoles }
-    }
-  `, { filter: { search: employeeEmail } }, token).then((data) => data.employees[0]);
-  if (!staffAccount.linkedAccountRoles.includes('SUPERVISOR')) {
-    throw new Error('Staff access UI action did not add SUPERVISOR role');
-  }
-  check('ui provision staff access', { roles: staffAccount.linkedAccountRoles });
-  await closeForm();
+  await goto('/directory');
+  await page.waitForURL(`${baseUrl}/employees`);
+  check('legacy directory route lands on People');
 
-  await page.goto(`${baseUrl}/directory`, { waitUntil: 'networkidle' });
-  await page.getByText(employeeEmail).waitFor();
-  check('directory read created employee');
+  /* ---------- Attendance ---------- */
 
-  await page.goto(`${baseUrl}/attendance`, { waitUntil: 'networkidle' });
-  await page.getByRole('button', { name: 'Open setup' }).click();
-  await page.getByRole('button', { name: 'Create Location' }).click();
-  check('attendance negative required location form blocked', {
-    valid: await page.locator('#location-name').evaluate((element) => element.validity.valid),
-  });
-  await page.locator('#location-name').fill(`UI E2E HQ ${runId}`);
-  await page.locator('#location-code').fill(`UI_HQ_${runId}`);
-  await page.locator('#location-address').fill('UI E2E Office');
-  await page.locator('#location-city').fill('Dubai');
-  await page.locator('#location-latitude').fill('25.2048');
-  await page.locator('#location-longitude').fill('55.2708');
-  await page.locator('#geofence-radius').fill('100');
-  await page.getByRole('button', { name: 'Create Location' }).click();
-  await page.getByText('Location created.').waitFor();
-  const location = await gql(`
-    query Locations { locations(activeOnly: false) { id code name latitude longitude isActive } }
-  `, {}, token).then((data) => data.locations.find((row) => row.code === `UI_HQ_${runId}`));
-  proof.created.location = location;
-  check('ui create location');
-  await closeForm();
-
-  await page.locator('.app-muted-surface').filter({ hasText: `UI_HQ_${runId}` }).getByRole('button', { name: 'Edit' }).click();
-  await page.locator('#location-city').fill('Abu Dhabi');
-  await page.getByRole('button', { name: 'Update Location' }).click();
-  await page.getByText('Location updated.').waitFor();
-  check('ui update location');
-
-  await selectValue('assignment-employee', employee.id);
-  await selectValue('assignment-location', location.id);
-  await page.getByRole('button', { name: 'Assign Location' }).click();
-  await page.getByText('Location assignment saved.').waitFor();
-  check('ui assign location');
-  await closeForm();
-
-  await selectValue('attendance-employee', employee.id);
-  await selectValue('attendance-location', location.id);
+  await goto('/attendance');
+  await pickOption('attendance-employee', new RegExp(employeeName));
   await page.locator('#attendance-notes').fill('UI e2e attendance');
-  await page.getByRole('button', { name: 'Clock In' }).click();
-  await page.getByText('Clock in recorded.').waitFor();
-  await page.getByRole('button', { name: 'Clock Out' }).click();
-  await page.getByText('Clock out recorded.').waitFor();
+  await page.getByRole('button', { name: 'Clock in' }).click();
+  await page.getByText(`${employeeName} clocked in`).waitFor();
+  await page.getByRole('button', { name: 'Clock out' }).click();
+  await page.getByText(`${employeeName} clocked out.`).waitFor();
   check('ui clock in/out attendance');
 
-  await page.locator('.app-muted-surface').filter({ hasText: `UI_HQ_${runId}` }).getByRole('button', { name: 'Deactivate' }).click();
-  await page.getByText('Location deactivated.').waitFor();
-  check('ui deactivate location');
+  /* ---------- Leave: type, request, reject with reason, approve ---------- */
 
-  await page.goto(`${baseUrl}/leave`, { waitUntil: 'networkidle' });
+  const leaveTypeName = `UI Leave ${runId}`;
+  await goto('/leave');
   await page.getByRole('button', { name: 'New leave type' }).click();
+  await page.locator('#leave-type-name').fill(leaveTypeName);
   await page.locator('#leave-type-code').fill(`UI_${runId.slice(4)}`);
-  await page.locator('#leave-type-name').fill(`UI Leave ${runId}`);
-  await page.locator('#leave-type-days').fill('2');
+  await page.locator('#leave-type-days').fill('5');
   await page.locator('#leave-type-description').fill('Created by UI lifecycle sweep');
-  await page.getByRole('button', { name: 'Create Leave Type' }).click();
-  await page.getByText('Leave type created.').waitFor();
-  const leaveType = await gql(`
-    query LeaveTypes { leaveTypes { id code name defaultDays } }
-  `, {}, token).then((data) => data.leaveTypes.find((row) => row.name === `UI Leave ${runId}`));
-  proof.created.leaveType = leaveType;
+  await page.getByRole('button', { name: 'Create leave type' }).click();
+  await toastSeen(`${leaveTypeName} created.`);
   check('ui create leave type');
 
-  await page.locator('.app-muted-surface').filter({ hasText: `UI Leave ${runId}` }).getByRole('button', { name: 'Edit' }).click();
-  await page.locator('#leave-type-days').fill('3');
-  await page.getByRole('button', { name: 'Update Leave Type' }).click();
-  await page.getByText('Leave type updated.').waitFor();
+  await page.getByRole('button', { name: `Edit ${leaveTypeName}` }).click();
+  await page.locator('#leave-type-days').fill('6');
+  await page.getByRole('button', { name: 'Save changes' }).click();
+  await toastSeen(`${leaveTypeName} updated.`);
   check('ui update leave type');
 
-  await page.getByRole('button', { name: 'New leave request' }).click();
-  await selectValue('leave-request-employee', employee.id);
-  await selectValue('leave-request-type', leaveType.id);
-  await page.locator('#leave-request-start').fill(futureDate(14));
-  await page.locator('#leave-request-end').fill(futureDate(15));
-  await page.locator('#leave-request-reason').fill('Created by UI lifecycle sweep');
-  await page.getByRole('button', { name: 'Create Request' }).click();
-  await page.getByText('Leave request created.').waitFor();
+  async function requestLeave(startOffset, endOffset, reason) {
+    await page.getByRole('button', { name: 'New request' }).click();
+    await pickOption('leave-request-employee', new RegExp(employeeName));
+    await pickOption('leave-request-type', leaveTypeName);
+    await page.locator('#leave-request-start').fill(midweekDate(startOffset));
+    await page.locator('#leave-request-end').fill(midweekDate(startOffset, endOffset - startOffset));
+    await page.locator('#leave-request-reason').fill(reason);
+    await page.getByRole('button', { name: 'Create request' }).click();
+    await toastSeen(`Leave request created for ${employeeName}`);
+  }
+
+  await page.getByRole('button', { name: 'New request' }).click();
+  await page.getByRole('button', { name: 'Create request' }).click();
+  await dialog('New leave request').getByText('Choose the employee taking leave.').waitFor();
+  await dialog('New leave request').getByRole('button', { name: 'Close form' }).click();
+  check('leave request negative validation shows inline message');
+
+  await requestLeave(14, 15, 'Created by UI lifecycle sweep');
   check('ui create leave request');
 
-  await page.reload({ waitUntil: 'networkidle' });
-  const leaveCard = page.locator('.app-muted-surface').filter({ hasText: `UI Employee ${runId}` }).first();
-  await leaveCard.waitFor();
-  await leaveCard.getByPlaceholder('Optional decision note').fill('Rejected by UI lifecycle sweep');
-  await leaveCard.getByRole('button', { name: 'Reject' }).click();
-  await page.getByText('Leave request rejected.').waitFor();
-  check('ui review leave request reject');
-  await page.locator('.app-muted-surface').filter({ hasText: `UI Leave ${runId}` }).getByRole('button', { name: 'Deactivate' }).click();
-  await page.getByText('Leave type deactivated.').waitFor();
+  await page.getByRole('button', { name: `Reject ${employeeName}'s leave` }).click();
+  const rejectDialog = alertDialog(`Reject ${employeeName}'s leave?`);
+  await rejectDialog.getByRole('button', { name: 'Reject request' }).click();
+  await rejectDialog.getByText('Add a reason so the employee knows what to change.').waitFor();
+  await rejectDialog.getByLabel('Reason for the employee').fill('Rejected by UI lifecycle sweep');
+  await rejectDialog.getByRole('button', { name: 'Reject request' }).click();
+  await toastSeen(`${employeeName}'s ${leaveTypeName.toLowerCase()} rejected.`);
+  check('ui reject leave requires a reason');
+
+  await requestLeave(28, 28, 'Approval path from UI lifecycle sweep');
+  await page.getByRole('button', { name: `Approve ${employeeName}'s leave` }).click();
+  await toastSeen(`${employeeName}'s ${leaveTypeName.toLowerCase()} approved.`);
+  check('ui approve leave');
+
+  await page.getByRole('searchbox', { name: 'Search leave history' }).fill(employeeName);
+  await page.getByText('Showing 2 of').waitFor();
+  check('ui search leave history');
+
+  await page.getByRole('button', { name: `Deactivate ${leaveTypeName}` }).click();
+  await alertDialog(`Deactivate ${leaveTypeName}?`).getByRole('button', { name: 'Deactivate' }).click();
+  await toastSeen(`${leaveTypeName} deactivated.`);
   check('ui deactivate leave type');
 
-  await page.goto(`${baseUrl}/payroll`, { waitUntil: 'networkidle' });
-  await page.getByRole('button', { name: 'Open compensation setup' }).click();
-  await selectValue('compensation-employee', employee.id);
-  await page.locator('#base-salary').fill('14000');
-  await page.locator('#allowance-amount').fill('1500');
-  await page.locator('#deduction-amount').fill('300');
-  await page.locator('#effective-from').fill(today);
+  /* ---------- Payroll: edit pay, period lifecycle, payslip ---------- */
+
+  await goto('/payroll');
+  await page.getByRole('searchbox', { name: 'Search compensation register' }).fill(employeeName);
+  await page.getByRole('button', { name: `Edit pay for ${employeeName}` }).click();
+  const payDrawer = dialog('Compensation setup');
+  await payDrawer.waitFor();
+  if ((await page.locator('#base-salary').inputValue()) !== '14000') {
+    throw new Error('Compensation edit did not prefill the current salary');
+  }
+  await page.locator('#base-salary').fill('14500');
   await page.locator('#compensation-notes').fill('UI lifecycle compensation');
-  await page.getByRole('button', { name: 'Save Compensation' }).click();
-  await page.getByText('Compensation profile saved.').waitFor();
-  check('ui create/update compensation profile');
-  await closeForm();
+  await payDrawer.getByRole('button', { name: 'Save compensation' }).click();
+  await toastSeen(`Pay saved for ${employeeName}.`);
+  await payDrawer.waitFor({ state: 'hidden' });
+  check('ui edit compensation from register');
 
   await page.locator('#period-month').fill(payrollDeleteMonth);
-  await page.getByRole('button', { name: 'Create Period' }).click();
-  await page.getByText('Payroll period created.').waitFor();
-  await page.locator('.app-muted-surface').filter({ hasText: payrollDeleteMonth }).getByRole('button', { name: 'Delete' }).click();
-  await page.getByText('Payroll period deleted.').waitFor();
+  await page.getByRole('button', { name: 'Create payroll period' }).click();
+  await toastSeen('payroll period created.');
+  await page.getByRole('button', { name: 'Delete period' }).click();
+  await alertDialog(/payroll period\?/).getByRole('button', { name: 'Delete period' }).click();
+  await toastSeen('payroll period deleted.');
   check('ui delete open payroll period');
 
   await page.locator('#period-month').fill(payrollMonth);
-  await page.getByRole('button', { name: 'Create Period' }).click();
-  await page.getByText('Payroll period created.').waitFor();
-  check('ui create payroll period');
-  await page.locator('.app-muted-surface').filter({ hasText: payrollMonth }).getByRole('button', { name: 'Process' }).click();
-  await page.getByText('Payroll processed.').waitFor();
-  await page.locator('.app-muted-surface').filter({ hasText: payrollMonth }).getByRole('button', { name: 'Mark Paid' }).click();
-  await page.getByText('Payroll period marked as paid.').waitFor();
-  await page.getByRole('button', { name: 'Download PDF' }).first().click();
-  await page.getByText('Payslip PDF downloaded.').waitFor();
+  await page.getByRole('button', { name: 'Create payroll period' }).click();
+  await toastSeen('payroll period created.');
+  await page.getByRole('list', { name: /Step 1 of 3/ }).waitFor();
+  check('ui create payroll period', { step: 'Process payroll' });
+  await page.getByRole('button', { name: 'Process payroll' }).click();
+  await page.getByRole('alertdialog').getByRole('button', { name: 'Process payroll' }).click();
+  await toastSeen('payroll processed.');
+  await page.getByRole('list', { name: /Step 2 of 3/ }).waitFor();
+  await page.getByRole('button', { name: 'Mark as paid' }).click();
+  await page.getByRole('alertdialog').getByRole('button', { name: 'Mark as paid' }).click();
+  await toastSeen('payroll marked as paid.');
+  await page.getByRole('button', { name: `Download payslip PDF for ${employeeName}` }).click();
+  await toastSeen('Downloaded');
   check('ui process/pay/export payroll');
 
-  await page.goto(`${baseUrl}/policies`, { waitUntil: 'networkidle' });
+  /* ---------- Policies ---------- */
+
+  const policyTitle = `UI Policy ${runId}`;
+  await goto('/policies');
   await page.getByRole('button', { name: 'New policy' }).click();
   await page.getByRole('button', { name: 'Save policy' }).click();
-  check('policies negative required composer form blocked', {
-    valid: await page.locator('input[placeholder="Policy title"]').evaluate((element) => element.validity.valid),
-  });
-  const policyTitle = `UI Policy ${runId}`;
-  await page.locator('input[placeholder="Policy title"]').fill(policyTitle);
-  await page.locator('input[placeholder="Category"]').fill('UI E2E');
-  await page.locator('input[placeholder="Version"]').fill('1.0');
-  await page.locator('input[placeholder="Short description"]').fill('Created by UI lifecycle sweep');
-  await page.locator('input[placeholder="Optional document URL"]').fill('https://admin.hrflow.lab.novadev.tech/health');
-  await page.locator('textarea[placeholder="Policy summary or text content"]').fill('UI policy content from lifecycle sweep');
+  const policyTitleValid = await page.locator('#policy-title').evaluate((element) => element.validity.valid);
+  if (policyTitleValid) throw new Error('Policy title required validation did not block submission');
+  check('policies negative required composer form blocked');
+  await page.locator('#policy-title').fill(policyTitle);
+  await page.locator('#policy-category').fill('UI E2E');
+  await page.locator('#policy-version').fill('1.0');
+  await page.locator('#policy-description').fill('Created by UI lifecycle sweep');
+  await page.locator('#policy-link').fill('https://example.com/policy');
+  await page.locator('#policy-content').fill('UI policy content from lifecycle sweep');
   await page.getByRole('button', { name: 'Save policy' }).click();
-  await page.getByText('Policy document created.').waitFor();
-  await page.getByText(policyTitle).waitFor();
+  await toastSeen('Policy created.');
+  await page.getByRole('heading', { name: policyTitle }).waitFor();
   check('ui create policy document');
-  await policyCard(policyTitle).getByRole('button', { name: 'Edit' }).click();
-  await page.locator('input[placeholder="Version"]').fill('1.1');
-  await page.getByRole('button', { name: 'Update policy' }).click();
-  await page.getByText('Policy document updated.').waitFor();
-  check('ui update policy document');
-  await policyCard(policyTitle).getByRole('button', { name: 'Publish' }).click();
-  await page.getByText('Policy document published.').waitFor();
-  check('ui publish policy document');
-  await policyCard(policyTitle).getByRole('button', { name: 'Archive' }).click();
-  await page.getByText('Policy document archived.').waitFor();
-  check('ui archive policy document');
 
-  await page.goto(`${baseUrl}/recruitment`, { waitUntil: 'networkidle' });
-  await page.getByRole('button', { name: 'New requisition' }).click();
-  await page.getByRole('button', { name: 'Create Requisition' }).click();
-  const requisitionTitleValid = await page.locator('#requisition-title').evaluate((element) => element.validity.valid);
-  if (requisitionTitleValid) {
-    throw new Error('Recruitment requisition required title validation did not block submission');
-  }
-  check('recruitment negative required requisition form blocked', {
-    valid: requisitionTitleValid,
-  });
+  await page.getByRole('button', { name: `Edit ${policyTitle}` }).click();
+  await page.locator('#policy-version').fill('1.1');
+  await page.getByRole('button', { name: 'Save changes' }).click();
+  await toastSeen('Policy updated.');
+  check('ui update policy document');
+
+  await page.getByRole('button', { name: `Publish ${policyTitle}` }).click();
+  await alertDialog(`Publish ${policyTitle}?`).getByRole('button', { name: 'Publish' }).click();
+  await toastSeen(`${policyTitle} published.`);
+  check('ui publish policy document with confirmation');
+
+  await page.getByRole('button', { name: `Archive ${policyTitle}` }).click();
+  await alertDialog(`Archive ${policyTitle}?`).getByRole('button', { name: 'Archive' }).click();
+  await toastSeen(`${policyTitle} archived.`);
+  await page.getByRole('radio', { name: /^Archived/ }).click();
+  await page.getByRole('heading', { name: policyTitle }).waitFor();
+  check('ui archive policy document and find it under Archived');
+
+  /* ---------- Recruitment: requisition to hire to employee record ---------- */
 
   const requisitionTitle = `UI Recruiter ${runId}`;
+  await goto('/recruitment');
+  await page.getByRole('button', { name: 'New requisition' }).click();
+  await page.getByRole('button', { name: 'Create requisition' }).click();
+  const requisitionTitleValid = await page.locator('#requisition-title').evaluate((element) => element.validity.valid);
+  if (requisitionTitleValid) throw new Error('Recruitment requisition required title validation did not block submission');
+  check('recruitment negative required requisition form blocked');
+
   await page.locator('#requisition-title').fill(requisitionTitle);
-  await selectValue('requisition-department', department.id);
-  await selectValue('requisition-designation', designation.id);
+  await pickOption('requisition-department', deptName);
+  await pickOption('requisition-designation', desTitle);
   await page.locator('#requisition-positions').fill('2');
-  await selectValue('requisition-employment-type', 'FULL_TIME');
-  await selectValue('requisition-priority', 'HIGH');
   await page.locator('#requisition-target-start').fill(futureDate(30));
   await page.locator('#requisition-salary-min').fill('12000');
   await page.locator('#requisition-salary-max').fill('18000');
   await page.locator('#requisition-description').fill('Created by UI lifecycle sweep');
   await page.locator('#requisition-requirements').fill('Hiring workflow proof');
-  await page.getByRole('button', { name: 'Create Requisition' }).click();
-  await page.getByText('Job requisition created.').waitFor();
+  await page.getByRole('button', { name: 'Create requisition' }).click();
+  await toastSeen(`${requisitionTitle} opened.`);
   const requisition = await gql(`
     query JobRequisitions($filter: JobRequisitionFilterInput) {
-      jobRequisitions(filter: $filter) {
-        id
-        requisitionNumber
-        jobTitle
-        departmentId
-        designationId
-        positionsCount
-        priority
-        status
-        applicationCount
-      }
+      jobRequisitions(filter: $filter) { id requisitionNumber jobTitle status }
     }
   `, { filter: { search: requisitionTitle } }, token).then((data) => data.jobRequisitions[0]);
   proof.created.requisition = requisition;
   check('ui create recruitment requisition');
 
-  await page.locator('.app-muted-surface').filter({ hasText: requisitionTitle }).getByRole('button', { name: 'Edit' }).click();
+  await rowAction(`Actions for ${requisitionTitle}`, 'Edit');
   await page.locator('#requisition-positions').fill('3');
-  await page.locator('#requisition-description').fill('Updated by UI lifecycle sweep');
-  await page.getByRole('button', { name: 'Update Requisition' }).click();
-  await page.getByText('Job requisition updated.').waitFor();
+  await page.getByRole('button', { name: 'Save requisition' }).click();
+  await toastSeen(`${requisitionTitle} updated.`);
   check('ui update recruitment requisition');
 
-  await page.getByRole('button', { name: 'Add candidate' }).click();
-  await selectValue('application-requisition', requisition.id);
-  await page.locator('#candidate-first-name').fill('Recruitment');
-  await page.locator('#candidate-last-name').fill(`Candidate ${runId}`);
-  const candidateEmail = `candidate.${runId}@hrflow.lab.novadev.tech`;
-  await page.locator('#candidate-email').fill(candidateEmail);
-  await page.locator('#candidate-phone').fill('+971500003333');
-  await page.locator('#candidate-source').fill('UI lifecycle');
-  await page.locator('#candidate-experience').fill('5');
-  await page.locator('#candidate-expected-salary').fill('16000');
-  await page.locator('#candidate-resume-url').fill('https://admin.hrflow.lab.novadev.tech/health');
-  await page.locator('#candidate-notes').fill('Created by UI lifecycle sweep');
-  await page.locator('form').filter({ has: page.locator('#candidate-email') }).getByRole('button', { name: 'Add Candidate' }).click();
-  await page.getByText('Recruitment application created.').waitFor();
-  const application = await gql(`
-    query RecruitmentApplications($filter: RecruitmentApplicationFilterInput) {
-      recruitmentApplications(filter: $filter) {
-        id
-        applicationNumber
-        requisitionId
-        candidateName
-        email
-        status
-      }
-    }
-  `, { filter: { search: candidateEmail } }, token).then((data) => data.recruitmentApplications[0]);
-  proof.created.recruitmentApplication = application;
+  async function addCandidate(firstName, lastName, email) {
+    await page.getByRole('button', { name: 'Add candidate' }).first().click();
+    const drawer = dialog(/candidate/i);
+    await drawer.waitFor();
+    await pickOption('application-requisition', new RegExp(requisitionTitle));
+    await page.locator('#candidate-first-name').fill(firstName);
+    await page.locator('#candidate-last-name').fill(lastName);
+    await page.locator('#candidate-email').fill(email);
+    await page.locator('#candidate-phone').fill('+971500003333');
+    await page.locator('#candidate-source').fill('UI lifecycle');
+    await page.locator('#candidate-experience').fill('5');
+    await page.locator('#candidate-expected-salary').fill('16000');
+    await drawer.getByRole('button', { name: 'Add candidate' }).click();
+    await toastSeen(`${firstName} ${lastName} added to Received.`);
+  }
+
+  const hireLast = `Hire ${runId}`;
+  const hireEmail = `hire.${runId}@hrflow.lab.novadev.tech`;
+  await addCandidate('Recruitment', hireLast, hireEmail);
   check('ui create recruitment application');
 
-  const applicationCard = () => page.locator('.app-muted-surface').filter({ hasText: candidateEmail }).first();
-  await applicationCard().getByRole('button', { name: 'Start Screening' }).click();
-  await page.getByText('Recruitment application advanced.').waitFor();
-  await applicationCard().getByRole('button', { name: 'Shortlist' }).click();
-  await page.getByText('Recruitment application advanced.').waitFor();
-  const shortlistedApplication = await gql(`
+  const hireCard = () => page.locator('article').filter({ hasText: `Recruitment ${hireLast}` }).first();
+  for (const step of ['Start screening', 'Shortlist', 'Schedule interview', 'Mark interviewed', 'Select', 'Extend offer', 'Mark hired']) {
+    await hireCard().getByRole('button', { name: step }).click();
+    await toastSeen(`Recruitment ${hireLast}`);
+  }
+  const hired = await gql(`
     query RecruitmentApplications($filter: RecruitmentApplicationFilterInput) {
       recruitmentApplications(filter: $filter) { id status }
     }
-  `, { filter: { search: candidateEmail } }, token).then((data) => data.recruitmentApplications[0]);
-  if (shortlistedApplication.status !== 'SHORTLISTED') {
-    throw new Error(`Expected recruitment application to be SHORTLISTED, got ${shortlistedApplication.status}`);
-  }
-  check('ui advance recruitment application');
+  `, { filter: { search: hireEmail } }, token).then((data) => data.recruitmentApplications[0]);
+  if (hired.status !== 'HIRED') throw new Error(`Expected HIRED, got ${hired.status}`);
+  check('ui advance candidate through the pipeline to hired');
 
-  await applicationCard().getByRole('button', { name: 'Reject' }).click();
-  await page.getByText('Recruitment application rejected.').waitFor();
+  await hireCard().getByRole('link', { name: 'Create employee record' }).click();
+  await page.waitForURL(`${baseUrl}/employees`);
+  await dialog(/New employee/).waitFor();
+  const prefilledEmail = await page.locator('#profile-email').inputValue();
+  if (prefilledEmail !== hireEmail) throw new Error(`Hire handoff did not prefill email (${prefilledEmail})`);
+  await dialog(/New employee/).getByRole('button', { name: 'Close' }).click();
+  check('ui hired candidate opens prefilled new employee');
+
+  await goto('/recruitment');
+  const rejectLast = `Reject ${runId}`;
+  await addCandidate('Recruitment', rejectLast, `reject.${runId}@hrflow.lab.novadev.tech`);
+  await rowAction(`More actions for Recruitment ${rejectLast}`, 'Reject');
+  await alertDialog(/Reject: Recruitment/).getByRole('button', { name: 'Reject' }).click();
+  await toastSeen(`Recruitment ${rejectLast} rejected.`);
   check('ui reject recruitment application');
 
-  await page.locator('.app-muted-surface').filter({ hasText: requisitionTitle }).getByRole('button', { name: 'Close' }).click();
-  await page.getByText('Job requisition closed.').waitFor();
+  await rowAction(`Actions for ${requisitionTitle}`, 'Close');
+  await alertDialog(/Close:/).getByRole('button', { name: 'Close' }).click();
+  await toastSeen(`${requisitionTitle} closed.`);
   check('ui close recruitment requisition');
 
   let closedRequisitionBlockedApplication = false;
@@ -471,35 +499,47 @@
   } catch {
     closedRequisitionBlockedApplication = true;
   }
-  if (!closedRequisitionBlockedApplication) {
-    throw new Error('Closed requisition allowed a new application');
-  }
+  if (!closedRequisitionBlockedApplication) throw new Error('Closed requisition allowed a new application');
   check('closed recruitment requisition blocks applications');
 
-  await page.goto(`${baseUrl}/employees`, { waitUntil: 'networkidle' });
-  await page.getByPlaceholder('Search employees').fill(employeeEmail);
-  employeeRow = page.locator('tbody tr').filter({ hasText: employeeEmail }).first();
-  await employeeRow.getByRole('button', { name: 'Deactivate' }).click();
-  await page.getByText('Employee deactivated.').waitFor();
+  /* ---------- Clean-up through the UI ---------- */
+
+  await goto('/employees');
+  await page.getByRole('searchbox', { name: 'Search people' }).fill(employeeEmail);
+  await rowAction(`Actions for ${employeeName}`, 'Deactivate');
+  await alertDialog(`Deactivate ${employeeName}?`).getByRole('button', { name: 'Deactivate' }).click();
+  await toastSeen(`${employeeName} deactivated.`);
   check('ui deactivate employee');
 
-  await page.getByRole('button', { name: 'Add records' }).click();
-  await page.locator('.app-muted-surface').filter({ hasText: `UI_COORD_${runId}` }).getByRole('button', { name: 'Deactivate' }).click();
-  await page.getByText('Designation deactivated.').waitFor();
-  check('ui deactivate designation');
-  await page.locator('.app-muted-surface').filter({ hasText: `UI_OPS_${runId}` }).getByRole('button', { name: 'Deactivate' }).click();
-  await page.getByText('Department deactivated.').waitFor();
-  check('ui deactivate department');
+  await goto('/organisation');
+  for (const [menu, name] of [[`Actions for ${siteName}`, siteName], [`Actions for ${desTitle}`, desTitle], [`Actions for ${deptName}`, deptName]]) {
+    await rowAction(menu, 'Deactivate');
+    await page.getByRole('alertdialog').getByRole('button', { name: /Deactivate/ }).click();
+    await toastSeen(`${name} deactivated.`);
+  }
+  check('ui deactivate work site, designation and department');
 
-  await page.goto(`${baseUrl}/reports`, { waitUntil: 'networkidle' });
-  await page.locator('input[type="month"]').fill(payrollMonth);
+  /* ---------- Reports ---------- */
+
+  await goto('/reports');
+  await page.locator('#report-month').fill(payrollMonth);
   await page.getByRole('button', { name: 'Export PDF' }).click();
+  await page.getByRole('button', { name: 'Export PDF' }).waitFor({ state: 'visible' });
   check('ui export reports pdf button');
 
-  await page.goto(`${baseUrl}/`, { waitUntil: 'networkidle' });
+  /* ---------- Phone layout ---------- */
+
   await page.setViewportSize({ width: 390, height: 844 });
+  await goto('/employees');
+  if (await page.getByRole('region', { name: 'People', exact: true }).count()) {
+    throw new Error('People table rendered on a phone; expected cards');
+  }
+  await page.getByRole('button', { name: 'Filters' }).click();
+  await page.locator('#people-department').waitFor({ state: 'visible' });
+  check('mobile people uses cards and collapsible filters');
+  await goto('/');
   await page.getByLabel('Open navigation').click();
-  await page.getByLabel('Close navigation').waitFor();
+  await page.getByRole('button', { name: 'Close navigation' }).last().waitFor();
   await page.screenshot({ path: 'output/playwright/rakss-ui-lifecycle-mobile-nav.png', fullPage: true });
   check('mobile nav open state');
   await page.setViewportSize({ width: 1280, height: 900 });
@@ -507,13 +547,19 @@
 
   return proof;
 
+  // A Tuesday at least `offsetDays` ahead (plus `spanDays`), so leave always
+  // contains working days whatever the weekend convention.
+  function midweekDate(offsetDays, spanDays = 0) {
+    const date = new Date();
+    date.setDate(date.getDate() + offsetDays);
+    while (date.getDay() !== 2) date.setDate(date.getDate() + 1);
+    date.setDate(date.getDate() + spanDays);
+    return date.toISOString().slice(0, 10);
+  }
+
   function futureDate(offsetDays) {
     const date = new Date();
     date.setDate(date.getDate() + offsetDays);
     return date.toISOString().slice(0, 10);
-  }
-
-  function policyCard(title) {
-    return page.locator('.app-surface').filter({ hasText: title }).last();
   }
 })()

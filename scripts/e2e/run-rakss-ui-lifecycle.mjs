@@ -70,7 +70,16 @@ try {
   await page.getByRole('button', { name: 'Sign in' }).click();
   await page.waitForURL(`${baseUrl}/`, { timeout: 30000 });
 
-  const proof = await sweep(page);
+  let proof;
+  try {
+    proof = await sweep(page);
+  } catch (error) {
+    // Keep what the user would have seen at the failing step.
+    await page.screenshot({ path: 'output/playwright/rakss-ui-lifecycle-failure.png', fullPage: true }).catch(() => {});
+    const alerts = await page.getByRole('alert').allInnerTexts().catch(() => []);
+    if (alerts.length) console.error(`Visible alerts at failure: ${alerts.join(' | ')}`);
+    throw error;
+  }
   await writeFile(
     'output/playwright/rakss-ui-lifecycle-proof.json',
     `${JSON.stringify(proof, null, 2)}\n`,
