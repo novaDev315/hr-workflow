@@ -1,35 +1,28 @@
-import { FormEvent, useState } from 'react'
-import { AdminHero } from '@/components/admin/admin-hero'
-import { PageFeedback } from '@/components/admin/page-feedback'
-import {
-  Briefcase,
-  CheckCircle2,
-  Plus,
-  Search,
-  UserRoundPlus,
-} from 'lucide-react'
+import { Briefcase, CheckCircle2, Plus, Search, UserRoundPlus } from 'lucide-react'
+import { FormEvent, useRef, useState } from 'react'
 
 import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Card, CardContent } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
 import { MetricCard } from '@/components/ui/metric-card'
 import { Notice } from '@/components/ui/notice'
+import { useConfirm } from '@/features/shared/confirm-dialog'
+import { FilterSelect } from '@/features/shared/controls'
+import { EmptyState } from '@/features/shared/data-table'
+import { readableError } from '@/lib/graphql-errors'
+import { PageIntro, SectionHeading } from '@/features/shared/page-intro'
+import { canManageAccounts, useAdminSession } from '@/lib/auth-session'
+import { formatNumber, formatStatus } from '@/lib/format'
+
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
-import { canManageAccounts, readStoredAdminAccount } from '@/lib/auth-session'
-import {
-  JobRequisitionListCard,
-  RecruitmentApplicationListCard,
+  PipelineBoard,
+  RequisitionsTable,
+  type ApplicationHandlers,
+  type RequisitionHandlers,
 } from './components'
 import { ApplicationFormDrawer, RequisitionFormDrawer } from './forms'
 import { useRecruitmentWorkspaceGraphql } from './hooks'
-import { actionPastTense, formatStatus } from './presentation'
+import { requisitionDone } from './presentation'
 import {
   applicationFormDefaults,
   requisitionFormDefaults,
@@ -39,33 +32,25 @@ import {
   type RecruitmentApplication,
 } from './types'
 
-const ALL_REQUISITION_STATUSES_VALUE = 'ALL_REQUISITION_STATUSES'
-const ALL_APPLICATION_STATUSES_VALUE = 'ALL_APPLICATION_STATUSES'
-const ALL_REQUISITIONS_VALUE = 'ALL_REQUISITIONS'
+const REQUISITION_STATUSES = ['OPEN', 'ON_HOLD', 'FILLED', 'CLOSED']
 
 export function RecruitmentPage() {
-  const currentAdminAccount = readStoredAdminAccount()
-  const canManageRecruitment = canManageAccounts(currentAdminAccount)
+  const { account } = useAdminSession()
+  const canManageRecruitment = canManageAccounts(account)
   const [searchQuery, setSearchQuery] = useState('')
   const [statusFilter, setStatusFilter] = useState('')
-  const [applicationStatusFilter, setApplicationStatusFilter] = useState('')
   const [selectedRequisitionFilter, setSelectedRequisitionFilter] = useState('')
   const [showRequisitionForm, setShowRequisitionForm] = useState(false)
   const [showApplicationForm, setShowApplicationForm] = useState(false)
-  const [editingRequisitionId, setEditingRequisitionId] = useState<
-    string | null
-  >(null)
-  const [editingApplicationId, setEditingApplicationId] = useState<
-    string | null
-  >(null)
-  const [requisitionForm, setRequisitionForm] = useState(
-    requisitionFormDefaults,
-  )
-  const [applicationForm, setApplicationForm] = useState(
-    applicationFormDefaults,
-  )
-  const [statusMessage, setStatusMessage] = useState<string | null>(null)
-  const [errorMessage, setErrorMessage] = useState<string | null>(null)
+  const [editingRequisitionId, setEditingRequisitionId] = useState<string | null>(null)
+  const [editingApplicationId, setEditingApplicationId] = useState<string | null>(null)
+  const [requisitionForm, setRequisitionForm] = useState(requisitionFormDefaults)
+  const [applicationForm, setApplicationForm] = useState(applicationFormDefaults)
+  const [notice, setNotice] = useState<{ text: string; tone: 'success' | 'danger' } | null>(null)
+  const [requisitionError, setRequisitionError] = useState<string | null>(null)
+  const [applicationError, setApplicationError] = useState<string | null>(null)
+  const [confirm, confirmDialog] = useConfirm()
+  const pipelineRef = useRef<HTMLDivElement>(null)
 
   const {
     data,
@@ -85,7 +70,7 @@ export function RecruitmentPage() {
     advanceRecruitmentApplication,
     advancingApplication,
   } = useRecruitmentWorkspaceGraphql({
-    applicationStatusFilter,
+    applicationStatusFilter: '',
     canManageRecruitment,
     searchQuery,
     selectedRequisitionFilter,
@@ -95,26 +80,24 @@ export function RecruitmentPage() {
   const departments: Department[] = data?.departments ?? []
   const designations: Designation[] = data?.designations ?? []
   const requisitions: JobRequisition[] = data?.jobRequisitions ?? []
-  const applications: RecruitmentApplication[] =
-    data?.recruitmentApplications ?? []
+  const applications: RecruitmentApplication[] = data?.recruitmentApplications ?? []
   const summary = data?.recruitmentSummary ?? {
     openRequisitions: 0,
     activeApplications: 0,
     screeningApplications: 0,
     selectedApplications: 0,
   }
-  const openRequisitions = requisitions.filter((requisition) =>
-    ['OPEN', 'ON_HOLD'].includes(requisition.status),
-  )
-  const filteredDesignations = designations.filter(
-    (designation) => designation.departmentId === requisitionForm.departmentId,
-  )
+  const openRequisitions = requisitions.filter((r) => ['OPEN', 'ON_HOLD'].includes(r.status))
+  const filteredDesignations = designations.filter((d) => d.departmentId === requisitionForm.departmentId)
+  const currencyFor = (application: RecruitmentApplication) =>
+    requisitions.find((r) => r.id === application.requisitionId)?.currencyCode ?? 'AED'
+
+  const say = (text: string, tone: 'success' | 'danger' = 'success') => setNotice({ text, tone })
 
   const handleSaveRequisition = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
-    setErrorMessage(null)
-    setStatusMessage(null)
-
+    setNotice(null)
+    setRequisitionError(null)
     try {
       const input = {
         jobTitle: requisitionForm.jobTitle,
@@ -130,45 +113,25 @@ export function RecruitmentPage() {
         description: requisitionForm.description,
         requirements: requisitionForm.requirements || null,
       }
-
       if (editingRequisitionId) {
-        await updateJobRequisition({
-          variables: {
-            input: {
-              id: editingRequisitionId,
-              ...input,
-            },
-          },
-        })
+        await updateJobRequisition({ variables: { input: { id: editingRequisitionId, ...input } } })
       } else {
-        await createJobRequisition({
-          variables: {
-            input,
-          },
-        })
+        await createJobRequisition({ variables: { input } })
       }
-
       setRequisitionForm(requisitionFormDefaults)
       setEditingRequisitionId(null)
       setShowRequisitionForm(false)
-      setStatusMessage(
-        editingRequisitionId
-          ? 'Job requisition updated.'
-          : 'Job requisition created.',
-      )
+      say(editingRequisitionId ? `${input.jobTitle} updated.` : `${input.jobTitle} opened.`)
       await refetch()
     } catch (mutationError) {
-      setErrorMessage(
-        toErrorMessage(mutationError, 'Unable to save requisition.'),
-      )
+      setRequisitionError(readableError(mutationError, 'The requisition could not be saved.'))
     }
   }
 
   const handleSaveApplication = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
-    setErrorMessage(null)
-    setStatusMessage(null)
-
+    setNotice(null)
+    setApplicationError(null)
     try {
       const input = {
         firstName: applicationForm.firstName,
@@ -178,43 +141,24 @@ export function RecruitmentPage() {
         source: applicationForm.source || null,
         yearsExperience: parseOptionalNumber(applicationForm.yearsExperience),
         expectedSalary: parseOptionalNumber(applicationForm.expectedSalary),
-        resumeUrl: applicationForm.resumeUrl || null,
+        resumeUrl: applicationForm.resumeUrl.trim() || null,
         notes: applicationForm.notes || null,
       }
-
       if (editingApplicationId) {
-        await updateRecruitmentApplication({
-          variables: {
-            input: {
-              id: editingApplicationId,
-              ...input,
-            },
-          },
-        })
+        await updateRecruitmentApplication({ variables: { input: { id: editingApplicationId, ...input } } })
       } else {
         await createRecruitmentApplication({
-          variables: {
-            input: {
-              requisitionId: applicationForm.requisitionId,
-              ...input,
-            },
-          },
+          variables: { input: { requisitionId: applicationForm.requisitionId, ...input } },
         })
       }
-
       setApplicationForm(applicationFormDefaults)
       setEditingApplicationId(null)
       setShowApplicationForm(false)
-      setStatusMessage(
-        editingApplicationId
-          ? 'Recruitment application updated.'
-          : 'Recruitment application created.',
-      )
+      const name = `${input.firstName} ${input.lastName}`.trim()
+      say(editingApplicationId ? `${name} updated.` : `${name} added to Received.`)
       await refetch()
     } catch (mutationError) {
-      setErrorMessage(
-        toErrorMessage(mutationError, 'Unable to save application.'),
-      )
+      setApplicationError(readableError(mutationError, 'The candidate could not be saved.'))
     }
   }
 
@@ -234,8 +178,7 @@ export function RecruitmentPage() {
       description: requisition.description,
       requirements: requisition.requirements ?? '',
     })
-    setErrorMessage(null)
-    setStatusMessage(null)
+    setNotice(null)
     setShowRequisitionForm(true)
   }
 
@@ -248,279 +191,228 @@ export function RecruitmentPage() {
       email: application.email,
       phone: application.phone ?? '',
       source: application.source ?? '',
-      yearsExperience: application.yearsExperience
-        ? String(application.yearsExperience)
-        : '',
-      expectedSalary: application.expectedSalary
-        ? String(application.expectedSalary)
-        : '',
+      yearsExperience:
+        application.yearsExperience !== null && application.yearsExperience !== undefined
+          ? String(application.yearsExperience)
+          : '',
+      expectedSalary: application.expectedSalary ? String(application.expectedSalary) : '',
       resumeUrl: application.resumeUrl ?? '',
       notes: application.notes ?? '',
     })
-    setErrorMessage(null)
-    setStatusMessage(null)
+    setNotice(null)
     setShowApplicationForm(true)
   }
 
-  const handleRequisitionStatus = async (
-    requisitionId: string,
-    status: string,
-    label: string,
-  ) => {
-    if (
-      ['FILLED', 'CLOSED'].includes(status) &&
-      !window.confirm(`${label} this requisition?`)
-    ) {
-      return
-    }
-
-    setErrorMessage(null)
-    setStatusMessage(null)
-
-    try {
-      await changeJobRequisitionStatus({
-        variables: {
-          input: {
-            id: requisitionId,
-            status,
-          },
-        },
-      })
-      setStatusMessage(`Job requisition ${actionPastTense(label)}.`)
-      await refetch()
-    } catch (mutationError) {
-      setErrorMessage(
-        toErrorMessage(mutationError, 'Unable to update requisition status.'),
-      )
-    }
+  const requisitionHandlers: RequisitionHandlers = {
+    busy: changingRequisitionStatus,
+    onEdit: handleEditRequisition,
+    onShowCandidates: (requisition) => {
+      setSelectedRequisitionFilter(requisition.id)
+      pipelineRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    },
+    onStatus: async (requisition, status, label) => {
+      if (['FILLED', 'CLOSED'].includes(status)) {
+        const ok = await confirm({
+          title: `${label}: ${requisition.jobTitle}?`,
+          description: 'It stops accepting new candidates. Candidates already in the pipeline stay where they are.',
+          confirmLabel: label,
+          tone: status === 'CLOSED' ? 'danger' : 'default',
+        })
+        if (!ok) return
+      }
+      setNotice(null)
+      try {
+        await changeJobRequisitionStatus({ variables: { input: { id: requisition.id, status } } })
+        say(`${requisition.jobTitle} ${requisitionDone(label)}.`)
+        await refetch()
+      } catch (mutationError) {
+        say(readableError(mutationError, 'The requisition status could not be changed.'), 'danger')
+      }
+    },
   }
 
-  const handleApplicationStatus = async (
-    applicationId: string,
-    status: string,
-    label: string,
-  ) => {
-    const terminal = ['REJECTED', 'WITHDRAWN'].includes(status)
-    if (terminal && !window.confirm(`${label} this application?`)) {
-      return
-    }
-
-    setErrorMessage(null)
-    setStatusMessage(null)
-
-    try {
-      await advanceRecruitmentApplication({
-        variables: {
-          input: {
-            id: applicationId,
-            status,
-            decisionNotes: terminal
-              ? `${label} from recruitment workspace`
-              : null,
-          },
-        },
+  const applicationHandlers: ApplicationHandlers = {
+    busy: advancingApplication,
+    onEdit: handleEditApplication,
+    onAdvance: async (application, status, done) => {
+      setNotice(null)
+      try {
+        await advanceRecruitmentApplication({ variables: { input: { id: application.id, status, decisionNotes: null } } })
+        say(`${application.candidateName} ${done}.`)
+        await refetch()
+      } catch (mutationError) {
+        say(readableError(mutationError, 'The candidate could not be moved.'), 'danger')
+      }
+    },
+    onClose: async (application, status) => {
+      const verb = status === 'REJECTED' ? 'Reject' : 'Mark withdrawn'
+      const ok = await confirm({
+        title: `${verb}: ${application.candidateName}?`,
+        description: 'The candidate moves to Closed. This cannot be undone.',
+        confirmLabel: verb,
+        tone: 'danger',
       })
-      setStatusMessage(
-        terminal
-          ? `Recruitment application ${actionPastTense(label)}.`
-          : 'Recruitment application advanced.',
-      )
-      await refetch()
-    } catch (mutationError) {
-      setErrorMessage(
-        toErrorMessage(mutationError, 'Unable to update application status.'),
-      )
-    }
+      if (!ok) return
+      setNotice(null)
+      try {
+        await advanceRecruitmentApplication({
+          variables: {
+            input: {
+              id: application.id,
+              status,
+              decisionNotes: status === 'REJECTED' ? 'Rejected from the pipeline board' : 'Withdrew from the process',
+            },
+          },
+        })
+        say(`${application.candidateName} ${status === 'REJECTED' ? 'rejected' : 'marked withdrawn'}.`)
+        await refetch()
+      } catch (mutationError) {
+        say(readableError(mutationError, 'The candidate could not be updated.'), 'danger')
+      }
+    },
   }
 
   const closeRequisitionForm = () => {
+    setRequisitionError(null)
     setEditingRequisitionId(null)
     setRequisitionForm(requisitionFormDefaults)
     setShowRequisitionForm(false)
   }
-
   const closeApplicationForm = () => {
+    setApplicationError(null)
     setEditingApplicationId(null)
     setApplicationForm(applicationFormDefaults)
     setShowApplicationForm(false)
   }
 
-  const openRequisitionForm = () => {
-    setEditingRequisitionId(null)
-    setRequisitionForm(requisitionFormDefaults)
-    setShowRequisitionForm(true)
-  }
-
-  const openApplicationForm = () => {
-    setEditingApplicationId(null)
-    setApplicationForm(applicationFormDefaults)
-    setShowApplicationForm(true)
-  }
-
   if (!canManageRecruitment) {
     return (
       <Notice tone="warning">
-        Recruitment records are restricted to administrator and HR administrator
-        accounts.
+        Recruitment is available to administrators and HR administrators.
       </Notice>
     )
   }
 
   return (
-    <div className="space-y-4">
-      <AdminHero
-        kicker="Recruitment"
-        title="Manage openings and candidate movement."
-        description="Track live requisitions, add candidates, and move applications through a controlled hiring path."
+    <div className="space-y-5">
+      <PageIntro
         actions={
           <>
-            <Button type="button" onClick={openRequisitionForm}>
-              <Plus className="mr-2 h-4 w-4" />
-              New requisition
-            </Button>
             <Button
+              onClick={() => {
+                setEditingApplicationId(null)
+                setApplicationForm({
+                  ...applicationFormDefaults,
+                  requisitionId: selectedRequisitionFilter || (openRequisitions.length === 1 ? openRequisitions[0].id : ''),
+                })
+                setShowApplicationForm(true)
+              }}
+              disabled={openRequisitions.length === 0}
+              title={openRequisitions.length === 0 ? 'Open a requisition first' : undefined}
               type="button"
               variant="outline"
-              onClick={openApplicationForm}
             >
               <UserRoundPlus className="mr-2 h-4 w-4" />
               Add candidate
             </Button>
+            <Button
+              onClick={() => {
+                setEditingRequisitionId(null)
+                setRequisitionForm(requisitionFormDefaults)
+                setShowRequisitionForm(true)
+              }}
+              type="button"
+            >
+              <Plus className="mr-2 h-4 w-4" />
+              New requisition
+            </Button>
           </>
         }
+        description="Openings and the candidates moving through each one."
+        title="Recruitment"
       />
 
-      <PageFeedback
-        errorMessage={errorMessage}
-        statusMessage={statusMessage}
-        loadError={error}
-      />
+      {notice ? (
+        <Notice tone={notice.tone}>
+          <div className="flex items-start justify-between gap-3">
+            <span>{notice.text}</span>
+            <button className="shrink-0 text-xs font-semibold underline-offset-4 hover:underline" onClick={() => setNotice(null)} type="button">
+              Dismiss
+            </button>
+          </div>
+        </Notice>
+      ) : null}
+      {error ? <Notice tone="danger">Recruitment could not be loaded. {readableError(error, '')}</Notice> : null}
 
-      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-        <MetricCard
-          label="Open requisitions"
-          value={String(summary.openRequisitions)}
-          detail="Open or on hold"
-          icon={Briefcase}
-        />
-        <MetricCard
-          label="Active candidates"
-          value={String(summary.activeApplications)}
-          detail="Still in workflow"
-          icon={UserRoundPlus}
-        />
-        <MetricCard
-          label="Screening"
-          value={String(summary.screeningApplications)}
-          detail="Screening or interviews"
-          icon={Search}
-        />
-        <MetricCard
-          label="Selected"
-          value={String(summary.selectedApplications)}
-          detail="Selected, offered, hired"
-          icon={CheckCircle2}
-        />
+      <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
+        <MetricCard detail="Open or on hold" icon={Briefcase} label="Open requisitions" value={formatNumber(summary.openRequisitions)} />
+        <MetricCard detail="Still in the pipeline" icon={UserRoundPlus} label="Active candidates" value={formatNumber(summary.activeApplications)} />
+        <MetricCard detail="Screening or interviews" icon={Search} label="In screening" value={formatNumber(summary.screeningApplications)} />
+        <MetricCard detail="Selected, offered or hired" icon={CheckCircle2} label="Selected" value={formatNumber(summary.selectedApplications)} />
+      </div>
+
+      <div className="scroll-mt-24" ref={pipelineRef}>
+        <Card>
+          <CardContent className="space-y-4 p-4 sm:p-5">
+            <SectionHeading description="Move each candidate one step at a time. Rejected and withdrawn candidates collect in Closed." title="Pipeline" />
+            <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_260px]">
+              <div className="relative">
+                <Search className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                <Input
+                  aria-label="Search roles and candidates"
+                  className="h-10 pl-10"
+                  onChange={(event) => setSearchQuery(event.target.value)}
+                  placeholder="Search candidates or roles"
+                  type="search"
+                  value={searchQuery}
+                />
+              </div>
+              <FilterSelect
+                allLabel="All openings"
+                id="pipeline-requisition"
+                label="Opening"
+                onChange={setSelectedRequisitionFilter}
+                options={requisitions.map((r) => ({ value: r.id, label: r.jobTitle }))}
+                value={selectedRequisitionFilter}
+              />
+            </div>
+            {loading && !data ? (
+              <p className="text-sm text-muted-foreground">Loading pipeline…</p>
+            ) : applications.length === 0 && !searchQuery && !selectedRequisitionFilter ? (
+              <EmptyState title="No candidates yet">
+                {openRequisitions.length === 0
+                  ? 'Open a requisition, then add candidates to it.'
+                  : 'Add a candidate to an open requisition to start the pipeline.'}
+              </EmptyState>
+            ) : (
+              <PipelineBoard applications={applications} currencyFor={currencyFor} handlers={applicationHandlers} />
+            )}
+          </CardContent>
+        </Card>
       </div>
 
       <Card>
-        <CardHeader>
-          <p className="app-kicker">Filters</p>
-          <CardTitle>Find hiring work</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="grid gap-3 lg:grid-cols-[1.5fr_1fr_1fr_1fr]">
-            <div>
-              <Label htmlFor="recruitment-search">Search</Label>
-              <Input
-                id="recruitment-search"
-                placeholder="Search roles, candidates, emails"
-                value={searchQuery}
-                onChange={(event) => setSearchQuery(event.target.value)}
+        <CardContent className="space-y-4 p-4 sm:p-5">
+          <SectionHeading
+            actions={
+              <FilterSelect
+                allLabel="Any status"
+                className="w-44"
+                id="requisition-status"
+                label="Requisition status"
+                onChange={setStatusFilter}
+                options={REQUISITION_STATUSES.map((status) => ({ value: status, label: formatStatus(status) }))}
+                value={statusFilter}
               />
-            </div>
-            <div>
-              <Label htmlFor="requisition-status-filter">
-                Requisition status
-              </Label>
-              <Select
-                name="requisition-status-filter"
-                value={statusFilter || ALL_REQUISITION_STATUSES_VALUE}
-                onValueChange={(status) =>
-                  setStatusFilter(
-                    status === ALL_REQUISITION_STATUSES_VALUE ? '' : status
-                  )
-                }
-              >
-                <SelectTrigger id="requisition-status-filter">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value={ALL_REQUISITION_STATUSES_VALUE}>
-                    All requisitions
-                  </SelectItem>
-                  <SelectItem value="OPEN">Open</SelectItem>
-                  <SelectItem value="ON_HOLD">On hold</SelectItem>
-                  <SelectItem value="FILLED">Filled</SelectItem>
-                  <SelectItem value="CLOSED">Closed</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            <div>
-              <Label htmlFor="application-status-filter">
-                Application status
-              </Label>
-              <Select
-                name="application-status-filter"
-                value={applicationStatusFilter || ALL_APPLICATION_STATUSES_VALUE}
-                onValueChange={(status) =>
-                  setApplicationStatusFilter(
-                    status === ALL_APPLICATION_STATUSES_VALUE ? '' : status
-                  )
-                }
-              >
-                <SelectTrigger id="application-status-filter">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value={ALL_APPLICATION_STATUSES_VALUE}>
-                    All applications
-                  </SelectItem>
-                  {applicationStatuses.map((status) => (
-                    <SelectItem key={status} value={status}>
-                      {formatStatus(status)}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div>
-              <Label htmlFor="application-requisition-filter">
-                Requisition
-              </Label>
-              <Select
-                name="application-requisition-filter"
-                value={selectedRequisitionFilter || ALL_REQUISITIONS_VALUE}
-                onValueChange={(requisitionId) =>
-                  setSelectedRequisitionFilter(
-                    requisitionId === ALL_REQUISITIONS_VALUE ? '' : requisitionId
-                  )
-                }
-              >
-                <SelectTrigger id="application-requisition-filter">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value={ALL_REQUISITIONS_VALUE}>All roles</SelectItem>
-                  {requisitions.map((requisition) => (
-                    <SelectItem key={requisition.id} value={requisition.id}>
-                      {requisition.jobTitle}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
+            }
+            description="Every role you are hiring for, with its candidates and target start."
+            title="Requisitions"
+          />
+          {loading && !data ? (
+            <p className="text-sm text-muted-foreground">Loading requisitions…</p>
+          ) : (
+            <RequisitionsTable handlers={requisitionHandlers} requisitions={requisitions} />
+          )}
         </CardContent>
       </Card>
 
@@ -529,6 +421,7 @@ export function RecruitmentPage() {
         creatingRequisition={creatingRequisition}
         departments={departments}
         editingRequisitionId={editingRequisitionId}
+        error={requisitionError}
         filteredDesignations={filteredDesignations}
         handleSaveRequisition={handleSaveRequisition}
         open={showRequisitionForm}
@@ -537,12 +430,12 @@ export function RecruitmentPage() {
         setShowRequisitionForm={setShowRequisitionForm}
         updatingRequisition={updatingRequisition}
       />
-
       <ApplicationFormDrawer
         applicationForm={applicationForm}
         closeApplicationForm={closeApplicationForm}
         creatingApplication={creatingApplication}
         editingApplicationId={editingApplicationId}
+        error={applicationError}
         handleSaveApplication={handleSaveApplication}
         open={showApplicationForm}
         openRequisitions={openRequisitions}
@@ -550,45 +443,11 @@ export function RecruitmentPage() {
         setShowApplicationForm={setShowApplicationForm}
         updatingApplication={updatingApplication}
       />
-
-      <div className="grid gap-4 xl:grid-cols-[minmax(0,0.95fr)_minmax(0,1.05fr)]">
-        <JobRequisitionListCard
-          changingRequisitionStatus={changingRequisitionStatus}
-          handleEditRequisition={handleEditRequisition}
-          handleRequisitionStatus={handleRequisitionStatus}
-          loading={loading}
-          requisitions={requisitions}
-        />
-
-        <RecruitmentApplicationListCard
-          advancingApplication={advancingApplication}
-          applications={applications}
-          handleApplicationStatus={handleApplicationStatus}
-          handleEditApplication={handleEditApplication}
-          loading={loading}
-        />
-      </div>
+      {confirmDialog}
     </div>
   )
 }
 
-const applicationStatuses = [
-  'RECEIVED',
-  'SCREENING',
-  'SHORTLISTED',
-  'INTERVIEW_SCHEDULED',
-  'INTERVIEWED',
-  'SELECTED',
-  'OFFER_EXTENDED',
-  'HIRED',
-  'REJECTED',
-  'WITHDRAWN',
-]
-
 function parseOptionalNumber(value: string) {
   return value.trim() ? Number.parseFloat(value) : null
-}
-
-function toErrorMessage(error: unknown, fallback: string) {
-  return error instanceof Error ? error.message : fallback
 }

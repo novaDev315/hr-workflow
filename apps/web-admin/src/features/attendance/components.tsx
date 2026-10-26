@@ -1,397 +1,294 @@
-import { Dispatch, SetStateAction } from 'react'
+import { useMutation, useQuery } from '@apollo/client'
+import { ChevronRight, LogIn, LogOut } from 'lucide-react'
+import { useEffect, useMemo, useState } from 'react'
+import { Link } from 'react-router-dom'
 
-import { AdminTable, AdminTableEmpty, AdminTableRow } from '@/components/admin/admin-table'
-import { RecordCard } from '@/components/admin/record-card'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Card, CardContent } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
 import { Notice } from '@/components/ui/notice'
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
 import { StatusBadge } from '@/components/ui/status-badge'
-import { Pencil, XCircle } from 'lucide-react'
+import { SelectField, TextField } from '@/features/shared/controls'
+import { DataTable, EmptyState, Td, Th, Tr } from '@/features/shared/data-table'
+import { readableError } from '@/lib/graphql-errors'
+import { SectionHeading } from '@/features/shared/page-intro'
+import type { SiteAssignment, WorkSite } from '@/features/shared/reference-data'
+import { formatDay, formatNumber, formatStatus, formatTime } from '@/lib/format'
 
-import type { AttendanceActionFormState } from './types'
+import { CLOCK_IN_MUTATION, CLOCK_OUT_MUTATION, OPEN_ATTENDANCE_QUERY } from './graphql'
+import type { AttendanceEmployee, AttendanceRecord, OpenRecord } from './types'
 
-const ALL_EMPLOYEES_FILTER_VALUE = 'ALL_EMPLOYEES'
-
-type EmployeeOption = {
-  id: string
-  fullName: string
-  employeeNumber: string
-}
-
-type LocationOption = {
-  id: string
-  name: string
-  code: string
-  city?: string | null
-  address: string
-  geofenceRadius: number
-  isActive: boolean
-  latitude: number
-  longitude: number
-}
-
-type AttendanceRecordRow = {
-  id: string
-  attendanceDate: string
-  clockInAt?: string | null
-  clockOutAt?: string | null
-  totalHours?: number | null
-  status: string
-  employee: { fullName: string; employeeNumber: string }
-  location: { name: string; code: string }
-}
-
-export function AttendanceActionCard({
-  attendanceForm,
-  clockingIn,
-  clockingOut,
+export function RecordAttendanceCard({
   employees,
-  handleClockIn,
-  handleClockOut,
-  locations,
-  selectedAttendanceLocation,
-  setAttendanceForm,
+  assignmentsFor,
+  assignmentsLoading,
+  sites,
+  onRecorded,
 }: {
-  attendanceForm: AttendanceActionFormState
-  clockingIn: boolean
-  clockingOut: boolean
-  employees: EmployeeOption[]
-  handleClockIn: () => void
-  handleClockOut: () => void
-  locations: LocationOption[]
-  selectedAttendanceLocation: LocationOption | null
-  setAttendanceForm: Dispatch<SetStateAction<AttendanceActionFormState>>
+  employees: AttendanceEmployee[]
+  assignmentsFor: (employeeId: string) => SiteAssignment[] | undefined
+  assignmentsLoading: boolean
+  sites: WorkSite[]
+  onRecorded: () => void
 }) {
+  const [employeeId, setEmployeeId] = useState('')
+  const [siteId, setSiteId] = useState('')
+  const [manual, setManual] = useState(false)
+  const [latitude, setLatitude] = useState('')
+  const [longitude, setLongitude] = useState('')
+  const [notes, setNotes] = useState('')
+  const [error, setError] = useState<string | null>(null)
+  const [success, setSuccess] = useState<string | null>(null)
+
+  const [clockIn, clockInState] = useMutation(CLOCK_IN_MUTATION)
+  const [clockOut, clockOutState] = useMutation(CLOCK_OUT_MUTATION)
+  const openQuery = useQuery<{ attendanceRecords: OpenRecord[] }>(OPEN_ATTENDANCE_QUERY, {
+    variables: { filter: { employeeId, status: 'CLOCKED_IN' } },
+    skip: !employeeId,
+    fetchPolicy: 'network-only',
+  })
+  const openRecord = employeeId ? openQuery.data?.attendanceRecords?.[0] ?? null : null
+
+  const employee = employees.find((e) => e.id === employeeId) ?? null
+  const assignments = useMemo(
+    () => (employeeId ? (assignmentsFor(employeeId) ?? []).filter((a) => a.location.isActive) : []),
+    [assignmentsFor, employeeId],
+  )
+
+  // Clocking out happens at the site of the open record; otherwise default
+  // to the primary assignment.
+  const effectiveSiteId = openRecord ? openRecord.location.id : siteId
+  const site =
+    sites.find((s) => s.id === effectiveSiteId) ??
+    assignments.find((a) => a.location.id === effectiveSiteId)?.location ??
+    null
+
+  useEffect(() => {
+    if (!employeeId) return
+    const primary = assignments.find((a) => a.isPrimary) ?? assignments[0]
+    setSiteId(primary?.location.id ?? '')
+  }, [employeeId, assignments])
+
+  useEffect(() => {
+    if (!manual && site) {
+      setLatitude(String(site.latitude))
+      setLongitude(String(site.longitude))
+    }
+  }, [site, manual])
+
+  const busy = clockInState.loading || clockOutState.loading
+  const noSite = Boolean(employeeId) && !assignmentsLoading && assignments.length === 0 && !openRecord
+
+  const coordinates = () => {
+    const lat = Number.parseFloat(latitude)
+    const lng = Number.parseFloat(longitude)
+    if (!Number.isFinite(lat) || lat < -90 || lat > 90) return 'Latitude must be between −90 and 90.'
+    if (!Number.isFinite(lng) || lng < -180 || lng > 180) return 'Longitude must be between −180 and 180.'
+    return { latitude: lat, longitude: lng }
+  }
+
+  const record = async (kind: 'in' | 'out') => {
+    setError(null)
+    setSuccess(null)
+    if (!employee) {
+      setError('Choose an employee.')
+      return
+    }
+    if (kind === 'in' && !siteId) {
+      setError('Choose a work site.')
+      return
+    }
+    const coords = coordinates()
+    if (typeof coords === 'string') {
+      setManual(true)
+      setError(coords)
+      return
+    }
+    try {
+      if (kind === 'in') {
+        await clockIn({ variables: { input: { employeeId, locationId: siteId, ...coords, notes: notes.trim() || null } } })
+        setSuccess(`${employee.fullName} clocked in at ${site?.name ?? 'the site'}.`)
+      } else {
+        await clockOut({ variables: { input: { employeeId, ...coords, notes: notes.trim() || null } } })
+        setSuccess(`${employee.fullName} clocked out.`)
+      }
+      setNotes('')
+      await openQuery.refetch()
+      onRecorded()
+    } catch (mutationError) {
+      setError(readableError(mutationError, kind === 'in' ? 'Clock in failed.' : 'Clock out failed.'))
+    }
+  }
+
   return (
     <Card>
-      <CardHeader>
-        <p className="app-kicker">Action</p>
-        <CardTitle>Attendance Action</CardTitle>
-      </CardHeader>
-      <CardContent className="space-y-4">
-        <div className="space-y-2">
-          <Label htmlFor="attendance-employee">Employee</Label>
-          <Select
-            name="attendance-employee"
-            value={attendanceForm.employeeId}
-            onValueChange={(employeeId) =>
-              setAttendanceForm((current) => ({
-                ...current,
-                employeeId,
-              }))
-            }
-          >
-            <SelectTrigger id="attendance-employee">
-              <SelectValue placeholder="Select employee" />
-            </SelectTrigger>
-            <SelectContent>
-              {employees.map((employee) => (
-                <SelectItem key={employee.id} value={employee.id}>
-                  {employee.fullName} ({employee.employeeNumber})
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-        <div className="space-y-2">
-          <Label htmlFor="attendance-location">Location</Label>
-          <Select
-            name="attendance-location"
-            value={attendanceForm.locationId}
-            onValueChange={(locationId) =>
-              setAttendanceForm((current) => ({
-                ...current,
-                locationId,
-              }))
-            }
-          >
-            <SelectTrigger id="attendance-location">
-              <SelectValue placeholder="Select location" />
-            </SelectTrigger>
-            <SelectContent>
-              {locations
-                .filter((location) => location.isActive)
-                .map((location) => (
-                  <SelectItem key={location.id} value={location.id}>
-                    {location.name} ({location.code})
-                  </SelectItem>
-                ))}
-            </SelectContent>
-          </Select>
-        </div>
-        <div className="grid gap-4 sm:grid-cols-2">
-          <div className="space-y-2">
-            <Label htmlFor="attendance-latitude">Latitude</Label>
-            <Input
-              id="attendance-latitude"
-              type="number"
-              step="any"
-              value={attendanceForm.latitude}
-              onChange={(event) =>
-                setAttendanceForm((current) => ({
-                  ...current,
-                  latitude: event.target.value,
-                }))
-              }
-            />
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="attendance-longitude">Longitude</Label>
-            <Input
-              id="attendance-longitude"
-              type="number"
-              step="any"
-              value={attendanceForm.longitude}
-              onChange={(event) =>
-                setAttendanceForm((current) => ({
-                  ...current,
-                  longitude: event.target.value,
-                }))
-              }
-            />
-          </div>
-        </div>
-        {selectedAttendanceLocation ? (
-          <div className="app-muted-surface p-4 text-sm text-muted-foreground">
-            Using {selectedAttendanceLocation.name} defaults with a{' '}
-            {selectedAttendanceLocation.geofenceRadius}m geofence radius.
+      <CardContent className="space-y-4 p-4 sm:p-5">
+        <SectionHeading description="Clock someone in or out on their behalf." title="Record attendance" />
+
+        <SelectField
+          id="attendance-employee"
+          label="Employee"
+          onChange={(value) => {
+            setEmployeeId(value)
+            setError(null)
+            setSuccess(null)
+            setManual(false)
+          }}
+          options={employees
+            .filter((e) => e.isActive)
+            .sort((a, b) => a.fullName.localeCompare(b.fullName))
+            .map((e) => ({ value: e.id, label: `${e.fullName} · ${e.employeeNumber}` }))}
+          placeholder="Choose an employee"
+          value={employeeId}
+        />
+
+        {employeeId && openRecord ? (
+          <div className="rounded-xl border border-sky-200 bg-sky-50/70 px-3.5 py-3 text-sm text-sky-950">
+            Clocked in since <span className="font-semibold">{formatTime(openRecord.clockInAt)}</span>
+            {openRecord.attendanceDate ? ` on ${formatDay(openRecord.attendanceDate)}` : ''} at{' '}
+            <span className="font-semibold">{openRecord.location.name}</span>.
           </div>
         ) : null}
-        <div className="space-y-2">
-          <Label htmlFor="attendance-notes">Notes</Label>
-          <Input
-            id="attendance-notes"
-            value={attendanceForm.notes}
-            onChange={(event) =>
-              setAttendanceForm((current) => ({
-                ...current,
-                notes: event.target.value,
-              }))
-            }
-            placeholder="Optional note for this action"
+
+        {noSite ? (
+          <Notice tone="warning">
+            {employee?.fullName} is not assigned to a work site yet, so attendance cannot be recorded.{' '}
+            <Link className="font-semibold text-primary underline-offset-4 hover:underline" to="/employees">
+              Go to People
+            </Link>{' '}
+            and choose <span className="font-medium">Assign site</span> from their row menu.
+          </Notice>
+        ) : null}
+
+        {employeeId && !openRecord && assignments.length > 0 ? (
+          <SelectField
+            hint={site ? `Checked against a ${formatNumber(site.geofenceRadius)} m radius around the site.` : undefined}
+            id="attendance-site"
+            label="Work site"
+            onChange={(value) => {
+              setSiteId(value)
+              setManual(false)
+            }}
+            options={assignments.map((a) => ({
+              value: a.location.id,
+              label: a.isPrimary ? `${a.location.name} (primary)` : a.location.name,
+            }))}
+            value={siteId}
           />
-        </div>
-        <div className="grid gap-3 sm:grid-cols-2">
-          <Button
-            type="button"
-            onClick={handleClockIn}
-            disabled={
-              clockingIn ||
-              !attendanceForm.employeeId ||
-              !attendanceForm.locationId ||
-              !attendanceForm.latitude ||
-              !attendanceForm.longitude
-            }
-          >
-            {clockingIn ? 'Clocking In...' : 'Clock In'}
-          </Button>
-          <Button
-            type="button"
-            variant="outline"
-            onClick={handleClockOut}
-            disabled={
-              clockingOut ||
-              !attendanceForm.employeeId ||
-              !attendanceForm.latitude ||
-              !attendanceForm.longitude
-            }
-          >
-            {clockingOut ? 'Clocking Out...' : 'Clock Out'}
-          </Button>
-        </div>
-      </CardContent>
-    </Card>
-  )
-}
+        ) : null}
 
-export function AttendanceRecordsCard({
-  attendanceFilterEmployeeId,
-  attendanceRecords,
-  employees,
-  error,
-  loading,
-  setAttendanceFilterEmployeeId,
-}: {
-  attendanceFilterEmployeeId: string
-  attendanceRecords: AttendanceRecordRow[]
-  employees: EmployeeOption[]
-  error?: { message: string }
-  loading: boolean
-  setAttendanceFilterEmployeeId: (employeeId: string) => void
-}) {
-  return (
-    <Card>
-      <CardHeader>
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-          <div>
-            <p className="app-kicker">Live log</p>
-            <CardTitle>Attendance Records</CardTitle>
-          </div>
-          <div className="min-w-[250px]">
-            <Label htmlFor="attendance-filter-employee">Filter by Employee</Label>
-            <Select
-              name="attendance-filter-employee"
-              value={attendanceFilterEmployeeId || ALL_EMPLOYEES_FILTER_VALUE}
-              onValueChange={(employeeId) =>
-                setAttendanceFilterEmployeeId(
-                  employeeId === ALL_EMPLOYEES_FILTER_VALUE ? '' : employeeId
-                )
-              }
+        {employeeId && (assignments.length > 0 || openRecord) ? (
+          <>
+            <details
+              className="group rounded-xl border border-border/70 px-3.5 py-2.5"
+              onToggle={(event) => setManual((event.target as HTMLDetailsElement).open)}
+              open={manual}
             >
-              <SelectTrigger id="attendance-filter-employee" className="mt-2">
-                <SelectValue placeholder="All employees" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value={ALL_EMPLOYEES_FILTER_VALUE}>All employees</SelectItem>
-                {employees.map((employee) => (
-                  <SelectItem key={employee.id} value={employee.id}>
-                    {employee.fullName} ({employee.employeeNumber})
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
+              <summary className="flex cursor-pointer list-none items-center gap-2 text-sm font-medium text-foreground [&::-webkit-details-marker]:hidden">
+                <ChevronRight className="h-4 w-4 text-muted-foreground transition-transform group-open:rotate-90" />
+                Enter coordinates manually
+              </summary>
+              <p className="mt-2 text-[13px] leading-5 text-muted-foreground">
+                By default the site centre is used{site ? ` (${site.latitude.toFixed(4)}, ${site.longitude.toFixed(4)})` : ''}. Change it only
+                to record a position the person reported.
+              </p>
+              <div className="mt-3 grid grid-cols-2 gap-3">
+                <TextField hint="−90 to 90" id="attendance-latitude" label="Latitude">
+                  <Input id="attendance-latitude" inputMode="decimal" onChange={(e) => setLatitude(e.target.value)} value={latitude} />
+                </TextField>
+                <TextField hint="−180 to 180" id="attendance-longitude" label="Longitude">
+                  <Input id="attendance-longitude" inputMode="decimal" onChange={(e) => setLongitude(e.target.value)} value={longitude} />
+                </TextField>
+              </div>
+            </details>
+
+            <TextField id="attendance-notes" label="Note" optional>
+              <Input id="attendance-notes" onChange={(e) => setNotes(e.target.value)} placeholder="For example, forgot to clock in from the app" value={notes} />
+            </TextField>
+          </>
+        ) : null}
+
+        {error ? <Notice tone="danger">{error}</Notice> : null}
+        {success ? <Notice tone="success">{success}</Notice> : null}
+
+        <div className="grid grid-cols-2 gap-2">
+          <Button
+            disabled={busy || !employeeId || Boolean(openRecord) || assignments.length === 0}
+            onClick={() => void record('in')}
+            type="button"
+            variant={openRecord ? 'outline' : 'default'}
+          >
+            <LogIn className="mr-2 h-4 w-4" />
+            {clockInState.loading ? 'Saving…' : 'Clock in'}
+          </Button>
+          <Button
+            disabled={busy || !openRecord}
+            onClick={() => void record('out')}
+            type="button"
+            variant={openRecord ? 'default' : 'outline'}
+          >
+            <LogOut className="mr-2 h-4 w-4" />
+            {clockOutState.loading ? 'Saving…' : 'Clock out'}
+          </Button>
         </div>
-      </CardHeader>
-      <CardContent>
-        {loading ? (
-          <p className="text-sm text-muted-foreground">Loading attendance data...</p>
-        ) : error ? (
-          <Notice tone="danger">Unable to load attendance data. {error.message}</Notice>
-        ) : attendanceRecords.length === 0 ? (
-          <AdminTableEmpty>
-            No attendance records yet. Use the action panel to create the first one.
-          </AdminTableEmpty>
-        ) : (
-          <AdminTable>
-            <thead>
-              <tr className="border-b">
-                <th className="px-4 py-3 text-left">Date</th>
-                <th className="px-4 py-3 text-left">Employee</th>
-                <th className="px-4 py-3 text-left">Location</th>
-                <th className="px-4 py-3 text-left">Clock In</th>
-                <th className="px-4 py-3 text-left">Clock Out</th>
-                <th className="px-4 py-3 text-left">Hours</th>
-                <th className="px-4 py-3 text-left">Status</th>
-              </tr>
-            </thead>
-            <tbody>
-              {attendanceRecords.map((record) => (
-                <AdminTableRow key={record.id}>
-                  <td className="px-4 py-3">{record.attendanceDate}</td>
-                  <td className="px-4 py-3">
-                    <div className="font-medium">{record.employee.fullName}</div>
-                    <div className="text-xs text-muted-foreground">
-                      {record.employee.employeeNumber}
-                    </div>
-                  </td>
-                  <td className="px-4 py-3">
-                    {record.location.name} ({record.location.code})
-                  </td>
-                  <td className="px-4 py-3">
-                    {record.clockInAt
-                      ? new Date(record.clockInAt).toLocaleTimeString()
-                      : '-'}
-                  </td>
-                  <td className="px-4 py-3">
-                    {record.clockOutAt
-                      ? new Date(record.clockOutAt).toLocaleTimeString()
-                      : '-'}
-                  </td>
-                  <td className="px-4 py-3">
-                    {record.totalHours != null ? `${record.totalHours}h` : '-'}
-                  </td>
-                  <td className="px-4 py-3">
-                    <StatusBadge tone="info">{record.status}</StatusBadge>
-                  </td>
-                </AdminTableRow>
-              ))}
-            </tbody>
-          </AdminTable>
-        )}
       </CardContent>
     </Card>
   )
 }
 
-export function LocationListCard({
-  deactivatingLocation,
-  handleDeactivateLocation,
-  handleEditLocation,
-  locations,
-}: {
-  deactivatingLocation: boolean
-  handleDeactivateLocation: (locationId: string, locationName: string) => void
-  handleEditLocation: (location: LocationOption) => void
-  locations: LocationOption[]
-}) {
+function statusTone(status: string) {
+  if (status === 'CLOCKED_IN') return 'info' as const
+  if (status === 'COMPLETED') return 'success' as const
+  return 'neutral' as const
+}
+
+function hoursLabel(record: AttendanceRecord) {
+  if (record.totalHours === null || record.totalHours === undefined) {
+    return '—'
+  }
+  return `${formatNumber(record.totalHours, 1)} h`
+}
+
+export function RecordsTable({ records }: { records: AttendanceRecord[] }) {
+  if (records.length === 0) {
+    return <EmptyState title="No attendance in this view">Change the employee or date, or record attendance on the left.</EmptyState>
+  }
   return (
-    <Card>
-      <CardHeader>
-        <p className="app-kicker">Locations</p>
-        <CardTitle>Location list</CardTitle>
-      </CardHeader>
-      <CardContent>
-        {locations.length === 0 ? (
-          <p className="text-sm text-muted-foreground">No locations created yet.</p>
-        ) : (
-          <div className="space-y-3">
-            {locations.map((location) => (
-              <RecordCard key={location.id}>
-                <div className="flex items-center justify-between gap-3">
-                  <div>
-                    <div className="font-medium">
-                      {location.name} ({location.code})
-                    </div>
-                    <div className="text-sm text-muted-foreground">
-                      {location.city ? `${location.city} - ` : ''}
-                      {location.address}
-                    </div>
-                  </div>
-                  <StatusBadge tone={location.isActive ? 'success' : 'neutral'}>
-                    {location.isActive ? 'ACTIVE' : 'INACTIVE'}
-                  </StatusBadge>
-                </div>
-                <div className="mt-2 text-sm text-muted-foreground">
-                  Geofence radius: {location.geofenceRadius}m
-                </div>
-                <div className="mt-3 flex flex-wrap gap-2">
-                  <Button
-                    type="button"
-                    variant="outline"
-                    onClick={() => handleEditLocation(location)}
-                  >
-                    <Pencil className="mr-2 h-4 w-4" />
-                    Edit
-                  </Button>
-                  {location.isActive ? (
-                    <Button
-                      type="button"
-                      variant="outline"
-                      disabled={deactivatingLocation}
-                      onClick={() =>
-                        handleDeactivateLocation(location.id, location.name)
-                      }
-                    >
-                      <XCircle className="mr-2 h-4 w-4" />
-                      Deactivate
-                    </Button>
-                  ) : null}
-                </div>
-              </RecordCard>
-            ))}
-          </div>
-        )}
-      </CardContent>
-    </Card>
+    <DataTable label="Attendance records" minWidth={600}>
+      <thead>
+        <tr>
+          <Th>Date</Th>
+          <Th>Employee</Th>
+          <Th>Work site</Th>
+          <Th>Time</Th>
+          <Th className="text-right">Hours</Th>
+        </tr>
+      </thead>
+      <tbody>
+        {records.map((record) => (
+          <Tr key={record.id}>
+            <Td className="whitespace-nowrap tabular-nums">{formatDay(record.attendanceDate)}</Td>
+            <Td className="max-w-[180px]">
+              <p className="truncate font-medium" title={`${record.employee.fullName} · ${record.employee.employeeNumber}`}>
+                {record.employee.fullName}
+              </p>
+            </Td>
+            <Td className="max-w-[180px]">
+              <p className="truncate" title={record.location.name}>{record.location.name}</p>
+            </Td>
+            <Td className="whitespace-nowrap tabular-nums">
+              {formatTime(record.clockInAt)}
+              {record.clockOutAt ? ` – ${formatTime(record.clockOutAt)}` : null}
+              {record.status !== 'COMPLETED' ? (
+                <StatusBadge className="ml-2 whitespace-nowrap" tone={statusTone(record.status)}>
+                  {formatStatus(record.status)}
+                </StatusBadge>
+              ) : null}
+            </Td>
+            <Td className="whitespace-nowrap text-right tabular-nums">{hoursLabel(record)}</Td>
+          </Tr>
+        ))}
+      </tbody>
+    </DataTable>
   )
 }

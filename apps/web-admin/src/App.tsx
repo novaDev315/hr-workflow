@@ -23,9 +23,9 @@ const EmployeesPage = lazy(() =>
     default: module.EmployeesPage,
   }))
 )
-const EmployeeDirectoryPage = lazy(() =>
-  import('./pages/EmployeeDirectoryPage').then((module) => ({
-    default: module.EmployeeDirectoryPage,
+const OrganisationPage = lazy(() =>
+  import('./pages/OrganisationPage').then((module) => ({
+    default: module.OrganisationPage,
   }))
 )
 const AttendancePage = lazy(() =>
@@ -95,13 +95,16 @@ function App() {
         >
           <Route index element={<DashboardPage />} />
           <Route path="employees" element={<EmployeesPage />} />
-          <Route path="directory" element={<EmployeeDirectoryPage />} />
+          <Route path="directory" element={<Navigate to="/employees" replace />} />
+          <Route path="people" element={<Navigate to="/employees" replace />} />
+          <Route path="organisation" element={<OrganisationPage />} />
           <Route path="attendance" element={<AttendancePage />} />
           <Route path="leave" element={<LeavePage />} />
           <Route path="payroll" element={<PayrollPage />} />
           <Route path="recruitment" element={<RecruitmentPage />} />
           <Route path="reports" element={<ReportsPage />} />
           <Route path="policies" element={<PolicyDocumentsPage />} />
+          <Route path="*" element={<Navigate to="/" replace />} />
         </Route>
       </Routes>
     </Suspense>

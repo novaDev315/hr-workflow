@@ -4,6 +4,7 @@ import { Button } from '@/components/ui/button'
 import { FormDrawer } from '@/components/ui/form-drawer'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { Notice } from '@/components/ui/notice'
 import {
   Select,
   SelectContent,
@@ -35,6 +36,7 @@ export function RequisitionFormDrawer({
   setRequisitionForm,
   setShowRequisitionForm,
   updatingRequisition,
+  error,
 }: {
   closeRequisitionForm: () => void
   creatingRequisition: boolean
@@ -47,6 +49,7 @@ export function RequisitionFormDrawer({
   setRequisitionForm: Dispatch<SetStateAction<RequisitionFormState>>
   setShowRequisitionForm: Dispatch<SetStateAction<boolean>>
   updatingRequisition: boolean
+  error?: string | null
 }) {
   return (
     <FormDrawer
@@ -60,7 +63,7 @@ export function RequisitionFormDrawer({
       }}
       kicker="Opening"
       title={editingRequisitionId ? 'Edit requisition' : 'Create requisition'}
-      description="Keep the hiring list in view while you add or update the role details."
+      description="Describe the opening. Candidates are added against it."
     >
       <form className="space-y-4" onSubmit={handleSaveRequisition}>
         <div className="grid gap-3 lg:grid-cols-3">
@@ -93,7 +96,7 @@ export function RequisitionFormDrawer({
               required
             >
               <SelectTrigger id="requisition-department">
-                <SelectValue placeholder="Select department" />
+                <SelectValue placeholder="Choose a department" />
               </SelectTrigger>
               <SelectContent>
                 {departments.map((department) => (
@@ -207,7 +210,7 @@ export function RequisitionFormDrawer({
             />
           </div>
           <div>
-            <Label htmlFor="requisition-salary-min">Salary min</Label>
+            <Label htmlFor="requisition-salary-min">Salary from</Label>
             <Input
               id="requisition-salary-min"
               min="0"
@@ -222,7 +225,7 @@ export function RequisitionFormDrawer({
             />
           </div>
           <div>
-            <Label htmlFor="requisition-salary-max">Salary max</Label>
+            <Label htmlFor="requisition-salary-max">Salary to</Label>
             <Input
               id="requisition-salary-max"
               min="0"
@@ -268,9 +271,10 @@ export function RequisitionFormDrawer({
             />
           </div>
         </div>
+        {error ? <Notice tone="danger">{error}</Notice> : null}
         <div className="flex flex-wrap gap-2">
           <Button type="submit" disabled={creatingRequisition || updatingRequisition}>
-            {editingRequisitionId ? 'Update Requisition' : 'Create Requisition'}
+            {editingRequisitionId ? 'Save requisition' : 'Create requisition'}
           </Button>
           <Button type="button" variant="outline" onClick={closeRequisitionForm}>
             Cancel
@@ -292,6 +296,7 @@ export function ApplicationFormDrawer({
   setApplicationForm,
   setShowApplicationForm,
   updatingApplication,
+  error,
 }: {
   applicationForm: ApplicationFormState
   closeApplicationForm: () => void
@@ -303,6 +308,7 @@ export function ApplicationFormDrawer({
   setApplicationForm: Dispatch<SetStateAction<ApplicationFormState>>
   setShowApplicationForm: Dispatch<SetStateAction<boolean>>
   updatingApplication: boolean
+  error?: string | null
 }) {
   return (
     <FormDrawer
@@ -316,7 +322,7 @@ export function ApplicationFormDrawer({
       }}
       kicker="Candidate"
       title={editingApplicationId ? 'Edit application' : 'Add candidate'}
-      description="Capture the candidate without leaving the recruitment workflow."
+      description="New candidates start in Received on the pipeline board."
     >
       <form className="space-y-4" onSubmit={handleSaveApplication}>
         <div className="grid gap-3 lg:grid-cols-3">
@@ -334,7 +340,7 @@ export function ApplicationFormDrawer({
               required
             >
               <SelectTrigger id="application-requisition">
-                <SelectValue placeholder="Select requisition" />
+                <SelectValue placeholder="Choose an opening" />
               </SelectTrigger>
               <SelectContent>
                 {openRequisitions.map((requisition) => (
@@ -415,7 +421,7 @@ export function ApplicationFormDrawer({
             />
           </div>
           <div>
-            <Label htmlFor="candidate-experience">Years experience</Label>
+            <Label htmlFor="candidate-experience">Years of experience</Label>
             <Input
               id="candidate-experience"
               min="0"
@@ -446,9 +452,13 @@ export function ApplicationFormDrawer({
             />
           </div>
           <div>
-            <Label htmlFor="candidate-resume-url">Resume URL</Label>
+            <Label htmlFor="candidate-resume-url">Résumé link</Label>
             <Input
               id="candidate-resume-url"
+              type="url"
+              placeholder="https://"
+              pattern="https?://.+"
+              title="A web link starting with http:// or https://"
               value={applicationForm.resumeUrl}
               onChange={(event) =>
                 setApplicationForm((current) => ({
@@ -473,9 +483,10 @@ export function ApplicationFormDrawer({
             }
           />
         </div>
+        {error ? <Notice tone="danger">{error}</Notice> : null}
         <div className="flex flex-wrap gap-2">
           <Button type="submit" disabled={creatingApplication || updatingApplication}>
-            {editingApplicationId ? 'Update Candidate' : 'Add Candidate'}
+            {editingApplicationId ? 'Save candidate' : 'Add candidate'}
           </Button>
           <Button type="button" variant="outline" onClick={closeApplicationForm}>
             Cancel

@@ -35,6 +35,41 @@ let cachedToken: string | null = null
 let cachedAccountRaw: string | null = null
 let cachedSnapshot: AdminSessionSnapshot = EMPTY_ADMIN_SESSION
 
+// Storage can be unavailable (private mode, blocked site data). Every access
+// goes through these helpers so a storage failure never breaks the app.
+function storageGet(key: string): string | null {
+  try {
+    return typeof window === 'undefined' ? null : window.localStorage.getItem(key)
+  } catch {
+    return null
+  }
+}
+
+function storageSet(key: string, value: string) {
+  try {
+    window.localStorage.setItem(key, value)
+  } catch {
+    // ignore: session simply won't persist across reloads
+  }
+}
+
+function storageRemove(key: string) {
+  try {
+    window.localStorage.removeItem(key)
+  } catch {
+    // ignore
+  }
+}
+
+// Server/cache teardown registered by the Apollo client module. Kept as a
+// registration hook so this module does not import the client (no cycle).
+type SessionTeardown = (token: string | null, reason: 'logout' | 'expired') => void
+let sessionTeardown: SessionTeardown | null = null
+
+export function registerSessionTeardown(teardown: SessionTeardown) {
+  sessionTeardown = teardown
+}
+
 export function hasAdminPanelAccess(account: StoredAdminAccount | null | undefined) {
   return Boolean(account?.canAccessAdminPanel)
 }
@@ -43,10 +78,12 @@ export function canManageAccounts(account: StoredAdminAccount | null | undefined
   return Boolean(account?.canManageAccounts)
 }
 
+function readRawAccount() {
+  return storageGet(ADMIN_ACCOUNT_STORAGE_KEY) ?? storageGet(LEGACY_ADMIN_USER_STORAGE_KEY)
+}
+
 export function readStoredAdminAccount() {
-  const rawAccount =
-    localStorage.getItem(ADMIN_ACCOUNT_STORAGE_KEY) ??
-    localStorage.getItem(LEGACY_ADMIN_USER_STORAGE_KEY)
+  const rawAccount = readRawAccount()
 
   if (!rawAccount) {
     return null
@@ -60,7 +97,7 @@ export function readStoredAdminAccount() {
 }
 
 export function readAuthToken() {
-  return localStorage.getItem(AUTH_TOKEN_STORAGE_KEY)
+  return storageGet(AUTH_TOKEN_STORAGE_KEY)
 }
 
 function emitSessionChange() {
@@ -75,15 +112,35 @@ export function persistAdminSession(payload: {
   accessToken: string
   account: StoredAdminAccount
 }) {
-  localStorage.setItem(AUTH_TOKEN_STORAGE_KEY, payload.accessToken)
-  localStorage.setItem(ADMIN_ACCOUNT_STORAGE_KEY, JSON.stringify(payload.account))
+  storageSet(AUTH_TOKEN_STORAGE_KEY, payload.accessToken)
+  storageSet(ADMIN_ACCOUNT_STORAGE_KEY, JSON.stringify(payload.account))
   emitSessionChange()
 }
 
-export function clearAdminSession() {
-  localStorage.removeItem(AUTH_TOKEN_STORAGE_KEY)
-  localStorage.removeItem(ADMIN_ACCOUNT_STORAGE_KEY)
-  localStorage.removeItem(LEGACY_ADMIN_USER_STORAGE_KEY)
+function removeStoredSession() {
+  storageRemove(AUTH_TOKEN_STORAGE_KEY)
+  storageRemove(ADMIN_ACCOUNT_STORAGE_KEY)
+  storageRemove(LEGACY_ADMIN_USER_STORAGE_KEY)
+}
+
+/**
+ * Ends the admin session: tells the server to revoke it (best effort, never
+ * blocks), clears the Apollo cache, and removes the stored token/account.
+ * Pass `{ serverLogout: false }` when the server already rejected the token.
+ */
+export function clearAdminSession(options: { serverLogout?: boolean } = {}) {
+  const token = readAuthToken()
+  removeStoredSession()
+
+  try {
+    sessionTeardown?.(
+      options.serverLogout === false ? null : token,
+      options.serverLogout === false ? 'expired' : 'logout',
+    )
+  } catch {
+    // teardown is best effort
+  }
+
   emitSessionChange()
 }
 
@@ -108,10 +165,8 @@ function getAdminSessionSnapshot() {
     return EMPTY_ADMIN_SESSION
   }
 
-  const token = localStorage.getItem(AUTH_TOKEN_STORAGE_KEY)
-  const accountRaw =
-    localStorage.getItem(ADMIN_ACCOUNT_STORAGE_KEY) ??
-    localStorage.getItem(LEGACY_ADMIN_USER_STORAGE_KEY)
+  const token = storageGet(AUTH_TOKEN_STORAGE_KEY)
+  const accountRaw = readRawAccount()
 
   if (token === cachedToken && accountRaw === cachedAccountRaw) {
     return cachedSnapshot

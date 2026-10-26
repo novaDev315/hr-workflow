@@ -11,6 +11,7 @@ export type WorkspaceNavigationItem = {
   description: string;
   href: string;
   icon: typeof Search;
+  keywords?: string;
 };
 
 type WorkspaceSwitcherProps = {
@@ -58,7 +59,7 @@ export function WorkspaceSwitcher({ items }: WorkspaceSwitcherProps) {
   const normalizedQuery = query.trim().toLowerCase();
   const filteredItems = normalizedQuery
     ? items.filter((item) =>
-        `${item.name} ${item.description}`
+        `${item.name} ${item.description} ${item.keywords ?? ""}`
           .toLowerCase()
           .includes(normalizedQuery),
       )
@@ -69,8 +70,8 @@ export function WorkspaceSwitcher({ items }: WorkspaceSwitcherProps) {
       <Dialog.Trigger asChild>
         <button className="app-workspace-search" type="button">
           <Search className="h-4 w-4" />
-          <span className="hidden sm:inline">Jump to a workspace</span>
-          <span className="sm:hidden">Jump to</span>
+          <span className="hidden sm:inline">Go to a page</span>
+          <span className="sm:hidden">Go to</span>
           <span className="ml-auto hidden items-center gap-1 rounded-md border border-border/80 bg-background/70 px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground sm:flex">
             <Command className="h-2.5 w-2.5" />K
           </span>
@@ -80,23 +81,23 @@ export function WorkspaceSwitcher({ items }: WorkspaceSwitcherProps) {
       <Dialog.Portal>
         <Dialog.Overlay className="fixed inset-0 z-[70] bg-foreground/25 backdrop-blur-sm" />
         <Dialog.Content className="app-command-panel fixed left-1/2 top-[12vh] z-[71] w-[calc(100%-1.5rem)] max-w-xl -translate-x-1/2 overflow-hidden focus:outline-none">
-          <Dialog.Title className="sr-only">Jump to a workspace</Dialog.Title>
+          <Dialog.Title className="sr-only">Go to a page</Dialog.Title>
           <Dialog.Description className="sr-only">
-            Search and open a Rakss HR workspace.
+            Search and open an HRFlow Pro page.
           </Dialog.Description>
           <div className="flex items-center gap-2 border-b border-border/80 p-3">
             <Search className="ml-1 h-4 w-4 shrink-0 text-muted-foreground" />
             <Input
-              aria-label="Search workspaces"
+              aria-label="Search pages"
               className="h-11 border-0 bg-transparent px-1 shadow-none focus-visible:ring-0 focus-visible:ring-offset-0"
               onChange={(event) => setQuery(event.target.value)}
-              placeholder="Search people, payroll, reports..."
+              placeholder="Search people, payroll, work sites…"
               ref={inputRef}
               value={query}
             />
             <Dialog.Close asChild>
               <Button
-                aria-label="Close workspace switcher"
+                aria-label="Close page switcher"
                 size="icon"
                 type="button"
                 variant="ghost"
@@ -132,10 +133,10 @@ export function WorkspaceSwitcher({ items }: WorkspaceSwitcherProps) {
             ) : (
               <div className="px-4 py-10 text-center">
                 <p className="text-sm font-semibold text-foreground">
-                  No workspace found
+                  No page found
                 </p>
                 <p className="mt-1 text-sm text-muted-foreground">
-                  Try another name or responsibility.
+                  Try another name, such as payroll or work sites.
                 </p>
               </div>
             )}

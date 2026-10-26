@@ -1,47 +1,28 @@
-export type LocationFormState = {
-  name: string
-  code: string
-  address: string
-  city: string
-  latitude: string
-  longitude: string
-  geofenceRadius: string
+export type AttendanceEmployee = {
+  id: string
+  employeeNumber: string
+  fullName: string
+  isActive: boolean
+  department: { name: string }
 }
 
-export type AssignmentFormState = {
-  employeeId: string
-  locationId: string
-  isPrimary: string
+export type AttendanceRecord = {
+  id: string
+  attendanceDate: string
+  clockInAt?: string | null
+  clockOutAt?: string | null
+  totalHours?: number | null
+  regularHours?: number | null
+  overtimeHours?: number | null
+  status: string
+  employee: { id: string; employeeNumber: string; fullName: string }
+  location: { id: string; code: string; name: string }
 }
 
-export type AttendanceActionFormState = {
-  employeeId: string
-  locationId: string
-  latitude: string
-  longitude: string
-  notes: string
-}
-
-export const locationFormDefaults: LocationFormState = {
-  name: '',
-  code: '',
-  address: '',
-  city: '',
-  latitude: '',
-  longitude: '',
-  geofenceRadius: '100',
-}
-
-export const assignmentFormDefaults: AssignmentFormState = {
-  employeeId: '',
-  locationId: '',
-  isPrimary: 'true',
-}
-
-export const attendanceActionDefaults: AttendanceActionFormState = {
-  employeeId: '',
-  locationId: '',
-  latitude: '',
-  longitude: '',
-  notes: '',
+export type OpenRecord = {
+  id: string
+  attendanceDate: string
+  clockInAt?: string | null
+  status: string
+  location: { id: string; name: string }
 }

@@ -1,4 +1,5 @@
 import { Notice } from '@/components/ui/notice'
+import { readableError } from '@/lib/graphql-errors'
 
 type PageFeedbackProps = {
   errorMessage?: string | null
@@ -15,12 +16,20 @@ export function PageFeedback({
 }: PageFeedbackProps) {
   return (
     <>
-      {errorMessage ? <Notice tone="danger">{errorMessage}</Notice> : null}
-      {statusMessage ? <Notice tone="success">{statusMessage}</Notice> : null}
+      {errorMessage ? (
+        <Notice tone="danger" role="alert">
+          {errorMessage}
+        </Notice>
+      ) : null}
+      {statusMessage ? (
+        <Notice tone="success" role="status">
+          {statusMessage}
+        </Notice>
+      ) : null}
       {loadError ? (
-        <Notice tone="danger">
+        <Notice tone="danger" role="alert">
           {loadErrorPrefix ? `${loadErrorPrefix} ` : ''}
-          {loadError.message}
+          {readableError(loadError)}
         </Notice>
       ) : null}
     </>

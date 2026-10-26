@@ -1,13 +1,17 @@
 import type { LucideIcon } from "lucide-react";
 
-import { Card, CardContent } from "@/components/ui/card";
+import { Card } from "@/components/ui/card";
+import { cn } from "@/lib/utils";
 
 type MetricCardProps = {
   label: string;
   value: string;
+  /** One short caption that describes the value itself. */
   detail?: string;
   icon?: LucideIcon;
+  /** Kept for compatibility; metric cards no longer use colored icon tiles. */
   tone?: string;
+  className?: string;
 };
 
 export function MetricCard({
@@ -15,28 +19,29 @@ export function MetricCard({
   value,
   detail,
   icon: Icon,
-  tone = "bg-accent text-accent-foreground",
+  className,
 }: MetricCardProps) {
   return (
-    <Card className="app-muted-surface border-l-[3px] border-l-primary/45 shadow-none">
-      <CardContent className="flex items-start justify-between gap-3 p-4">
-        <div className="min-w-0">
-          <p className="text-sm font-medium text-muted-foreground">{label}</p>
-          <p className="mt-1.5 text-[1.65rem] font-semibold tracking-[-0.035em] text-foreground">
-            {value}
-          </p>
-          {detail ? (
-            <p className="mt-1.5 text-sm text-muted-foreground">{detail}</p>
-          ) : null}
-        </div>
+    <Card
+      className={cn(
+        "app-muted-surface flex h-full min-w-0 flex-col gap-1 px-4 py-3.5 shadow-none",
+        className,
+      )}
+    >
+      <div className="flex items-start justify-between gap-2">
+        <p className="line-clamp-2 min-w-0 text-sm font-medium leading-5 text-muted-foreground">{label}</p>
         {Icon ? (
-          <div
-            className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ${tone}`}
-          >
-            <Icon className="h-4.5 w-4.5" />
-          </div>
+          <Icon aria-hidden="true" className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground/70" />
         ) : null}
-      </CardContent>
+      </div>
+      <p className="break-words text-[1.6rem] font-semibold leading-tight tracking-[-0.03em] text-foreground tabular-nums">
+        {value}
+      </p>
+      {detail ? (
+        <p className="mt-auto line-clamp-2 text-[13px] leading-5 text-muted-foreground" title={detail}>
+          {detail}
+        </p>
+      ) : null}
     </Card>
   );
 }

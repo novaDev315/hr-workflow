@@ -1,8 +1,9 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { gql, useApolloClient, useMutation, useQuery } from "@apollo/client";
-import { Loader2, ShieldCheck } from "lucide-react";
+import { Loader2 } from "lucide-react";
 
+import { BrandMark } from "@/components/brand-mark";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -18,6 +19,7 @@ import {
   hasAdminPanelAccess,
   persistAdminSession,
 } from "@/lib/auth-session";
+import { readableError } from "@/lib/graphql-errors";
 
 const AUTH_BOOTSTRAP_STATUS = gql`
   query AuthBootstrapStatus {
@@ -88,7 +90,7 @@ export function LoginPage() {
   const [bootstrapAdmin] = useMutation(BOOTSTRAP_ADMIN_MUTATION);
 
   const bootstrapRequired = data?.authBootstrapStatus?.bootstrapRequired ?? false;
-  const title = bootstrapRequired ? "Set up Rakss HR" : "Welcome back";
+  const title = bootstrapRequired ? "Set up HRFlow Pro" : "Welcome back";
   const subtitle = bootstrapRequired
     ? "Create the first administrator account to secure and open this workspace."
     : "Sign in with your administrator account to continue.";
@@ -96,8 +98,8 @@ export function LoginPage() {
 
   useEffect(() => {
     document.title = bootstrapRequired
-      ? "Set Up Admin - Rakss HR"
-      : "Sign In - Rakss HR Admin";
+      ? "Set up - HRFlow Pro"
+      : "Sign in - HRFlow Pro";
   }, [bootstrapRequired]);
 
   const handleSubmit = async (event: React.FormEvent) => {
@@ -105,14 +107,16 @@ export function LoginPage() {
     setLoading(true);
     setError(null);
 
+    const normalizedEmail = email.trim().toLowerCase();
+
     try {
       const result = bootstrapRequired
         ? await bootstrapAdmin({
             variables: {
               input: {
-                firstName,
-                lastName,
-                email,
+                firstName: firstName.trim(),
+                lastName: lastName.trim(),
+                email: normalizedEmail,
                 password,
               },
             },
@@ -120,7 +124,7 @@ export function LoginPage() {
         : await login({
             variables: {
               input: {
-                email,
+                email: normalizedEmail,
                 password,
               },
             },
@@ -129,13 +133,15 @@ export function LoginPage() {
       const payload = bootstrapRequired ? result.data?.bootstrapAdmin : result.data?.login;
 
       if (!payload?.accessToken) {
-        throw new Error("Authentication response did not include an access token");
+        throw new Error("Sign-in did not complete. Please try again.");
       }
 
       if (!bootstrapRequired && !hasAdminPanelAccess(payload.account)) {
+        // Store briefly so clearAdminSession can revoke the new server session.
+        persistAdminSession(payload);
         clearAdminSession();
         throw new Error(
-          "This account can use the mobile app, but only ADMIN, HR_ADMIN, MANAGER, and SUPERVISOR accounts can access the admin panel.",
+          "This account can use the mobile app. The admin workspace is for admins, HR admins, managers and supervisors.",
         );
       }
 
@@ -143,10 +149,7 @@ export function LoginPage() {
       await apolloClient.clearStore();
       navigate("/");
     } catch (submitError) {
-      console.error("Login failed:", submitError);
-      setError(
-        submitError instanceof Error ? submitError.message : "Authentication failed",
-      );
+      setError(readableError(submitError, "Sign-in failed. Please try again."));
     } finally {
       setLoading(false);
     }
@@ -165,12 +168,13 @@ export function LoginPage() {
 
       <div className="relative w-full max-w-[460px]">
         <div className="mb-6 flex items-center justify-center gap-3 sm:mb-7">
-          <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-primary text-primary-foreground shadow-[0_10px_24px_rgba(124,61,40,0.2)]">
-            <ShieldCheck className="h-[18px] w-[18px]" />
-          </div>
+          <BrandMark
+            className="h-11 w-11 shadow-[0_10px_24px_rgba(124,61,40,0.2)]"
+            iconClassName="h-[18px] w-[18px]"
+          />
           <div>
             <p className="text-[11px] font-bold uppercase tracking-[0.17em] text-primary">
-              Rakss HR
+              HRFlow Pro
             </p>
             <p className="mt-0.5 text-base font-semibold tracking-[-0.03em] text-foreground">
               People operations
@@ -194,8 +198,8 @@ export function LoginPage() {
             {bootstrapStatusError ? (
               <Notice tone="warning">
                 <div>
-                  <p className="font-semibold">The authentication service is not reachable.</p>
-                  <p className="mt-1">{bootstrapStatusError.message}</p>
+                  <p className="font-semibold">The sign-in service is not reachable.</p>
+                  <p className="mt-1">{readableError(bootstrapStatusError)}</p>
                   <Button
                     className="mt-3"
                     type="button"
@@ -208,7 +212,11 @@ export function LoginPage() {
               </Notice>
             ) : null}
 
-            {error ? <Notice tone="danger">{error}</Notice> : null}
+            {error ? (
+              <Notice tone="danger" role="alert">
+                {error}
+              </Notice>
+            ) : null}
 
             <form className="space-y-4" onSubmit={handleSubmit}>
               {bootstrapRequired ? (
@@ -272,10 +280,10 @@ export function LoginPage() {
                 {loading ? (
                   <>
                     <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                    {bootstrapRequired ? "Creating admin account..." : "Signing in..."}
+                    {bootstrapRequired ? "Creating admin account…" : "Signing in…"}
                   </>
                 ) : bootstrapRequired ? (
-                  "Create admin"
+                  "Create admin account"
                 ) : (
                   "Sign in"
                 )}
@@ -285,7 +293,7 @@ export function LoginPage() {
         </Card>
 
         <p className="mt-5 text-center text-xs leading-5 text-muted-foreground">
-          Protected workspace for authorized Rakss HR administrators.
+          Protected workspace for authorized HRFlow Pro staff.
         </p>
       </div>
     </main>

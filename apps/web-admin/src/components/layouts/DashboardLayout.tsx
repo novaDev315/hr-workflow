@@ -3,23 +3,23 @@ import {
   BarChart3,
   BookOpen,
   Briefcase,
+  Building2,
   Calendar,
-  DollarSign,
-  FileText,
+  Clock3,
   LayoutDashboard,
   LogOut,
   Menu,
-  Search,
-  ShieldCheck,
   Users,
+  Wallet,
   X,
 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 
+import { BrandMark } from "@/components/brand-mark";
 import { Button } from "@/components/ui/button";
 import { clearAdminSession, useAdminSession } from "@/lib/auth-session";
-import { formatDate } from "@/lib/utils";
+import { formatDay, formatStatus } from "@/lib/format";
 import {
   WorkspaceSwitcher,
   type WorkspaceNavigationItem,
@@ -28,48 +28,44 @@ import {
 const primaryNavigation: WorkspaceNavigationItem[] = [
   {
     name: "Home",
-    description: "Today’s priorities and activity",
+    description: "Today's priorities and recent activity",
     href: "/",
     icon: LayoutDashboard,
   },
   {
-    name: "People Directory",
-    description: "Find people and contact details",
-    href: "/directory",
-    icon: Search,
+    name: "People",
+    description: "Employees, pay, work sites and sign-in",
+    href: "/employees",
+    icon: Users,
+    keywords: "employees directory staff team hire",
   },
   {
-    name: "Leaves",
-    description: "Requests, approvals, and balances",
+    name: "Leave",
+    description: "Requests, approvals and balances",
     href: "/leave",
     icon: Calendar,
+    keywords: "time off vacation holiday",
   },
   {
     name: "Attendance",
-    description: "Schedules, assignments, and time",
+    description: "Clock-ins and time at each site",
     href: "/attendance",
-    icon: Briefcase,
+    icon: Clock3,
+    keywords: "clock in out time",
   },
   {
     name: "Payroll",
-    description: "Periods, runs, and payslips",
+    description: "Pay periods, runs and payslips",
     href: "/payroll",
-    icon: DollarSign,
-  },
-];
-
-const secondaryNavigation: WorkspaceNavigationItem[] = [
-  {
-    name: "Employees",
-    description: "Records, access, and organization",
-    href: "/employees",
-    icon: Users,
+    icon: Wallet,
+    keywords: "salary payslip",
   },
   {
     name: "Recruitment",
-    description: "Requisitions and candidates",
+    description: "Openings and the candidate pipeline",
     href: "/recruitment",
-    icon: FileText,
+    icon: Briefcase,
+    keywords: "hiring candidates jobs requisitions",
   },
   {
     name: "Reports",
@@ -77,15 +73,26 @@ const secondaryNavigation: WorkspaceNavigationItem[] = [
     href: "/reports",
     icon: BarChart3,
   },
+];
+
+const settingsNavigation: WorkspaceNavigationItem[] = [
+  {
+    name: "Organisation",
+    description: "Company details, departments, designations and work sites",
+    href: "/organisation",
+    icon: Building2,
+    keywords: "company settings departments designations locations sites currency timezone",
+  },
   {
     name: "Policies",
-    description: "Publish and manage documents",
+    description: "Publish and manage policy documents",
     href: "/policies",
     icon: BookOpen,
+    keywords: "documents handbook",
   },
 ];
 
-const navigation = [...primaryNavigation, ...secondaryNavigation];
+const navigation = [...primaryNavigation, ...settingsNavigation];
 
 export function DashboardLayout() {
   const apolloClient = useApolloClient();
@@ -102,7 +109,7 @@ export function DashboardLayout() {
     ) ?? navigation[0];
 
   useEffect(() => {
-    document.title = `${currentPage.name} - Rakss HR Admin`;
+    document.title = `${currentPage.name} · HRFlow Pro`;
   }, [currentPage.name]);
 
   useEffect(() => {
@@ -153,14 +160,12 @@ export function DashboardLayout() {
       >
         <div className="flex h-[72px] items-center justify-between gap-3 border-b border-border/70 px-5">
           <div className="flex items-center gap-3">
-            <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-primary text-primary-foreground shadow-sm">
-              <ShieldCheck className="h-4 w-4" />
-            </div>
+            <BrandMark />
             <div>
-              <p className="text-[11px] font-bold uppercase tracking-[0.17em] text-primary">
-                Rakss HR
+              <p className="app-editorial text-[1.15rem] leading-none text-foreground">
+                HRFlow Pro
               </p>
-              <p className="mt-0.5 text-sm font-semibold tracking-[-0.02em] text-foreground">
+              <p className="mt-1 text-xs text-muted-foreground">
                 People operations
               </p>
             </div>
@@ -178,11 +183,11 @@ export function DashboardLayout() {
         </div>
 
         <div className="flex-1 overflow-y-auto px-3 py-5">
-          <NavigationGroup items={primaryNavigation} label="Workspace" />
+          <NavigationGroup items={primaryNavigation} label="Main navigation" hideLabel />
           <NavigationGroup
             className="mt-6"
-            items={secondaryNavigation}
-            label="Manage"
+            items={settingsNavigation}
+            label="Settings"
           />
         </div>
 
@@ -196,8 +201,8 @@ export function DashboardLayout() {
                 <p className="truncate text-sm font-semibold text-foreground">
                   {account.fullName}
                 </p>
-                <p className="mt-0.5 truncate text-[11px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">
-                  {account.roles[0] ?? "Admin"}
+                <p className="mt-0.5 truncate text-xs text-muted-foreground">
+                  {formatStatus(account.roles[0] ?? "ADMIN")}
                 </p>
               </div>
               <Button
@@ -231,7 +236,7 @@ export function DashboardLayout() {
               {currentPage.name}
             </p>
             <p className="mt-0.5 hidden text-xs text-muted-foreground sm:block">
-              {formatDate(new Date())}
+              {formatDay(new Date())}
             </p>
           </div>
 
@@ -259,15 +264,19 @@ function NavigationGroup({
   className = "",
   items,
   label,
+  hideLabel = false,
 }: {
   className?: string;
   items: WorkspaceNavigationItem[];
   label: string;
+  hideLabel?: boolean;
 }) {
   return (
     <div className={className}>
-      <p className="app-kicker px-3">{label}</p>
-      <nav className="mt-2 space-y-1">
+      {hideLabel ? null : (
+        <p className="px-3 text-xs font-semibold text-muted-foreground">{label}</p>
+      )}
+      <nav aria-label={label} className={hideLabel ? "space-y-0.5" : "mt-2 space-y-0.5"}>
         {items.map((item) => (
           <NavItem item={item} key={item.href} />
         ))}
@@ -291,7 +300,7 @@ function NavItem({
       to={item.href}
       className={({ isActive }) =>
         [
-          "group flex min-h-11 items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-colors",
+          "group flex min-h-10 items-center gap-3 rounded-xl px-3 py-2 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
           isActive
             ? "bg-primary/10 font-semibold text-primary"
             : "text-muted-foreground hover:bg-card/80 hover:text-foreground",

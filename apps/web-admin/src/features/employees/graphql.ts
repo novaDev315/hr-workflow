@@ -1,28 +1,8 @@
 import { gql } from '@apollo/client'
 
-export const EMPLOYEE_PAGE_QUERY = gql`
-  query EmployeePageData($filter: EmployeeFilterInput) {
-    departments(includeInactive: true) {
-      id
-      name
-      code
-      description
-      isActive
-    }
-    designations(includeInactive: true) {
-      id
-      title
-      code
-      departmentId
-      level
-      description
-      isActive
-      department {
-        id
-        name
-      }
-    }
-    employees(filter: $filter) {
+export const PEOPLE_QUERY = gql`
+  query PeopleDirectory {
+    employees {
       id
       employeeNumber
       firstName
@@ -36,6 +16,7 @@ export const EMPLOYEE_PAGE_QUERY = gql`
       status
       isActive
       supervisorId
+      supervisorName
       hasLinkedAccount
       linkedAccountEmail
       linkedAccountRoles
@@ -53,52 +34,16 @@ export const EMPLOYEE_PAGE_QUERY = gql`
   }
 `
 
-export const CREATE_DEPARTMENT_MUTATION = gql`
-  mutation CreateDepartment($input: CreateDepartmentInput!) {
-    createDepartment(input: $input) {
+export const EMPLOYEE_COMPENSATIONS_QUERY = gql`
+  query EmployeeCompensations {
+    employeeCompensations {
       id
-    }
-  }
-`
-
-export const UPDATE_DEPARTMENT_MUTATION = gql`
-  mutation UpdateDepartment($input: UpdateDepartmentInput!) {
-    updateDepartment(input: $input) {
-      id
-    }
-  }
-`
-
-export const DEACTIVATE_DEPARTMENT_MUTATION = gql`
-  mutation DeactivateDepartment($input: DeactivateDepartmentInput!) {
-    deactivateDepartment(input: $input) {
-      id
-      isActive
-    }
-  }
-`
-
-export const CREATE_DESIGNATION_MUTATION = gql`
-  mutation CreateDesignation($input: CreateDesignationInput!) {
-    createDesignation(input: $input) {
-      id
-    }
-  }
-`
-
-export const UPDATE_DESIGNATION_MUTATION = gql`
-  mutation UpdateDesignation($input: UpdateDesignationInput!) {
-    updateDesignation(input: $input) {
-      id
-    }
-  }
-`
-
-export const DEACTIVATE_DESIGNATION_MUTATION = gql`
-  mutation DeactivateDesignation($input: DeactivateDesignationInput!) {
-    deactivateDesignation(input: $input) {
-      id
-      isActive
+      employeeId
+      baseSalary
+      allowanceAmount
+      deductionAmount
+      currencyCode
+      effectiveFrom
     }
   }
 `
@@ -107,6 +52,8 @@ export const CREATE_EMPLOYEE_MUTATION = gql`
   mutation CreateEmployee($input: CreateEmployeeInput!) {
     createEmployee(input: $input) {
       id
+      fullName
+      employeeNumber
     }
   }
 `
@@ -129,6 +76,22 @@ export const DEACTIVATE_EMPLOYEE_MUTATION = gql`
   }
 `
 
+export const UPSERT_COMPENSATION_MUTATION = gql`
+  mutation UpsertEmployeeCompensation($input: UpsertEmployeeCompensationInput!) {
+    upsertEmployeeCompensation(input: $input) {
+      id
+    }
+  }
+`
+
+export const ASSIGN_SITE_MUTATION = gql`
+  mutation AssignEmployeeLocation($input: AssignEmployeeLocationInput!) {
+    assignEmployeeLocation(input: $input) {
+      id
+    }
+  }
+`
+
 export const CREATE_EMPLOYEE_ACCOUNT_MUTATION = gql`
   mutation CreateEmployeeAccount($input: CreateEmployeeAccountInput!) {
     createEmployeeAccount(input: $input) {
@@ -147,3 +110,5 @@ export const PROVISION_STAFF_ACCESS_MUTATION = gql`
     }
   }
 `
+
+export const PEOPLE_REFETCH = ['PeopleDirectory', 'OrganisationPeople', 'AttendanceWorkspace']

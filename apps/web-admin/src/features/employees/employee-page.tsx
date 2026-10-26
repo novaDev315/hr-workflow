@@ -1,525 +1,307 @@
-import { FormEvent, useDeferredValue, useState } from 'react'
-import { PageFeedback } from '@/components/admin/page-feedback'
-import { Card, CardContent } from '@/components/ui/card'
+import { useMutation, useQuery } from '@apollo/client'
+import { LayoutGrid, List, Plus, Search } from 'lucide-react'
+import { useDeferredValue, useMemo, useState } from 'react'
+
 import { Button } from '@/components/ui/button'
+import { Card, CardContent } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
-import { Plus, Search } from 'lucide-react'
-import { canManageAccounts, readStoredAdminAccount } from '@/lib/auth-session'
-import { EmployeeListCard } from './components'
-import type { EmployeeListRow } from './components'
-import { EmployeesFormsDrawer } from './forms'
-import { useEmployeeWorkspaceGraphql } from './hooks'
+import { Notice } from '@/components/ui/notice'
+import { useConfirm } from '@/features/shared/confirm-dialog'
+import { FilterSelect, SegmentedControl } from '@/features/shared/controls'
+import { EmptyState } from '@/features/shared/data-table'
+import { readableError } from '@/lib/graphql-errors'
+import { PageIntro } from '@/features/shared/page-intro'
+import { useReferenceData } from '@/features/shared/reference-data'
+import { canManageAccounts, useAdminSession } from '@/lib/auth-session'
+import { formatStatus, plural } from '@/lib/format'
+
+import { EmployeeActionSheet, type EmployeeAction } from './action-sheets'
+import { PeopleCards, PeopleTable, SetupChecklist, type RowActions } from './components'
 import {
-  departmentFormDefaults,
-  designationFormDefaults,
-  employeeAccountFormDefaults,
-  employeeFormDefaults,
-  staffAccessFormDefaults,
-} from './types'
+  DEACTIVATE_EMPLOYEE_MUTATION,
+  EMPLOYEE_COMPENSATIONS_QUERY,
+  PEOPLE_QUERY,
+  PEOPLE_REFETCH,
+} from './graphql'
+import { NewEmployeeSheet } from './new-employee-sheet'
+import { grantableRoles, type Compensation, type Person } from './types'
+
+type View = 'table' | 'cards'
+const VIEW_KEY = 'hrflow.people.view'
+
+function readView(): View {
+  try {
+    return window.localStorage.getItem(VIEW_KEY) === 'cards' ? 'cards' : 'table'
+  } catch {
+    return 'table'
+  }
+}
 
 export function EmployeesPage() {
-  const currentAdminAccount = readStoredAdminAccount()
-  const accountManagerAccess = canManageAccounts(currentAdminAccount)
-  const [searchQuery, setSearchQuery] = useState('')
-  const deferredSearch = useDeferredValue(searchQuery)
-  const [showForms, setShowForms] = useState(false)
-  const [statusMessage, setStatusMessage] = useState<string | null>(null)
-  const [errorMessage, setErrorMessage] = useState<string | null>(null)
-  const [departmentForm, setDepartmentForm] = useState(departmentFormDefaults)
-  const [editingDepartmentId, setEditingDepartmentId] = useState<string | null>(null)
-  const [designationForm, setDesignationForm] = useState(designationFormDefaults)
-  const [editingDesignationId, setEditingDesignationId] = useState<string | null>(null)
-  const [employeeForm, setEmployeeForm] = useState(employeeFormDefaults)
-  const [editingEmployeeId, setEditingEmployeeId] = useState<string | null>(null)
-  const [employeeAccountForm, setEmployeeAccountForm] = useState(employeeAccountFormDefaults)
-  const [staffAccessForm, setStaffAccessForm] = useState(staffAccessFormDefaults)
+  const { account } = useAdminSession()
+  const canManage = canManageAccounts(account)
+  const grantable = grantableRoles(account?.roles ?? [])
 
-  const {
-    data,
-    loading,
-    error,
-    refetch,
-    createDepartment,
-    creatingDepartment,
-    updateDepartment,
-    updatingDepartment,
-    deactivateDepartment,
-    deactivatingDepartment,
-    createDesignation,
-    creatingDesignation,
-    updateDesignation,
-    updatingDesignation,
-    deactivateDesignation,
-    deactivatingDesignation,
-    createEmployee,
-    creatingEmployee,
-    updateEmployee,
-    updatingEmployee,
-    deactivateEmployee,
-    deactivatingEmployee,
-    createEmployeeAccount,
-    creatingEmployeeAccount,
-    provisionStaffAccess,
-    provisioningStaffAccess,
-  } = useEmployeeWorkspaceGraphql(deferredSearch)
+  const reference = useReferenceData()
+  const peopleQuery = useQuery<{ employees: Person[] }>(PEOPLE_QUERY)
+  const compensationQuery = useQuery<{ employeeCompensations: Compensation[] }>(EMPLOYEE_COMPENSATIONS_QUERY, {
+    skip: !canManage,
+  })
+  const [deactivateEmployee] = useMutation(DEACTIVATE_EMPLOYEE_MUTATION, { refetchQueries: PEOPLE_REFETCH })
+  const [confirm, confirmDialog] = useConfirm()
 
-  const departments = data?.departments ?? []
-  const designations = data?.designations ?? []
-  const employees = data?.employees ?? []
-  const activeDepartments = departments.filter(
-    (department: { isActive: boolean }) => department.isActive
-  )
-  const activeDesignations = designations.filter(
-    (designation: { isActive: boolean }) => designation.isActive
-  )
+  const [search, setSearch] = useState('')
+  const deferredSearch = useDeferredValue(search)
+  const [departmentFilter, setDepartmentFilter] = useState('')
+  const [statusFilter, setStatusFilter] = useState('')
+  const [signInFilter, setSignInFilter] = useState('')
+  const [view, setViewState] = useState<View>(readView)
+  const [newOpen, setNewOpen] = useState(false)
+  const [action, setAction] = useState<{ type: EmployeeAction; person: Person } | null>(null)
+  const [notice, setNotice] = useState<{ text: string; tone: 'success' | 'danger' } | null>(null)
 
-  const employeeDesignationOptions = employeeForm.departmentId
-    ? activeDesignations.filter(
-        (designation: { departmentId: string }) =>
-          designation.departmentId === employeeForm.departmentId
-      )
-    : activeDesignations
+  const people = useMemo(() => peopleQuery.data?.employees ?? [], [peopleQuery.data])
+  const compensations = compensationQuery.data?.employeeCompensations ?? []
+  const currencyCode = reference.companySettings?.currencyCode ?? 'AED'
 
-  const selectedEmployeeForAccount = employees.find(
-    (employee: { id: string }) => employee.id === employeeAccountForm.employeeId
-  )
-  const selectedEmployeeForStaffAccess = employees.find(
-    (employee: { id: string }) => employee.id === staffAccessForm.employeeId
-  )
-  const selectedStaffEmployeeHasLinkedAccount = Boolean(
-    selectedEmployeeForStaffAccess?.hasLinkedAccount
-  )
-
-  const handleSaveDepartment = async (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault()
-    setErrorMessage(null)
-    setStatusMessage(null)
-
+  const setView = (next: View) => {
+    setViewState(next)
     try {
-      const input = {
-        name: departmentForm.name,
-        code: departmentForm.code,
-        description: departmentForm.description || null,
-      }
-
-      if (editingDepartmentId) {
-        await updateDepartment({
-          variables: {
-            input: {
-              id: editingDepartmentId,
-              ...input,
-            },
-          },
-        })
-      } else {
-        await createDepartment({
-          variables: {
-            input,
-          },
-        })
-      }
-      setDepartmentForm(departmentFormDefaults)
-      setEditingDepartmentId(null)
-      setStatusMessage(editingDepartmentId ? 'Department updated.' : 'Department created.')
-      await refetch()
-    } catch (mutationError) {
-      setErrorMessage(
-        mutationError instanceof Error
-          ? mutationError.message
-          : 'Unable to save department.'
-      )
+      window.localStorage.setItem(VIEW_KEY, next)
+    } catch {
+      // Preference only; ignore storage failures.
     }
   }
 
-  const handleEditDepartment = (department: {
-    id: string
-    name: string
-    code: string
-    description?: string | null
-  }) => {
-    setEditingDepartmentId(department.id)
-    setDepartmentForm({
-      name: department.name,
-      code: department.code,
-      description: department.description ?? '',
+  const statusOptions = useMemo(
+    () =>
+      [...new Set(people.map((person) => person.status))]
+        .sort()
+        .map((status) => ({ value: status, label: formatStatus(status) })),
+    [people],
+  )
+
+  const filtered = useMemo(() => {
+    const term = deferredSearch.trim().toLowerCase()
+    return people
+      .filter((person) => !departmentFilter || person.departmentId === departmentFilter)
+      .filter((person) => !statusFilter || person.status === statusFilter)
+      .filter((person) =>
+        !signInFilter ? true : signInFilter === 'with' ? person.hasLinkedAccount : !person.hasLinkedAccount,
+      )
+      .filter((person) =>
+        !term
+          ? true
+          : [person.fullName, person.employeeNumber, person.email, person.department.name, person.designation.title]
+              .join(' ')
+              .toLowerCase()
+              .includes(term),
+      )
+      .sort((a, b) => Number(b.isActive) - Number(a.isActive) || a.fullName.localeCompare(b.fullName))
+  }, [people, deferredSearch, departmentFilter, statusFilter, signInFilter])
+
+  const loading = (peopleQuery.loading && !peopleQuery.data) || (reference.loading && !reference.data)
+  const activeDepartments = reference.departments.filter((d) => d.isActive)
+  const activeDesignations = reference.designations.filter((d) => d.isActive)
+  const freshInstall = !loading && (activeDepartments.length === 0 || people.length === 0)
+  const canAddEmployee = canManage && activeDepartments.length > 0 && activeDesignations.length > 0
+  const filtersActive = Boolean(search || departmentFilter || statusFilter || signInFilter)
+
+  const handleDeactivate = async (person: Person) => {
+    const ok = await confirm({
+      title: `Deactivate ${person.fullName}?`,
+      description: person.hasLinkedAccount
+        ? 'Their sign-in stops working and they leave future payroll runs. Their history stays.'
+        : 'They leave future payroll runs and attendance. Their history stays.',
+      confirmLabel: 'Deactivate',
+      tone: 'danger',
     })
-    setErrorMessage(null)
-    setStatusMessage(null)
-  }
-
-  const handleCancelDepartmentEdit = () => {
-    setEditingDepartmentId(null)
-    setDepartmentForm(departmentFormDefaults)
-  }
-
-  const handleDeactivateDepartment = async (departmentId: string, name: string) => {
-    if (!window.confirm(`Deactivate ${name}? New employees cannot use it.`)) {
-      return
-    }
-
-    setErrorMessage(null)
-    setStatusMessage(null)
-
+    if (!ok) return
     try {
-      await deactivateDepartment({
-        variables: {
-          input: {
-            id: departmentId,
-          },
-        },
-      })
-      setStatusMessage('Department deactivated.')
-      await refetch()
-    } catch (mutationError) {
-      setErrorMessage(
-        mutationError instanceof Error
-          ? mutationError.message
-          : 'Unable to deactivate department.'
-      )
+      await deactivateEmployee({ variables: { input: { id: person.id } } })
+      setNotice({ text: `${person.fullName} deactivated.`, tone: 'success' })
+    } catch (error) {
+      setNotice({ text: readableError(error, 'The employee could not be deactivated.'), tone: 'danger' })
     }
   }
 
-  const handleSaveDesignation = async (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault()
-    setErrorMessage(null)
-    setStatusMessage(null)
-
-    try {
-      const input = {
-        title: designationForm.title,
-        code: designationForm.code,
-        departmentId: designationForm.departmentId,
-        level: Number.parseInt(designationForm.level || '1', 10),
-        description: designationForm.description || null,
-      }
-
-      if (editingDesignationId) {
-        await updateDesignation({
-          variables: {
-            input: {
-              id: editingDesignationId,
-              ...input,
-            },
-          },
-        })
-      } else {
-        await createDesignation({
-          variables: {
-            input,
-          },
-        })
-      }
-      setDesignationForm((current) => ({
-        ...designationFormDefaults,
-        departmentId: current.departmentId,
-      }))
-      setEditingDesignationId(null)
-      setStatusMessage(editingDesignationId ? 'Designation updated.' : 'Designation created.')
-      await refetch()
-    } catch (mutationError) {
-      setErrorMessage(
-        mutationError instanceof Error
-          ? mutationError.message
-          : 'Unable to save designation.'
-      )
-    }
-  }
-
-  const handleEditDesignation = (designation: {
-    id: string
-    title: string
-    code: string
-    departmentId: string
-    level: number
-    description?: string | null
-  }) => {
-    setEditingDesignationId(designation.id)
-    setDesignationForm({
-      title: designation.title,
-      code: designation.code,
-      departmentId: designation.departmentId,
-      level: String(designation.level),
-      description: designation.description ?? '',
-    })
-    setErrorMessage(null)
-    setStatusMessage(null)
-  }
-
-  const handleCancelDesignationEdit = () => {
-    setEditingDesignationId(null)
-    setDesignationForm(designationFormDefaults)
-  }
-
-  const handleDeactivateDesignation = async (designationId: string, title: string) => {
-    if (!window.confirm(`Deactivate ${title}? New employees cannot use it.`)) {
-      return
-    }
-
-    setErrorMessage(null)
-    setStatusMessage(null)
-
-    try {
-      await deactivateDesignation({
-        variables: {
-          input: {
-            id: designationId,
-          },
-        },
-      })
-      setStatusMessage('Designation deactivated.')
-      await refetch()
-    } catch (mutationError) {
-      setErrorMessage(
-        mutationError instanceof Error
-          ? mutationError.message
-          : 'Unable to deactivate designation.'
-      )
-    }
-  }
-
-  const handleSaveEmployee = async (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault()
-    setErrorMessage(null)
-    setStatusMessage(null)
-
-    try {
-      const input = {
-        firstName: employeeForm.firstName,
-        lastName: employeeForm.lastName,
-        email: employeeForm.email,
-        phone: employeeForm.phone || null,
-        departmentId: employeeForm.departmentId,
-        designationId: employeeForm.designationId,
-        employmentType: employeeForm.employmentType,
-        joinDate: employeeForm.joinDate,
-        status: employeeForm.status,
-      }
-
-      if (editingEmployeeId) {
-        await updateEmployee({
-          variables: {
-            input: {
-              id: editingEmployeeId,
-              ...input,
-            },
-          },
-        })
-      } else {
-        await createEmployee({
-          variables: {
-            input,
-          },
-        })
-      }
-      setEmployeeForm(employeeFormDefaults)
-      setEditingEmployeeId(null)
-      setStatusMessage(editingEmployeeId ? 'Employee updated.' : 'Employee created.')
-      await refetch()
-    } catch (mutationError) {
-      setErrorMessage(
-        mutationError instanceof Error
-          ? mutationError.message
-          : 'Unable to save employee.'
-      )
-    }
-  }
-
-  const handleEditEmployee = (employee: EmployeeListRow) => {
-    setShowForms(true)
-    setEditingEmployeeId(employee.id)
-    setEmployeeForm({
-      firstName: employee.firstName,
-      lastName: employee.lastName,
-      email: employee.email,
-      phone: employee.phone ?? '',
-      departmentId: employee.departmentId,
-      designationId: employee.designationId,
-      employmentType: employee.employmentType,
-      joinDate: employee.joinDate,
-      status: employee.status,
-    })
-    setErrorMessage(null)
-    setStatusMessage(null)
-  }
-
-  const handleCancelEmployeeEdit = () => {
-    setEditingEmployeeId(null)
-    setEmployeeForm(employeeFormDefaults)
-  }
-
-  const handleDeactivateEmployee = async (employeeId: string, fullName: string) => {
-    if (!window.confirm(`Deactivate ${fullName}? Linked login access will also be disabled.`)) {
-      return
-    }
-
-    setErrorMessage(null)
-    setStatusMessage(null)
-
-    try {
-      await deactivateEmployee({
-        variables: {
-          input: {
-            id: employeeId,
-          },
-        },
-      })
-      setStatusMessage('Employee deactivated.')
-      await refetch()
-    } catch (mutationError) {
-      setErrorMessage(
-        mutationError instanceof Error
-          ? mutationError.message
-          : 'Unable to deactivate employee.'
-      )
-    }
-  }
-
-  const handleCreateEmployeeAccount = async (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault()
-    setErrorMessage(null)
-    setStatusMessage(null)
-
-    try {
-      await createEmployeeAccount({
-        variables: {
-          input: {
-            employeeId: employeeAccountForm.employeeId,
-            password: employeeAccountForm.password,
-          },
-        },
-      })
-      setEmployeeAccountForm(employeeAccountFormDefaults)
-      setStatusMessage('Employee account created.')
-      await refetch()
-    } catch (mutationError) {
-      setErrorMessage(
-        mutationError instanceof Error
-          ? mutationError.message
-          : 'Unable to create employee account.'
-      )
-    }
-  }
-
-  const handleProvisionStaffAccess = async (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault()
-    setErrorMessage(null)
-    setStatusMessage(null)
-
-    try {
-      await provisionStaffAccess({
-        variables: {
-          input: {
-            employeeId: staffAccessForm.employeeId,
-            roleKey: staffAccessForm.roleKey,
-            password: selectedStaffEmployeeHasLinkedAccount
-              ? null
-              : staffAccessForm.password,
-          },
-        },
-      })
-      setStaffAccessForm(staffAccessFormDefaults)
-      setStatusMessage('Staff access provisioned.')
-      await refetch()
-    } catch (mutationError) {
-      setErrorMessage(
-        mutationError instanceof Error
-          ? mutationError.message
-          : 'Unable to provision staff access.'
-      )
-    }
-  }
-
-  const closeFormsDrawer = () => {
-    setShowForms(false)
-    handleCancelDepartmentEdit()
-    handleCancelDesignationEdit()
-    handleCancelEmployeeEdit()
+  const rowActions: RowActions = {
+    canManage,
+    hasPay: (id) => compensations.some((c) => c.employeeId === id),
+    onAction: (type, person) => {
+      setNotice(null)
+      setAction({ type, person })
+    },
+    onDeactivate: (person) => void handleDeactivate(person),
   }
 
   return (
-    <div className="space-y-4">
-      <Card>
-        <CardContent className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between sm:p-5">
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
-            <div className="relative min-w-[280px]">
-              <Search className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-              <Input
-                value={searchQuery}
-                onChange={(event) => setSearchQuery(event.target.value)}
-                placeholder="Search employees"
-                className="pl-11"
+    <div className="space-y-5">
+      <PageIntro
+        actions={
+          canManage ? (
+            <Button
+              disabled={!canAddEmployee}
+              onClick={() => {
+                setNotice(null)
+                setNewOpen(true)
+              }}
+              title={canAddEmployee ? undefined : 'Create a department and designation in Organisation first'}
+              type="button"
+            >
+              <Plus className="mr-2 h-4 w-4" />
+              New employee
+            </Button>
+          ) : null
+        }
+        description={
+          people.length > 0
+            ? `${plural(people.filter((p) => p.isActive).length, 'active person', 'active people')} across ${plural(activeDepartments.length, 'department')}.`
+            : 'Everyone on the team, their role and how they sign in.'
+        }
+        title="People"
+      />
+
+      {notice ? (
+        <Notice tone={notice.tone}>
+          <div className="flex items-start justify-between gap-3">
+            <span>{notice.text}</span>
+            <button className="shrink-0 text-xs font-semibold underline-offset-4 hover:underline" onClick={() => setNotice(null)} type="button">
+              Dismiss
+            </button>
+          </div>
+        </Notice>
+      ) : null}
+      {peopleQuery.error ? (
+        <Notice tone="danger">People could not be loaded. {readableError(peopleQuery.error, '')}</Notice>
+      ) : null}
+
+      {loading ? (
+        <Card>
+          <CardContent className="p-6 text-sm text-muted-foreground">Loading people…</CardContent>
+        </Card>
+      ) : freshInstall ? (
+        <SetupChecklist
+          canManage={canManage}
+          hasCompany={Boolean(reference.companySettings)}
+          hasDepartments={activeDepartments.length > 0}
+          hasDesignations={activeDesignations.length > 0}
+          hasEmployees={people.length > 0}
+          hasSites={reference.sites.some((s) => s.isActive)}
+          onNewEmployee={() => setNewOpen(true)}
+        />
+      ) : (
+        <Card>
+          <CardContent className="space-y-4 p-4 sm:p-5">
+            <div className="grid gap-2 md:grid-cols-[minmax(0,1.6fr)_repeat(3,minmax(0,1fr))_auto]">
+              <div className="relative">
+                <Search className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                <Input
+                  aria-label="Search people"
+                  className="h-10 pl-10"
+                  onChange={(event) => setSearch(event.target.value)}
+                  placeholder="Search name, number or email"
+                  type="search"
+                  value={search}
+                />
+              </div>
+              <FilterSelect
+                allLabel="All departments"
+                id="people-department"
+                label="Department"
+                onChange={setDepartmentFilter}
+                options={reference.departments.map((d) => ({ value: d.id, label: d.name }))}
+                value={departmentFilter}
+              />
+              <FilterSelect
+                allLabel="Any status"
+                id="people-status"
+                label="Status"
+                onChange={setStatusFilter}
+                options={statusOptions}
+                value={statusFilter}
+              />
+              <FilterSelect
+                allLabel="Any sign-in"
+                id="people-signin"
+                label="Sign-in"
+                onChange={setSignInFilter}
+                options={[
+                  { value: 'with', label: 'Can sign in' },
+                  { value: 'without', label: 'No sign-in' },
+                ]}
+                value={signInFilter}
+              />
+              <SegmentedControl
+                label="View"
+                onChange={setView}
+                options={[
+                  { value: 'table', label: 'Table', icon: List },
+                  { value: 'cards', label: 'Cards', icon: LayoutGrid },
+                ]}
+                value={view}
               />
             </div>
-            <Button onClick={() => setShowForms(true)}>
-              <Plus className="mr-2 h-4 w-4" />
-              Add records
-            </Button>
-          </div>
-        </CardContent>
-      </Card>
 
-      <PageFeedback errorMessage={errorMessage} statusMessage={statusMessage} />
+            <div className="flex items-center justify-between gap-3 text-sm text-muted-foreground">
+              <span aria-live="polite">
+                {filtersActive
+                  ? `Showing ${filtered.length} of ${plural(people.length, 'person', 'people')}`
+                  : plural(people.length, 'person', 'people')}
+              </span>
+              {filtersActive ? (
+                <button
+                  className="font-semibold text-primary underline-offset-4 hover:underline"
+                  onClick={() => {
+                    setSearch('')
+                    setDepartmentFilter('')
+                    setStatusFilter('')
+                    setSignInFilter('')
+                  }}
+                  type="button"
+                >
+                  Clear filters
+                </button>
+              ) : null}
+            </div>
 
-      <EmployeesFormsDrawer
-        accountManagerAccess={accountManagerAccess}
-        activeDepartments={activeDepartments}
-        activeDesignations={activeDesignations}
-        closeFormsDrawer={closeFormsDrawer}
-        creatingDepartment={creatingDepartment}
-        creatingDesignation={creatingDesignation}
-        creatingEmployee={creatingEmployee}
-        creatingEmployeeAccount={creatingEmployeeAccount}
-        deactivatingDepartment={deactivatingDepartment}
-        deactivatingDesignation={deactivatingDesignation}
-        departmentForm={departmentForm}
-        departments={departments}
-        designationForm={designationForm}
-        designations={designations}
-        editingDepartmentId={editingDepartmentId}
-        editingDesignationId={editingDesignationId}
-        editingEmployeeId={editingEmployeeId}
-        employeeAccountForm={employeeAccountForm}
-        employeeDesignationOptions={employeeDesignationOptions}
-        employeeForm={employeeForm}
-        employees={employees}
-        handleCancelDepartmentEdit={handleCancelDepartmentEdit}
-        handleCancelDesignationEdit={handleCancelDesignationEdit}
-        handleCancelEmployeeEdit={handleCancelEmployeeEdit}
-        handleCreateEmployeeAccount={handleCreateEmployeeAccount}
-        handleDeactivateDepartment={handleDeactivateDepartment}
-        handleDeactivateDesignation={handleDeactivateDesignation}
-        handleEditDepartment={handleEditDepartment}
-        handleEditDesignation={handleEditDesignation}
-        handleProvisionStaffAccess={handleProvisionStaffAccess}
-        handleSaveDepartment={handleSaveDepartment}
-        handleSaveDesignation={handleSaveDesignation}
-        handleSaveEmployee={handleSaveEmployee}
-        open={showForms}
-        provisioningStaffAccess={provisioningStaffAccess}
-        selectedEmployeeForAccount={selectedEmployeeForAccount}
-        selectedEmployeeForStaffAccess={selectedEmployeeForStaffAccess}
-        selectedStaffEmployeeHasLinkedAccount={selectedStaffEmployeeHasLinkedAccount}
-        setDepartmentForm={setDepartmentForm}
-        setDesignationForm={setDesignationForm}
-        setEmployeeAccountForm={setEmployeeAccountForm}
-        setEmployeeForm={setEmployeeForm}
-        setShowForms={setShowForms}
-        setStaffAccessForm={setStaffAccessForm}
-        staffAccessForm={staffAccessForm}
-        updatingDepartment={updatingDepartment}
-        updatingDesignation={updatingDesignation}
-        updatingEmployee={updatingEmployee}
+            {filtered.length === 0 ? (
+              <EmptyState title="Nobody matches these filters">Try a different name or clear the filters.</EmptyState>
+            ) : view === 'table' ? (
+              <PeopleTable actions={rowActions} people={filtered} />
+            ) : (
+              <PeopleCards actions={rowActions} people={filtered} />
+            )}
+          </CardContent>
+        </Card>
+      )}
+
+      <NewEmployeeSheet
+        currencyCode={currencyCode}
+        departments={reference.departments}
+        designations={reference.designations}
+        grantable={grantable}
+        onFinished={(text) => setNotice({ text, tone: 'success' })}
+        onOpenChange={setNewOpen}
+        open={newOpen}
+        people={people}
+        sites={reference.sites}
       />
 
-      <EmployeeListCard
-        accountManagerAccess={accountManagerAccess}
-        deactivatingEmployee={deactivatingEmployee}
-        employees={employees}
-        error={error}
-        handleDeactivateEmployee={handleDeactivateEmployee}
-        handleEditEmployee={handleEditEmployee}
-        loading={loading}
+      <EmployeeActionSheet
+        action={action?.type ?? null}
+        compensation={action ? compensations.find((c) => c.employeeId === action.person.id) ?? null : null}
+        currencyCode={currencyCode}
+        departments={reference.departments}
+        designations={reference.designations}
+        grantable={grantable}
+        onClose={() => setAction(null)}
+        onSaved={(text) => setNotice({ text, tone: 'success' })}
+        people={people}
+        person={action?.person ?? null}
+        sites={reference.sites}
       />
+      {confirmDialog}
     </div>
   )
 }

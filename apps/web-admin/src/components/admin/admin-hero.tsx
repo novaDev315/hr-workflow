@@ -1,46 +1,67 @@
 import type { ReactNode } from 'react'
 
-import { Card, CardContent } from '@/components/ui/card'
 import { cn } from '@/lib/utils'
 
 type AdminHeroProps = {
-  kicker: string
+  /** Small eyebrow above the title. Optional; shown quietly when given. */
+  kicker?: string
+  /** Page name, e.g. "Payroll". Rendered as the serif page title. */
   title: string
+  /** One short, task-oriented line. */
   description?: string
   actions?: ReactNode
+  /** Kept for compatibility; the header is always compact now. */
   compact?: boolean
+  /** Opt back into the warm banner surface (used sparingly). */
+  variant?: 'header' | 'banner'
   className?: string
 }
 
+/**
+ * Page header: serif title, one description line, actions on the right.
+ * Roughly 80–96px tall on desktop; stacks on phones.
+ */
 export function AdminHero({
   kicker,
   title,
   description,
   actions,
-  compact = false,
+  variant = 'header',
   className,
 }: AdminHeroProps) {
+  const isBanner = variant === 'banner'
+
   return (
-    <Card className={cn(compact ? undefined : 'app-hero-surface', className)}>
-      <CardContent className="flex flex-col gap-4 p-5 sm:flex-row sm:items-end sm:justify-between sm:p-6">
-        <div className="min-w-0">
-          <p className="app-kicker">{kicker}</p>
-          <h2
-            className={cn(
-              'mt-2 text-2xl font-semibold text-foreground',
-              compact ? 'tracking-normal' : 'app-section-title text-[2.2rem]',
-            )}
-          >
-            {title}
-          </h2>
-          {description ? (
-            <p className="mt-2 max-w-2xl text-sm leading-7 text-muted-foreground">
-              {description}
-            </p>
-          ) : null}
+    <header
+      className={cn(
+        'flex min-w-0 flex-col gap-3 sm:flex-row sm:items-center sm:justify-between sm:gap-6',
+        isBanner ? 'app-hero-surface px-5 py-5 sm:px-6' : 'pb-1 pt-1',
+        className,
+      )}
+    >
+      <div className="min-w-0">
+        {kicker ? (
+          <p className="app-kicker leading-4">{kicker}</p>
+        ) : null}
+        <h1
+          className={cn(
+            'app-page-title break-words text-foreground',
+            kicker ? 'mt-1.5' : undefined,
+          )}
+        >
+          {title}
+        </h1>
+        {description ? (
+          <p className="mt-1 max-w-3xl text-sm leading-6 text-muted-foreground">
+            {description}
+          </p>
+        ) : null}
+      </div>
+      {actions ? (
+        <div className="flex min-w-0 flex-wrap items-center gap-2 sm:shrink-0 sm:justify-end">
+          {actions}
         </div>
-        {actions ? <div className="flex flex-wrap gap-2">{actions}</div> : null}
-      </CardContent>
-    </Card>
+      ) : null}
+    </header>
   )
 }

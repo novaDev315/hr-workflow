@@ -134,7 +134,13 @@
   }
 
   thead th {
-    @apply text-left text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground;
+    @apply text-left text-xs font-semibold text-muted-foreground;
+    letter-spacing: 0;
+    white-space: nowrap;
+  }
+
+  td {
+    font-variant-numeric: tabular-nums;
   }
 
   tbody tr {
@@ -179,6 +185,7 @@
 
   .app-kicker {
     @apply text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground;
+    font-family: var(--app-font-sans);
   }
 
   .app-editorial {
@@ -241,6 +248,81 @@
 
   .app-action-tile:hover {
     background: rgba(255, 255, 255, 0.82);
+  }
+
+  .app-page-title {
+    font-family: var(--app-font-editorial), serif;
+    font-size: 1.75rem;
+    line-height: 1.15;
+    letter-spacing: -0.035em;
+    font-weight: 600;
+  }
+
+  @media (min-width: 640px) {
+    .app-page-title {
+      font-size: 2rem;
+    }
+  }
+
+  .app-greeting {
+    font-family: var(--app-font-editorial), serif;
+    font-size: 2.1rem;
+    line-height: 1.1;
+    letter-spacing: -0.04em;
+    font-weight: 600;
+    color: hsl(var(--foreground));
+  }
+
+  @media (min-width: 640px) {
+    .app-greeting {
+      font-size: 2.6rem;
+    }
+  }
+
+  /* Tables: natural column widths, horizontal scroll with edge shadows. */
+  .admin-table thead th {
+    background: hsl(var(--secondary) / 0.55);
+    border-bottom: 1px solid hsl(var(--border) / 0.8);
+  }
+
+  .admin-table td {
+    vertical-align: middle;
+    border-bottom: 1px solid hsl(var(--border) / 0.6);
+  }
+
+  .admin-table tbody tr:last-child td {
+    border-bottom: 0;
+  }
+
+  .admin-table[data-density="compact"] th,
+  .admin-table[data-density="compact"] td {
+    padding-top: 0.5rem;
+    padding-bottom: 0.5rem;
+  }
+
+  .admin-table-shadow {
+    pointer-events: none;
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    width: 1.25rem;
+    opacity: 0;
+    transition: opacity 150ms ease;
+  }
+
+  .admin-table-shadow-left {
+    left: 0;
+    background: linear-gradient(to right, rgba(60, 42, 30, 0.12), transparent);
+  }
+
+  .admin-table-shadow-right {
+    right: 0;
+    background: linear-gradient(to left, rgba(60, 42, 30, 0.12), transparent);
+  }
+
+  .admin-table-frame[data-scroll-left] .admin-table-shadow-left,
+  .admin-table-frame[data-scroll-right] .admin-table-shadow-right {
+    opacity: 1;
   }
 
   .app-section-title {

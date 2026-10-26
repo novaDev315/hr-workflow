@@ -1,9 +1,39 @@
 import { ApolloClient, HttpLink, InMemoryCache, from } from "@apollo/client";
 import { onError } from "@apollo/client/link/error";
 import { setContext } from "@apollo/client/link/context";
-import { clearAdminSession, readAuthToken } from "./auth-session";
+import {
+  clearAdminSession,
+  readAuthToken,
+  registerSessionTeardown,
+} from "./auth-session";
 
-const ACTIVE_GRAPHQL_ENDPOINT_STORAGE_KEY = "hrflow_active_graphql_endpoint";
+// Older builds persisted whichever endpoint answered first. That value is
+// never trusted again; it is removed on startup.
+const LEGACY_ACTIVE_ENDPOINT_STORAGE_KEY = "hrflow_active_graphql_endpoint";
+
+const IS_DEV = Boolean(import.meta.env.DEV);
+
+// Local fallbacks are only for `vite dev`. A production build talks to
+// VITE_GRAPHQL_ENDPOINT (or same-origin /graphql) and nothing else.
+const DEV_FALLBACK_ENDPOINTS: string[] = import.meta.env.DEV
+  ? [
+      "http://localhost:4001/graphql",
+      "http://127.0.0.1:4001/graphql",
+      "http://localhost:4000/graphql",
+    ]
+  : [];
+
+function clearLegacyStoredEndpoint() {
+  try {
+    window.localStorage.removeItem(LEGACY_ACTIVE_ENDPOINT_STORAGE_KEY);
+  } catch {
+    // storage unavailable: nothing to clear
+  }
+}
+
+if (typeof window !== "undefined") {
+  clearLegacyStoredEndpoint();
+}
 
 function normalizeGraphqlEndpoint(value?: string | null) {
   if (!value) {
@@ -31,9 +61,7 @@ export function getGraphqlEndpointCandidates() {
   const candidates = [
     import.meta.env.VITE_GRAPHQL_ENDPOINT,
     typeof window === "undefined" ? null : "/graphql",
-    "http://localhost:4001/graphql",
-    "http://127.0.0.1:4001/graphql",
-    "http://localhost:4000/graphql",
+    ...(IS_DEV ? DEV_FALLBACK_ENDPOINTS : []),
   ]
     .map((candidate) => normalizeGraphqlEndpoint(candidate))
     .filter((candidate): candidate is string => Boolean(candidate));
@@ -41,34 +69,20 @@ export function getGraphqlEndpointCandidates() {
   return [...new Set(candidates)];
 }
 
-function readStoredActiveGraphqlEndpoint() {
-  if (typeof window === "undefined") {
-    return null;
-  }
-
-  return normalizeGraphqlEndpoint(
-    window.localStorage.getItem(ACTIVE_GRAPHQL_ENDPOINT_STORAGE_KEY),
-  );
-}
-
-function persistActiveGraphqlEndpoint(endpoint: string) {
-  if (typeof window === "undefined") {
-    return;
-  }
-
-  window.localStorage.setItem(ACTIVE_GRAPHQL_ENDPOINT_STORAGE_KEY, endpoint);
-}
+// In dev, remember (in memory only) which local endpoint answered so we stop
+// probing dead ports on every request. Never persisted.
+let devActiveEndpoint: string | null = null;
 
 export function getActiveGraphqlEndpoint() {
-  return readStoredActiveGraphqlEndpoint() ?? getGraphqlEndpointCandidates()[0];
+  return (IS_DEV ? devActiveEndpoint : null) ?? getGraphqlEndpointCandidates()[0];
 }
 
-function getGraphqlAttemptOrder(uri?: string) {
-  const normalizedUri = normalizeGraphqlEndpoint(uri);
-  const activeEndpoint = getActiveGraphqlEndpoint();
-  const candidates = getGraphqlEndpointCandidates();
+function getGraphqlAttemptOrder() {
+  if (!IS_DEV) {
+    return [getGraphqlEndpointCandidates()[0]].filter(Boolean) as string[];
+  }
 
-  return [normalizedUri, activeEndpoint, ...candidates].filter(
+  return [devActiveEndpoint, ...getGraphqlEndpointCandidates()].filter(
     (candidate, index, values): candidate is string =>
       Boolean(candidate) && values.indexOf(candidate) === index,
   );
@@ -97,21 +111,14 @@ function isRetryableGraphqlRequest(options?: RequestInit) {
   }
 }
 
-async function failoverGraphqlFetch(
-  uri: RequestInfo | URL,
+async function devFailoverGraphqlFetch(
+  _uri: RequestInfo | URL,
   options?: RequestInit,
 ) {
-  const requestedUri =
-    typeof uri === "string"
-      ? uri
-      : uri instanceof URL
-        ? uri.toString()
-        : uri.url;
-
   let lastError: unknown = null;
   const canRetryRequest = isRetryableGraphqlRequest(options);
 
-  for (const endpoint of getGraphqlAttemptOrder(requestedUri)) {
+  for (const endpoint of getGraphqlAttemptOrder()) {
     try {
       const response = await fetch(endpoint, options);
 
@@ -126,7 +133,7 @@ async function failoverGraphqlFetch(
         continue;
       }
 
-      persistActiveGraphqlEndpoint(endpoint);
+      devActiveEndpoint = endpoint;
       return response;
     } catch (error) {
       if (!canRetryRequest) {
@@ -173,7 +180,8 @@ const errorLink = onError(({ graphQLErrors, networkError }) => {
     return;
   }
 
-  clearAdminSession();
+  // The server already rejected this token; just clear local state.
+  clearAdminSession({ serverLogout: false });
 
   if (typeof window !== "undefined" && window.location.pathname !== "/login") {
     window.location.replace("/login");
@@ -181,16 +189,46 @@ const errorLink = onError(({ graphQLErrors, networkError }) => {
 });
 
 const httpLink = new HttpLink({
-  uri: () => getActiveGraphqlEndpoint() ?? "http://localhost:4001/graphql",
-  fetch: failoverGraphqlFetch,
+  uri: () => getActiveGraphqlEndpoint() ?? "/graphql",
+  ...(IS_DEV ? { fetch: devFailoverGraphqlFetch } : {}),
 });
 
 export const apolloClient = new ApolloClient({
   link: from([errorLink, authLink, httpLink]),
-  cache: new InMemoryCache(),
+  cache: new InMemoryCache({
+    typePolicies: {
+      // Non-normalized report objects: merge instead of replace so separate
+      // queries for optional fields don't wipe each other.
+      ReportsDashboardType: { merge: true },
+      ReportsOverviewType: { merge: true },
+    },
+  }),
   defaultOptions: {
     watchQuery: {
       fetchPolicy: "cache-and-network",
     },
   },
+});
+
+const LOGOUT_MUTATION = "mutation Logout { logout }";
+
+// Revoke the server session with the token we had (sent directly, so it does
+// not pass through the error link), then drop every cached query result.
+registerSessionTeardown((token) => {
+  if (token) {
+    const endpoint = getActiveGraphqlEndpoint();
+    if (endpoint) {
+      void fetch(endpoint, {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ query: LOGOUT_MUTATION }),
+        keepalive: true,
+      }).catch(() => undefined);
+    }
+  }
+
+  void apolloClient.clearStore().catch(() => undefined);
 });

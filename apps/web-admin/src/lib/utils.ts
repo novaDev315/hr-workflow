@@ -1,10 +1,17 @@
 import { type ClassValue, clsx } from "clsx";
 import { twMerge } from "tailwind-merge";
 
+import {
+  formatDateTime as formatDateTimeShared,
+  formatDay,
+  formatMoney,
+} from "@/lib/format";
+
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
 }
 
+/** @deprecated use formatMoney from "@/lib/format" */
 export function formatCurrency(
   amount: number,
   options: {
@@ -13,36 +20,37 @@ export function formatCurrency(
     maximumFractionDigits?: number;
   } = {},
 ): string {
-  const fractionDigits = options.maximumFractionDigits ?? 2;
+  if (options.locale || options.maximumFractionDigits !== undefined) {
+    const fractionDigits = options.maximumFractionDigits ?? 2;
+    try {
+      return new Intl.NumberFormat(options.locale ?? "en-AE", {
+        style: "currency",
+        currency: options.currencyCode ?? "AED",
+        minimumFractionDigits: fractionDigits,
+        maximumFractionDigits: fractionDigits,
+      }).format(Number.isFinite(amount) ? amount : 0);
+    } catch {
+      return formatMoney(amount, options.currencyCode);
+    }
+  }
 
-  return new Intl.NumberFormat(options.locale ?? "en-AE", {
-    style: "currency",
-    currency: options.currencyCode ?? "AED",
-    minimumFractionDigits: fractionDigits,
-    maximumFractionDigits: fractionDigits,
-  }).format(amount);
+  return formatMoney(amount, options.currencyCode);
 }
 
+/** @deprecated use formatDay from "@/lib/format" */
 export function formatDate(
   date: Date | string,
-  options: { locale?: string } = {},
+  _options: { locale?: string } = {},
 ): string {
-  return new Intl.DateTimeFormat(options.locale ?? "en-AE", {
-    year: "numeric",
-    month: "short",
-    day: "numeric",
-  }).format(new Date(date));
+  void _options;
+  return formatDay(date);
 }
 
+/** @deprecated use formatDateTime from "@/lib/format" */
 export function formatDateTime(
   date: Date | string,
-  options: { locale?: string } = {},
+  _options: { locale?: string } = {},
 ): string {
-  return new Intl.DateTimeFormat(options.locale ?? "en-AE", {
-    year: "numeric",
-    month: "short",
-    day: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-  }).format(new Date(date));
+  void _options;
+  return formatDateTimeShared(date);
 }

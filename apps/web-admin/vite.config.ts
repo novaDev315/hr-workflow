@@ -15,9 +15,9 @@ export default defineConfig({
     host: true,
     proxy: {
       "/graphql": {
-        target: "https://admin.rakss.lab.novadev.tech",
+        // Local dev talks to a local backend by default; never point this at production.
+        target: process.env.VITE_DEV_API_PROXY ?? "http://localhost:4001",
         changeOrigin: true,
-        secure: true,
       },
     },
   },
