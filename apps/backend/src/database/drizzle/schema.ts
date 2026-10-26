@@ -5,6 +5,7 @@ import {
   doublePrecision,
   index,
   integer,
+  numeric,
   pgTable,
   text,
   timestamp,
@@ -276,6 +277,9 @@ export const leaveRequests = pgTable(
   ],
 );
 
+/** Exact money: numeric(14,2) (up to 999,999,999,999.99), read back as a JS number. */
+const money = (name: string) => numeric(name, { precision: 14, scale: 2, mode: 'number' });
+
 export const employeeCompensations = pgTable(
   'employee_compensations',
   {
@@ -283,9 +287,9 @@ export const employeeCompensations = pgTable(
     employeeId: text('employee_id')
       .notNull()
       .references(() => employees.id, { onDelete: 'cascade' }),
-    baseSalary: doublePrecision('base_salary').notNull(),
-    allowanceAmount: doublePrecision('allowance_amount').notNull().default(0),
-    deductionAmount: doublePrecision('deduction_amount').notNull().default(0),
+    baseSalary: money('base_salary').notNull(),
+    allowanceAmount: money('allowance_amount').notNull().default(0),
+    deductionAmount: money('deduction_amount').notNull().default(0),
     currencyCode: text('currency_code').notNull().default('AED'),
     effectiveFrom: date('effective_from').notNull(),
     notes: text('notes'),
@@ -331,13 +335,13 @@ export const payslips = pgTable(
     approvedLeaveDays: doublePrecision('approved_leave_days').notNull().default(0),
     paidDays: doublePrecision('paid_days').notNull().default(0),
     unpaidDays: doublePrecision('unpaid_days').notNull().default(0),
-    baseSalary: doublePrecision('base_salary').notNull(),
-    proratedBaseSalary: doublePrecision('prorated_base_salary').notNull(),
-    allowanceAmount: doublePrecision('allowance_amount').notNull().default(0),
-    deductionAmount: doublePrecision('deduction_amount').notNull().default(0),
-    attendanceDeduction: doublePrecision('attendance_deduction').notNull().default(0),
-    grossPay: doublePrecision('gross_pay').notNull(),
-    netPay: doublePrecision('net_pay').notNull(),
+    baseSalary: money('base_salary').notNull(),
+    proratedBaseSalary: money('prorated_base_salary').notNull(),
+    allowanceAmount: money('allowance_amount').notNull().default(0),
+    deductionAmount: money('deduction_amount').notNull().default(0),
+    attendanceDeduction: money('attendance_deduction').notNull().default(0),
+    grossPay: money('gross_pay').notNull(),
+    netPay: money('net_pay').notNull(),
     currencyCode: text('currency_code').notNull().default('AED'),
     status: text('status').notNull().default('GENERATED'),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
@@ -370,8 +374,8 @@ export const jobRequisitions = pgTable(
     priority: text('priority').notNull().default('MEDIUM'),
     status: text('status').notNull().default('OPEN'),
     targetStartDate: date('target_start_date'),
-    salaryMin: doublePrecision('salary_min'),
-    salaryMax: doublePrecision('salary_max'),
+    salaryMin: money('salary_min'),
+    salaryMax: money('salary_max'),
     currencyCode: text('currency_code').notNull().default('AED'),
     description: text('description').notNull(),
     requirements: text('requirements'),
@@ -404,7 +408,7 @@ export const recruitmentApplications = pgTable(
     phone: text('phone'),
     source: text('source'),
     yearsExperience: doublePrecision('years_experience'),
-    expectedSalary: doublePrecision('expected_salary'),
+    expectedSalary: money('expected_salary'),
     resumeUrl: text('resume_url'),
     status: text('status').notNull().default('RECEIVED'),
     notes: text('notes'),
