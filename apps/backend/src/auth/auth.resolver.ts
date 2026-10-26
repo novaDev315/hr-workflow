@@ -1,5 +1,5 @@
 import { UseGuards } from '@nestjs/common';
-import { Mutation, Query, Resolver } from '@nestjs/graphql';
+import { Context, Mutation, Query, Resolver } from '@nestjs/graphql';
 import { CurrentUser, AuthenticatedUser } from '../common/current-user.decorator';
 import {
   AuthBootstrapStatusType,
@@ -13,6 +13,7 @@ import {
 import { AuthService } from './auth.service';
 import { Args } from '@nestjs/graphql';
 import { GqlAuthGuard } from './gql-auth.guard';
+import { getClientIp } from './login-rate-limiter';
 
 @Resolver()
 export class AuthResolver {
@@ -29,14 +30,17 @@ export class AuthResolver {
   }
 
   @Mutation(() => AccountSessionType, { name: 'login' })
-  async login(@Args('input') input: LoginInput) {
-    return this.authService.login(input);
+  async login(
+    @Args('input') input: LoginInput,
+    @Context() context: { req?: Parameters<typeof getClientIp>[0] },
+  ) {
+    return this.authService.login(input, getClientIp(context?.req));
   }
 
   @UseGuards(GqlAuthGuard)
   @Mutation(() => Boolean, { name: 'logout' })
-  async logout() {
-    return this.authService.logout();
+  async logout(@CurrentUser() currentUser: AuthenticatedUser) {
+    return this.authService.logout(currentUser);
   }
 
   @UseGuards(GqlAuthGuard)

@@ -6,6 +6,7 @@ import { AuthService } from './auth.service';
 import { AuthResolver } from './auth.resolver';
 import { JwtStrategy } from './jwt.strategy';
 import { GqlAuthGuard } from './gql-auth.guard';
+import { resolveJwtSecret } from './runtime-config';
 
 @Module({
   imports: [
@@ -14,7 +15,7 @@ import { GqlAuthGuard } from './gql-auth.guard';
       imports: [ConfigModule],
       inject: [ConfigService],
       useFactory: (configService: ConfigService) => ({
-        secret: configService.get<string>('JWT_SECRET') ?? 'change_me_to_random_256_bit_secret',
+        secret: resolveJwtSecret(configService.get<string>('JWT_SECRET')),
         signOptions: {
           expiresIn: configService.get<string>('JWT_EXPIRY') ?? '3600s',
         },

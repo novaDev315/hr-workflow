@@ -26,6 +26,11 @@ import {
 } from './auth.types';
 import * as bcrypt from 'bcrypt';
 import { randomUUID } from 'crypto';
+import { findUniqueViolation } from '../employee/unique-violation';
+import { createFirstAdminAccount, ensureSystemRole } from './bootstrap-admin';
+import { LoginRateLimiter } from './login-rate-limiter';
+import { isBootstrapAllowed } from './runtime-config';
+import { bumpSessionVersion } from './session-version';
 import {
   AccountManagerRoleKey,
   AdminAccessRoleKey,
@@ -44,6 +49,7 @@ interface UserRow {
   firstName: string;
   lastName: string;
   isActive: boolean;
+  sessionVersion: number;
 }
 
 interface RoleRow {
@@ -63,8 +69,25 @@ type UserWithRoles = UserRow & {
   }>;
 };
 
+/** Maps a raced duplicate (users_email_key / one account per employee) to a client conflict. */
+function rethrowAccountConflict(error: unknown): never {
+  if (findUniqueViolation(error)) {
+    throw new ConflictException('An account already exists for this employee email');
+  }
+  throw error;
+}
+
+// Fixed bcrypt hash compared against for unknown emails so response time does
+// not reveal whether an account exists.
+const DUMMY_PASSWORD_HASH =
+  '$2b$10$zds56RkHHnUzxVXNrm.ruOcKZErR2d.qTdjPR.mv0/ngtf9uaJlT2';
+
+const HR_ADMIN_GRANTABLE_ROLES: AdminAccessRoleKey[] = ['MANAGER', 'SUPERVISOR'];
+
 @Injectable()
 export class AuthService {
+  private readonly loginLimiter = new LoginRateLimiter();
+
   constructor(
     private readonly database: DatabaseService,
     private readonly jwtService: JwtService,
@@ -77,61 +100,54 @@ export class AuthService {
     const accountCount = Number(countRow?.count ?? 0);
 
     return {
-      bootstrapRequired: accountCount === 0,
+      bootstrapRequired: accountCount === 0 && isBootstrapAllowed(),
       accountCount,
     };
   }
 
   async bootstrapAdmin(input: BootstrapAdminInput) {
+    if (!isBootstrapAllowed()) {
+      throw new ForbiddenException('Bootstrap is disabled');
+    }
+
     const normalizedEmail = input.email.trim().toLowerCase();
     const passwordHash = await bcrypt.hash(input.password, 10);
 
-    const createdUser = await this.database.drizzle.transaction(async (tx) => {
-      const [countRow] = await tx.select({ count: count() }).from(users);
-      const userCount = Number(countRow?.count ?? 0);
-
-      if (userCount > 0) {
-        throw new ForbiddenException(
-          'Bootstrap is only allowed before the first user exists',
-        );
-      }
-
-      const adminRole = await this.ensureRole(DEFAULT_ADMIN_ROLE, tx);
-
-      const [user] = await tx
-        .insert(users)
-        .values({
-          id: randomUUID(),
-          email: normalizedEmail,
-          employeeId: null,
-          passwordHash,
-          firstName: input.firstName.trim(),
-          lastName: input.lastName.trim(),
-        })
-        .returning({ id: users.id });
-
-      await tx.insert(userRoleAssignments).values({
-        id: randomUUID(),
-        userId: user.id,
-        roleId: adminRole.id,
-      });
-
-      const userWithRoles = await this.getUserWithRolesById(user.id, tx);
-      if (!userWithRoles) {
-        throw new NotFoundException('Bootstrap account could not be loaded');
-      }
-
-      return userWithRoles;
+    const userId = await createFirstAdminAccount(this.database.drizzle, {
+      email: normalizedEmail,
+      passwordHash,
+      firstName: input.firstName.trim(),
+      lastName: input.lastName.trim(),
     });
 
-    return this.buildAuthPayload(createdUser);
+    if (!userId) {
+      throw new ForbiddenException(
+        'Bootstrap is only allowed before the first user exists',
+      );
+    }
+
+    const userWithRoles = await this.getUserWithRolesById(userId);
+    if (!userWithRoles) {
+      throw new NotFoundException('Bootstrap account could not be loaded');
+    }
+
+    return this.buildAuthPayload(userWithRoles);
   }
 
-  async login(input: LoginInput) {
+  async login(input: LoginInput, clientIp: string | null = null) {
     const normalizedEmail = input.email.trim().toLowerCase();
+    this.loginLimiter.assertAllowed(normalizedEmail, clientIp);
+
     const user = await this.getUserWithRolesByEmail(normalizedEmail);
 
-    if (!user) {
+    // Always run one bcrypt comparison so unknown emails cost the same time.
+    const passwordValid = await bcrypt.compare(
+      input.password,
+      user?.passwordHash ?? DUMMY_PASSWORD_HASH,
+    );
+
+    if (!user || !passwordValid) {
+      this.loginLimiter.recordFailure(normalizedEmail, clientIp);
       throw new UnauthorizedException('Invalid credentials');
     }
 
@@ -139,15 +155,16 @@ export class AuthService {
       throw new ForbiddenException('User account is inactive');
     }
 
-    const passwordValid = await bcrypt.compare(input.password, user.passwordHash);
-    if (!passwordValid) {
-      throw new UnauthorizedException('Invalid credentials');
-    }
-
+    this.loginLimiter.clearEmail(normalizedEmail);
     return this.buildAuthPayload(user);
   }
 
-  async logout() {
+  /** Revokes every token issued to the current user. */
+  async logout(currentUser?: AuthenticatedUser) {
+    if (currentUser?.userId) {
+      await bumpSessionVersion(this.database.drizzle, currentUser.userId);
+    }
+
     return true;
   }
 
@@ -252,7 +269,8 @@ export class AuthService {
           firstName: employee.firstName,
           lastName: employee.lastName,
         })
-        .returning({ id: users.id });
+        .returning({ id: users.id })
+        .catch(rethrowAccountConflict);
 
       await tx.insert(userRoleAssignments).values({
         id: randomUUID(),
@@ -283,6 +301,16 @@ export class AuthService {
     if (!ADMIN_ACCESS_ROLE_KEYS.includes(roleKey)) {
       throw new BadRequestException(
         'Staff access role must be ADMIN, HR_ADMIN, MANAGER, or SUPERVISOR',
+      );
+    }
+
+    // ADMIN may grant any staff role; HR_ADMIN only MANAGER or SUPERVISOR.
+    if (
+      !currentUser.roles.includes('ADMIN') &&
+      !HR_ADMIN_GRANTABLE_ROLES.includes(roleKey)
+    ) {
+      throw new ForbiddenException(
+        'Only ADMIN accounts can grant the ADMIN or HR_ADMIN role',
       );
     }
 
@@ -340,12 +368,14 @@ export class AuthService {
             firstName: employee.firstName,
             lastName: employee.lastName,
           })
-          .returning({ id: users.id });
+          .returning({ id: users.id })
+          .catch(rethrowAccountConflict);
         account = createdAccount;
       }
 
       await this.assignRoleIfMissing(account.id, employeeRole.id, tx);
       await this.assignRoleIfMissing(account.id, staffRole.id, tx);
+      await bumpSessionVersion(tx, account.id);
 
       const accountWithRoles = await this.getUserWithRolesById(account.id, tx);
 
@@ -366,6 +396,7 @@ export class AuthService {
         sub: user.id,
         email: user.email,
         roles: mappedUser.roles,
+        ver: user.sessionVersion,
       }),
       expiresIn,
       account: mappedUser,
@@ -413,30 +444,8 @@ export class AuthService {
     );
   }
 
-  private async ensureRole(key: SystemRoleKey, db: any = this.database.drizzle) {
-    const [existingRole] = await db
-      .select({ id: roles.id })
-      .from(roles)
-      .where(eq(roles.key, key))
-      .limit(1);
-
-    if (existingRole) {
-      return existingRole;
-    }
-
-    const details = SYSTEM_ROLE_DETAILS[key];
-
-    const [createdRole] = await db
-      .insert(roles)
-      .values({
-        id: randomUUID(),
-        key,
-        name: details.name,
-        description: details.description,
-      })
-      .returning({ id: roles.id });
-
-    return createdRole;
+  private ensureRole(key: SystemRoleKey, db: any = this.database.drizzle) {
+    return ensureSystemRole(key, db);
   }
 
   private async assignRoleIfMissing(
@@ -507,6 +516,7 @@ export class AuthService {
         firstName: users.firstName,
         lastName: users.lastName,
         isActive: users.isActive,
+        sessionVersion: users.sessionVersion,
       })
       .from(users)
       .where(eq(users.email, email))
@@ -525,6 +535,7 @@ export class AuthService {
         firstName: users.firstName,
         lastName: users.lastName,
         isActive: users.isActive,
+        sessionVersion: users.sessionVersion,
       })
       .from(users)
       .where(eq(users.id, id))

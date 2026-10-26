@@ -1,3 +1,4 @@
+import { formatGraphQLError } from './common/graphql-errors';
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { GraphQLModule } from '@nestjs/graphql';
@@ -31,6 +32,7 @@ import { RecruitmentModule } from './recruitment/recruitment.module';
       buildSchemaOptions: {
         dateScalarMode: 'isoDate',
       },
+      formatError: formatGraphQLError,
       context: ({ req, res }) => ({ req, res }),
     }),
     DatabaseModule,
