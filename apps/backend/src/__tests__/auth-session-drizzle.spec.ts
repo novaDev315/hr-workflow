@@ -3,9 +3,10 @@ import { JwtService } from '@nestjs/jwt';
 import { Test } from '@nestjs/testing';
 import bcrypt from 'bcryptjs';
 import { randomUUID } from 'crypto';
-import { eq, inArray } from 'drizzle-orm';
+import { and, eq, inArray } from 'drizzle-orm';
 import request from 'supertest';
 import { AppModule } from '../app.module';
+import { AuthService } from '../auth/auth.service';
 import { ensureSystemRole } from '../auth/bootstrap-admin';
 import { formatValidationErrors } from '../auth/runtime-config';
 import { SystemRoleKey } from '../common/system-roles';
@@ -14,6 +15,7 @@ import {
   departments,
   designations,
   employees,
+  roles,
   userRoleAssignments,
   users,
 } from '../database/drizzle/schema';
@@ -60,7 +62,7 @@ describe('Auth session, role and login hardening', () => {
     const id = randomUUID();
     await database.drizzle.insert(employees).values({
       id,
-      employeeNumber: `E${suffix}${label}`.slice(0, 20),
+      employeeNumber: `E${suffix}${createdEmployeeIds.length}`.slice(0, 20),
       firstName: label,
       lastName: 'Employee',
       email: emailFor(`emp-${label}`),
@@ -84,6 +86,8 @@ describe('Auth session, role and login hardening', () => {
   const ME = `query { me { id roles } }`;
   const LOGOUT = `mutation { logout }`;
   const PROVISION = `mutation($input: ProvisionStaffAccessInput!) { provisionStaffAccess(input: $input) { id roles } }`;
+
+  const REVOKE = `mutation($input: RevokeStaffAccessInput!) { revokeStaffAccess(input: $input) { id roles } }`;
 
   async function login(email: string, pass = password) {
     return gql(LOGIN, { input: { email, password: pass } });
@@ -268,6 +272,128 @@ describe('Auth session, role and login hardening', () => {
     expect((await gql(ME, undefined, targetToken)).errors?.[0].message).toMatch(
       /Invalid or expired session|Unauthorized/,
     );
+  });
+
+  describe('revokeStaffAccess', () => {
+    const SESSION_ERROR = /Invalid or expired session|Unauthorized/;
+
+    async function staffTarget(label: string, roleKeys: SystemRoleKey[]) {
+      const employeeId = await createEmployee(label);
+      const user = await createUser(`rv-${label}`, ['EMPLOYEE', ...roleKeys], employeeId);
+      return { employeeId, ...user };
+    }
+
+    it('removes the role and kills the target tokens immediately', async () => {
+      const admin = await createUser('rv-admin', ['EMPLOYEE', 'ADMIN']);
+      const adminToken = await tokenFor(admin.email);
+      const target = await staffTarget('rvok', ['MANAGER']);
+      const targetToken = await tokenFor(target.email);
+      expect((await gql(ME, undefined, targetToken)).data.me.roles).toContain('MANAGER');
+
+      const result = await gql(
+        REVOKE,
+        { input: { employeeId: target.employeeId, roleKey: 'manager' } },
+        adminToken,
+      );
+      expect(result.errors).toBeUndefined();
+      expect(result.data.revokeStaffAccess.id).toBe(target.id);
+      expect(result.data.revokeStaffAccess.roles).toEqual(['EMPLOYEE']);
+
+      expect((await gql(ME, undefined, targetToken)).errors?.[0].message).toMatch(SESSION_ERROR);
+      const fresh = await tokenFor(target.email);
+      expect((await gql(ME, undefined, fresh)).data.me.roles).toEqual(['EMPLOYEE']);
+    });
+
+    it('lets an ADMIN remove another ADMIN while other admins remain', async () => {
+      const admin = await createUser('rv-admin2', ['EMPLOYEE', 'ADMIN']);
+      const adminToken = await tokenFor(admin.email);
+      const target = await staffTarget('rvadmin', ['ADMIN']);
+
+      const result = await gql(
+        REVOKE,
+        { input: { employeeId: target.employeeId, roleKey: 'ADMIN' } },
+        adminToken,
+      );
+      expect(result.errors).toBeUndefined();
+      expect(result.data.revokeStaffAccess.roles).toEqual(['EMPLOYEE']);
+    });
+
+    it('forbids non-admin accounts, including HR_ADMIN', async () => {
+      const hr = await createUser('rv-hr', ['EMPLOYEE', 'HR_ADMIN']);
+      const employee = await createUser('rv-plain', ['EMPLOYEE']);
+      const target = await staffTarget('rvforbid', ['MANAGER']);
+
+      for (const email of [hr.email, employee.email]) {
+        const denied = await gql(
+          REVOKE,
+          { input: { employeeId: target.employeeId, roleKey: 'MANAGER' } },
+          await tokenFor(email),
+        );
+        expect(denied.errors?.[0].message).toBe('Only ADMIN accounts can revoke staff access');
+      }
+
+      const [still] = await database.drizzle
+        .select({ id: userRoleAssignments.id })
+        .from(userRoleAssignments)
+        .innerJoin(roles, eq(roles.id, userRoleAssignments.roleId))
+        .where(and(eq(userRoleAssignments.userId, target.id), eq(roles.key, 'MANAGER')));
+      expect(still).toBeDefined();
+    });
+
+    it('blocks an admin from removing their own ADMIN role', async () => {
+      const employeeId = await createEmployee('rvself');
+      const self = await createUser('rv-self', ['EMPLOYEE', 'ADMIN'], employeeId);
+      const token = await tokenFor(self.email);
+
+      const result = await gql(REVOKE, { input: { employeeId, roleKey: 'ADMIN' } }, token);
+      expect(result.errors?.[0].message).toBe(
+        'You cannot remove your own ADMIN role. Ask another ADMIN to do it.',
+      );
+      expect((await gql(ME, undefined, token)).data.me.roles).toContain('ADMIN');
+    });
+
+    it('blocks removal of the last remaining active ADMIN', async () => {
+      const service = app.get(AuthService);
+      const target = await staffTarget('rvlast', ['ADMIN']);
+
+      // Make the target the only active ADMIN for the duration of this check.
+      const activeAdmins = await database.drizzle
+        .select({ id: users.id })
+        .from(userRoleAssignments)
+        .innerJoin(roles, eq(roles.id, userRoleAssignments.roleId))
+        .innerJoin(users, eq(users.id, userRoleAssignments.userId))
+        .where(and(eq(roles.key, 'ADMIN'), eq(users.isActive, true)));
+      const others = activeAdmins.map((row) => row.id).filter((id) => id !== target.id);
+      if (others.length) {
+        await database.drizzle.update(users).set({ isActive: false }).where(inArray(users.id, others));
+      }
+      try {
+        // The actor is not the target and holds ADMIN, as a concurrent admin would.
+        const actor = { userId: randomUUID(), email: 'actor@example.test', roles: ['ADMIN'] };
+        await expect(
+          service.revokeStaffAccess(actor, { employeeId: target.employeeId, roleKey: 'ADMIN' }),
+        ).rejects.toThrow('Cannot remove the last remaining ADMIN. Grant ADMIN to another account first.');
+      } finally {
+        if (others.length) {
+          await database.drizzle.update(users).set({ isActive: true }).where(inArray(users.id, others));
+        }
+      }
+    });
+
+    it('reports a role the account does not hold, and unknown accounts, as errors', async () => {
+      const admin = await createUser('rv-admin3', ['EMPLOYEE', 'ADMIN']);
+      const token = await tokenFor(admin.email);
+      const target = await staffTarget('rvnone', []);
+
+      const notHeld = await gql(REVOKE, { input: { employeeId: target.employeeId, roleKey: 'MANAGER' } }, token);
+      expect(notHeld.errors?.[0].message).toBe('This account does not hold the MANAGER role');
+
+      const badRole = await gql(REVOKE, { input: { employeeId: target.employeeId, roleKey: 'EMPLOYEE' } }, token);
+      expect(badRole.errors?.[0].message).toMatch(/Staff access role must be/);
+
+      const noAccount = await gql(REVOKE, { input: { employeeId: await createEmployee('rvnoacct'), roleKey: 'MANAGER' } }, token);
+      expect(noAccount.errors?.[0].message).toBe('No account exists for this employee');
+    });
   });
 
   it('rejects tokens that carry no session version', async () => {

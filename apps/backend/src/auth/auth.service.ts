@@ -23,6 +23,7 @@ import {
   CreateEmployeeAccountInput,
   LoginInput,
   ProvisionStaffAccessInput,
+  RevokeStaffAccessInput,
 } from './auth.types';
 import * as bcrypt from 'bcryptjs';
 import { randomUUID } from 'crypto';
@@ -381,6 +382,95 @@ export class AuthService {
 
       if (!accountWithRoles) {
         throw new NotFoundException('Provisioned account could not be loaded');
+      }
+
+      return this.mapUser(accountWithRoles);
+    });
+  }
+
+  async revokeStaffAccess(
+    currentUser: AuthenticatedUser,
+    input: RevokeStaffAccessInput,
+  ) {
+    if (!currentUser.roles.includes('ADMIN')) {
+      throw new ForbiddenException('Only ADMIN accounts can revoke staff access');
+    }
+
+    const employeeId = input.employeeId.trim();
+    const roleKey = input.roleKey.trim().toUpperCase() as AdminAccessRoleKey;
+
+    if (!ADMIN_ACCESS_ROLE_KEYS.includes(roleKey)) {
+      throw new BadRequestException(
+        'Staff access role must be ADMIN, HR_ADMIN, MANAGER, or SUPERVISOR',
+      );
+    }
+
+    return this.database.drizzle.transaction(async (tx) => {
+      const [account] = await tx
+        .select({ id: users.id })
+        .from(users)
+        .where(eq(users.employeeId, employeeId))
+        .limit(1);
+
+      if (!account) {
+        throw new NotFoundException('No account exists for this employee');
+      }
+
+      if (roleKey === 'ADMIN') {
+        if (account.id === currentUser.userId) {
+          throw new ConflictException(
+            'You cannot remove your own ADMIN role. Ask another ADMIN to do it.',
+          );
+        }
+
+        // Serialize concurrent ADMIN revocations so two admins cannot remove
+        // each other and leave the system without an administrator.
+        const adminAssignments = await tx
+          .select({ userId: userRoleAssignments.userId, isActive: users.isActive })
+          .from(userRoleAssignments)
+          .innerJoin(roles, eq(roles.id, userRoleAssignments.roleId))
+          .innerJoin(users, eq(users.id, userRoleAssignments.userId))
+          .where(eq(roles.key, 'ADMIN'))
+          .for('update', { of: userRoleAssignments });
+
+        const otherActiveAdmins = adminAssignments.filter(
+          (assignment) => assignment.isActive && assignment.userId !== account.id,
+        );
+        if (otherActiveAdmins.length === 0) {
+          throw new ConflictException(
+            'Cannot remove the last remaining ADMIN. Grant ADMIN to another account first.',
+          );
+        }
+      }
+
+      const [staffRole] = await tx
+        .select({ id: roles.id })
+        .from(roles)
+        .where(eq(roles.key, roleKey))
+        .limit(1);
+
+      const removed = staffRole
+        ? await tx
+            .delete(userRoleAssignments)
+            .where(
+              and(
+                eq(userRoleAssignments.userId, account.id),
+                eq(userRoleAssignments.roleId, staffRole.id),
+              ),
+            )
+            .returning({ id: userRoleAssignments.id })
+        : [];
+
+      if (removed.length === 0) {
+        throw new BadRequestException(`This account does not hold the ${roleKey} role`);
+      }
+
+      await bumpSessionVersion(tx, account.id);
+
+      const accountWithRoles = await this.getUserWithRolesById(account.id, tx);
+
+      if (!accountWithRoles) {
+        throw new NotFoundException('Account could not be loaded');
       }
 
       return this.mapUser(accountWithRoles);

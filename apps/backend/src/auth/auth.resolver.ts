@@ -9,6 +9,7 @@ import {
   CreateEmployeeAccountInput,
   LoginInput,
   ProvisionStaffAccessInput,
+  RevokeStaffAccessInput,
 } from './auth.types';
 import { AuthService } from './auth.service';
 import { Args } from '@nestjs/graphql';
@@ -59,6 +60,15 @@ export class AuthResolver {
     @Args('input') input: ProvisionStaffAccessInput,
   ) {
     return this.authService.provisionStaffAccess(currentUser, input);
+  }
+
+  @UseGuards(GqlAuthGuard)
+  @Mutation(() => AccountProfileType, { name: 'revokeStaffAccess' })
+  async revokeStaffAccess(
+    @CurrentUser() currentUser: AuthenticatedUser,
+    @Args('input') input: RevokeStaffAccessInput,
+  ) {
+    return this.authService.revokeStaffAccess(currentUser, input);
   }
 
   @UseGuards(GqlAuthGuard)

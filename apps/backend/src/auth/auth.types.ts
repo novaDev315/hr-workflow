@@ -120,6 +120,18 @@ export class ProvisionStaffAccessInput {
 }
 
 @InputType()
+export class RevokeStaffAccessInput {
+  @Field()
+  @IsString()
+  employeeId: string;
+
+  @Field()
+  @IsString()
+  @MaxLength(20)
+  roleKey: string;
+}
+
+@InputType()
 export class BootstrapAdminInput {
   @Field()
   @IsEmail()
