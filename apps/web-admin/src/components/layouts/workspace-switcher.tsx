@@ -1,7 +1,12 @@
-import { useEffect, useRef, useState } from "react";
+import {
+  useEffect,
+  useRef,
+  useState,
+  type KeyboardEvent as ReactKeyboardEvent,
+} from "react";
 import * as Dialog from "@radix-ui/react-dialog";
 import { ArrowRight, Command, Search, X } from "lucide-react";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -21,7 +26,10 @@ type WorkspaceSwitcherProps = {
 export function WorkspaceSwitcher({ items }: WorkspaceSwitcherProps) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
+  const [activeIndex, setActiveIndex] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
+  const listRef = useRef<HTMLDivElement>(null);
+  const navigate = useNavigate();
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -49,6 +57,7 @@ export function WorkspaceSwitcher({ items }: WorkspaceSwitcherProps) {
   useEffect(() => {
     if (!open) {
       setQuery("");
+      setActiveIndex(0);
       return;
     }
 
@@ -64,6 +73,36 @@ export function WorkspaceSwitcher({ items }: WorkspaceSwitcherProps) {
           .includes(normalizedQuery),
       )
     : items;
+  const activeItem = filteredItems[Math.min(activeIndex, filteredItems.length - 1)];
+
+  // Keep the highlighted page in view while moving with the arrow keys.
+  useEffect(() => {
+    listRef.current
+      ?.querySelector('[aria-selected="true"]')
+      ?.scrollIntoView({ block: "nearest" });
+  }, [activeIndex, query]);
+
+  const handleListKeys = (event: ReactKeyboardEvent<HTMLInputElement>) => {
+    const last = filteredItems.length - 1;
+    if (last < 0) return;
+    if (event.key === "ArrowDown") {
+      event.preventDefault();
+      setActiveIndex((index) => (index >= last ? 0 : index + 1));
+    } else if (event.key === "ArrowUp") {
+      event.preventDefault();
+      setActiveIndex((index) => (index <= 0 ? last : index - 1));
+    } else if (event.key === "Home") {
+      event.preventDefault();
+      setActiveIndex(0);
+    } else if (event.key === "End") {
+      event.preventDefault();
+      setActiveIndex(last);
+    } else if (event.key === "Enter" && activeItem) {
+      event.preventDefault();
+      setOpen(false);
+      navigate(activeItem.href);
+    }
+  };
 
   return (
     <Dialog.Root onOpenChange={setOpen} open={open}>
@@ -88,11 +127,22 @@ export function WorkspaceSwitcher({ items }: WorkspaceSwitcherProps) {
           <div className="flex items-center gap-2 border-b border-border/80 p-3">
             <Search className="ml-1 h-4 w-4 shrink-0 text-muted-foreground" />
             <Input
+              aria-activedescendant={
+                activeItem ? `page-option-${activeItem.href}` : undefined
+              }
+              aria-autocomplete="list"
+              aria-controls="page-options"
+              aria-expanded
               aria-label="Search pages"
               className="h-11 border-0 bg-transparent px-1 shadow-none focus-visible:ring-0 focus-visible:ring-offset-0"
-              onChange={(event) => setQuery(event.target.value)}
+              onChange={(event) => {
+                setQuery(event.target.value);
+                setActiveIndex(0);
+              }}
+              onKeyDown={handleListKeys}
               placeholder="Search people, payroll, work sites…"
               ref={inputRef}
+              role="combobox"
               value={query}
             />
             <Dialog.Close asChild>
@@ -107,16 +157,27 @@ export function WorkspaceSwitcher({ items }: WorkspaceSwitcherProps) {
             </Dialog.Close>
           </div>
 
-          <div className="max-h-[min(60vh,460px)] overflow-y-auto p-2">
+          <div
+            className="max-h-[min(60vh,460px)] overflow-y-auto p-2"
+            id="page-options"
+            ref={listRef}
+            role="listbox"
+            aria-label="Pages"
+          >
             {filteredItems.length > 0 ? (
               filteredItems.map((item) => (
                 <Link
-                  className="group flex items-center gap-3 rounded-xl px-3 py-3 transition-colors hover:bg-secondary/75 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  aria-selected={item === activeItem}
+                  className="group flex items-center gap-3 rounded-xl px-3 py-3 transition-colors hover:bg-secondary/75 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring aria-selected:bg-primary/10"
+                  id={`page-option-${item.href}`}
                   key={item.href}
                   onClick={() => setOpen(false)}
+                  onMouseMove={() => setActiveIndex(filteredItems.indexOf(item))}
+                  role="option"
+                  tabIndex={-1}
                   to={item.href}
                 >
-                  <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-border/70 bg-card text-muted-foreground group-hover:text-primary">
+                  <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-border/70 bg-card text-muted-foreground group-hover:text-primary group-aria-selected:text-primary">
                     <item.icon className="h-4 w-4" />
                   </span>
                   <span className="min-w-0 flex-1">
@@ -127,7 +188,7 @@ export function WorkspaceSwitcher({ items }: WorkspaceSwitcherProps) {
                       {item.description}
                     </span>
                   </span>
-                  <ArrowRight className="h-4 w-4 text-muted-foreground/60 transition-transform group-hover:translate-x-0.5 group-hover:text-primary" />
+                  <ArrowRight className="h-4 w-4 text-muted-foreground/60 transition-transform group-hover:translate-x-0.5 group-hover:text-primary group-aria-selected:translate-x-0.5 group-aria-selected:text-primary" />
                 </Link>
               ))
             ) : (
@@ -143,8 +204,9 @@ export function WorkspaceSwitcher({ items }: WorkspaceSwitcherProps) {
           </div>
 
           <div className="border-t border-border/70 bg-secondary/45 px-4 py-2.5 text-xs text-muted-foreground">
-            Press <span className="font-mono text-foreground">/</span> anywhere
-            to open · Escape to close
+            <span className="font-mono text-foreground">↑ ↓</span> to move ·
+            Enter to open · <span className="font-mono text-foreground">/</span>{" "}
+            anywhere to search · Escape to close
           </div>
         </Dialog.Content>
       </Dialog.Portal>
