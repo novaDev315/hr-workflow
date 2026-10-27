@@ -2,6 +2,8 @@ import {
   BadRequestException,
   ConflictException,
   ForbiddenException,
+  HttpException,
+  HttpStatus,
   Injectable,
   NotFoundException,
   UnauthorizedException,
@@ -20,11 +22,14 @@ import {
 import { AuthenticatedUser } from '../common/current-user.decorator';
 import {
   BootstrapAdminInput,
+  ChangeMyEmailInput,
   ChangePasswordInput,
   CreateEmployeeAccountInput,
   LoginInput,
   ProvisionStaffAccessInput,
   RevokeStaffAccessInput,
+  SignOutOtherSessionsInput,
+  UpdateMyProfileInput,
 } from './auth.types';
 import * as bcrypt from 'bcryptjs';
 import { randomUUID } from 'crypto';
@@ -87,9 +92,16 @@ const DUMMY_PASSWORD_HASH =
 
 const HR_ADMIN_GRANTABLE_ROLES: AdminAccessRoleKey[] = ['MANAGER', 'SUPERVISOR'];
 
+// One answer for every taken email, so the form can't tell accounts from
+// employees.
+const EMAIL_UNAVAILABLE_MESSAGE = "This email can't be used for your account. Choose a different one.";
+
 @Injectable()
 export class AuthService {
   private readonly loginLimiter = new LoginRateLimiter();
+  // Taken-email answers per account, kept apart from sign-in failures so a few
+  // typos can't lock anyone out of signing in.
+  private readonly emailChangeLimiter = new LoginRateLimiter();
 
   constructor(
     private readonly database: DatabaseService,
@@ -225,6 +237,159 @@ export class AuthService {
 
     this.loginLimiter.clearEmail(limiterEmail);
     return this.buildAuthPayload({ ...user, passwordHash, sessionVersion: updated.sessionVersion });
+  }
+
+  /**
+   * Updates the signed-in user's own name. An account linked to an employee
+   * takes its name from the employee record, which HR edits in People.
+   */
+  async updateMyProfile(currentUser: AuthenticatedUser, input: UpdateMyProfileInput) {
+    const user = await this.getActiveUser(currentUser.userId);
+
+    if (user.employeeId) {
+      throw new BadRequestException(
+        'Your name comes from your employee record. Ask HR to change it in People.',
+      );
+    }
+
+    const firstName = input.firstName.trim();
+    const lastName = input.lastName.trim();
+    if (!firstName) throw new BadRequestException('firstName: must not be empty');
+    if (!lastName) throw new BadRequestException('lastName: must not be empty');
+
+    await this.database.drizzle
+      .update(users)
+      .set({ firstName, lastName, updatedAt: sql`NOW()` })
+      .where(eq(users.id, user.id));
+
+    return this.mapUser({ ...user, firstName, lastName });
+  }
+
+  /**
+   * Changes the signed-in user's own sign-in email. The current password is
+   * required, and wrong ones count toward the login limit. The email must not
+   * be another account's or another employee's; taken emails get one shared
+   * answer and their own limit, so the form can't be used to probe addresses.
+   * Every other session is revoked and a fresh one returned so the caller
+   * stays signed in.
+   */
+  async changeMyEmail(currentUser: AuthenticatedUser, input: ChangeMyEmailInput) {
+    const user = await this.getActiveUser(currentUser.userId);
+
+    const limiterEmail = user.email.trim().toLowerCase();
+    this.loginLimiter.assertAllowed(limiterEmail, null);
+    try {
+      this.emailChangeLimiter.assertAllowed(user.id, null);
+    } catch {
+      throw new HttpException(
+        'Too many emails tried that are already in use. Wait a few minutes and try again.',
+        HttpStatus.TOO_MANY_REQUESTS,
+      );
+    }
+
+    if (!(await bcrypt.compare(input.currentPassword, user.passwordHash))) {
+      this.loginLimiter.recordFailure(limiterEmail, null);
+      throw new BadRequestException('Current password is incorrect');
+    }
+
+    const newEmail = input.newEmail.trim().toLowerCase();
+    if (newEmail === limiterEmail) {
+      throw new BadRequestException('This is already your sign-in email');
+    }
+
+    const [otherAccount] = await this.database.drizzle
+      .select({ id: users.id })
+      .from(users)
+      .where(and(sql`LOWER(${users.email}) = ${newEmail}`, sql`${users.id} <> ${user.id}`))
+      .limit(1);
+
+    // Another person's work email would block their own account later.
+    const [otherEmployee] = await this.database.drizzle
+      .select({ id: employees.id })
+      .from(employees)
+      .where(
+        and(
+          sql`LOWER(${employees.email}) = ${newEmail}`,
+          sql`${employees.id} IS DISTINCT FROM ${user.employeeId ?? null}`,
+        ),
+      )
+      .limit(1);
+    if (otherAccount || otherEmployee) {
+      this.emailChangeLimiter.recordFailure(user.id, null);
+      throw new ConflictException(EMAIL_UNAVAILABLE_MESSAGE);
+    }
+
+    // Guard on the old email and session version so a concurrent change,
+    // logout or revoke can't be silently overwritten.
+    const [updated] = await this.database.drizzle
+      .update(users)
+      .set({
+        email: newEmail,
+        sessionVersion: sql`${users.sessionVersion} + 1`,
+        updatedAt: sql`NOW()`,
+      })
+      .where(
+        and(
+          eq(users.id, user.id),
+          eq(users.email, user.email),
+          eq(users.sessionVersion, user.sessionVersion),
+        ),
+      )
+      .returning({ sessionVersion: users.sessionVersion })
+      .catch((error: unknown) => {
+        if (findUniqueViolation(error)) {
+          this.emailChangeLimiter.recordFailure(user.id, null);
+          throw new ConflictException(EMAIL_UNAVAILABLE_MESSAGE);
+        }
+        throw error;
+      });
+
+    if (!updated) {
+      throw new ConflictException('Your account changed while saving. Sign in again and retry.');
+    }
+
+    this.loginLimiter.clearEmail(limiterEmail);
+    return this.buildAuthPayload({ ...user, email: newEmail, sessionVersion: updated.sessionVersion });
+  }
+
+  /**
+   * Revokes every other token of the signed-in user and returns a fresh
+   * session. The password is required: a fresh token without it would let a
+   * stolen token renew itself forever.
+   */
+  async signOutOtherSessions(currentUser: AuthenticatedUser, input: SignOutOtherSessionsInput) {
+    const user = await this.getActiveUser(currentUser.userId);
+
+    const limiterEmail = user.email.trim().toLowerCase();
+    this.loginLimiter.assertAllowed(limiterEmail, null);
+
+    if (!(await bcrypt.compare(input.currentPassword, user.passwordHash))) {
+      this.loginLimiter.recordFailure(limiterEmail, null);
+      throw new BadRequestException('Current password is incorrect');
+    }
+
+    const [updated] = await this.database.drizzle
+      .update(users)
+      .set({ sessionVersion: sql`${users.sessionVersion} + 1`, updatedAt: sql`NOW()` })
+      .where(and(eq(users.id, user.id), eq(users.sessionVersion, user.sessionVersion)))
+      .returning({ sessionVersion: users.sessionVersion });
+
+    if (!updated) {
+      throw new ConflictException('Your account changed while saving. Sign in again and retry.');
+    }
+
+    this.loginLimiter.clearEmail(limiterEmail);
+    return this.buildAuthPayload({ ...user, sessionVersion: updated.sessionVersion });
+  }
+
+  private async getActiveUser(userId: string) {
+    const user = await this.getUserWithRolesById(userId);
+
+    if (!user || !user.isActive) {
+      throw new UnauthorizedException('Invalid or expired session');
+    }
+
+    return user;
   }
 
   async getCurrentUser(userId: string) {

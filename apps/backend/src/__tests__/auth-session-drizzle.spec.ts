@@ -458,6 +458,163 @@ describe('Auth session, role and login hardening', () => {
     expect((await login(user.email, 'BrandNew123!')).errors).toBeUndefined();
   });
 
+  describe('own account settings', () => {
+    const PROFILE = `mutation($input: UpdateMyProfileInput!) { updateMyProfile(input: $input) { id firstName lastName fullName } }`;
+    const EMAIL = `mutation($input: ChangeMyEmailInput!) { changeMyEmail(input: $input) { accessToken account { id email } } }`;
+    const OTHERS = `mutation($input: SignOutOtherSessionsInput!) { signOutOtherSessions(input: $input) { accessToken account { id } } }`;
+    const UNAVAILABLE = "This email can't be used for your account. Choose a different one.";
+
+    it('renames an unlinked account and refuses linked accounts and blank names', async () => {
+      const user = await createUser('profile', ['EMPLOYEE', 'ADMIN']);
+      const token = await tokenFor(user.email);
+
+      const renamed = await gql(PROFILE, { input: { firstName: '  Nova ', lastName: ' Dev  ' } }, token);
+      expect(renamed.errors).toBeUndefined();
+      expect(renamed.data.updateMyProfile).toMatchObject({ id: user.id, firstName: 'Nova', lastName: 'Dev', fullName: 'Nova Dev' });
+      const [stored] = await database.drizzle
+        .select({ firstName: users.firstName, lastName: users.lastName })
+        .from(users)
+        .where(eq(users.id, user.id));
+      expect(stored).toEqual({ firstName: 'Nova', lastName: 'Dev' });
+
+      const blank = await gql(PROFILE, { input: { firstName: '   ', lastName: 'Dev' } }, token);
+      expect(blank.errors?.[0].message).toBe('firstName: must not be empty');
+
+      const linked = await createUser('profile-linked', ['EMPLOYEE', 'MANAGER'], await createEmployee('profile-linked'));
+      const linkedResult = await gql(PROFILE, { input: { firstName: 'X', lastName: 'Y' } }, await tokenFor(linked.email));
+      expect(linkedResult.errors?.[0].message).toMatch(/employee record/);
+
+      expect((await gql(PROFILE, { input: { firstName: 'X', lastName: 'Y' } })).data).toBeNull();
+    });
+
+    it('changes the own sign-in email with the current password and revokes other sessions', async () => {
+      const user = await createUser('email-change', ['EMPLOYEE', 'ADMIN']);
+      const other = await createUser('email-taken', ['EMPLOYEE']);
+      await createEmployee('email-owner');
+      const oldToken = await tokenFor(user.email);
+      const otherToken = await tokenFor(user.email);
+      const newEmail = emailFor('email-changed');
+
+      const wrong = await gql(EMAIL, { input: { newEmail, currentPassword: 'WrongPass123!' } }, oldToken);
+      expect(wrong.errors?.[0].message).toBe('Current password is incorrect');
+
+      const same = await gql(EMAIL, { input: { newEmail: user.email.toUpperCase(), currentPassword: password } }, oldToken);
+      expect(same.errors?.[0].message).toBe('This is already your sign-in email');
+
+      const taken = await gql(EMAIL, { input: { newEmail: other.email.toUpperCase(), currentPassword: password } }, oldToken);
+      expect(taken.errors?.[0].message).toBe(UNAVAILABLE);
+      expect(taken.errors?.[0].extensions?.code).toBe('CONFLICT');
+
+      const employeeEmail = emailFor('emp-email-owner');
+      const employeeOwned = await gql(EMAIL, { input: { newEmail: employeeEmail, currentPassword: password } }, oldToken);
+      // Same answer as a taken account email, so the form can't tell them apart.
+      expect(employeeOwned.errors?.[0].message).toBe(UNAVAILABLE);
+
+      const invalid = await gql(EMAIL, { input: { newEmail: 'not-an-email', currentPassword: password } }, oldToken);
+      expect(invalid.errors?.[0].message).toMatch(/newEmail/);
+
+      expect((await gql(EMAIL, { input: { newEmail, currentPassword: password } })).data).toBeNull();
+
+      const changed = await gql(EMAIL, { input: { newEmail: newEmail.toUpperCase(), currentPassword: password } }, oldToken);
+      expect(changed.errors).toBeUndefined();
+      expect(changed.data.changeMyEmail.account).toEqual({ id: user.id, email: newEmail });
+      const newToken = changed.data.changeMyEmail.accessToken as string;
+
+      expect((await gql(ME, undefined, newToken)).data.me.id).toBe(user.id);
+      expect((await gql(ME, undefined, oldToken)).data).toBeNull();
+      expect((await gql(ME, undefined, otherToken)).data).toBeNull();
+      expect((await login(user.email)).errors?.[0].message).toBe('Invalid credentials');
+      expect((await login(newEmail)).errors).toBeUndefined();
+    });
+
+    it('lets a linked account take its own work email', async () => {
+      const employeeId = await createEmployee('own-email');
+      const user = await createUser('own-email-account', ['EMPLOYEE', 'MANAGER'], employeeId);
+      const result = await gql(
+        EMAIL,
+        { input: { newEmail: emailFor('emp-own-email'), currentPassword: password } },
+        await tokenFor(user.email),
+      );
+      expect(result.errors).toBeUndefined();
+      expect(result.data.changeMyEmail.account.email).toBe(emailFor('emp-own-email'));
+    });
+
+    it('signs out other sessions with the password and keeps the caller signed in', async () => {
+      const user = await createUser('sign-out-others', ['EMPLOYEE', 'HR_ADMIN']);
+      const current = await tokenFor(user.email);
+      const other = await tokenFor(user.email);
+
+      // Without the password a stolen token could renew itself forever.
+      const missing = await gql(OTHERS, { input: {} }, current);
+      expect(missing.data).toBeFalsy();
+      const wrong = await gql(OTHERS, { input: { currentPassword: 'WrongPass123!' } }, current);
+      expect(wrong.errors?.[0].message).toBe('Current password is incorrect');
+      expect((await gql(ME, undefined, other)).data.me.id).toBe(user.id);
+
+      const result = await gql(OTHERS, { input: { currentPassword: password } }, current);
+      expect(result.errors).toBeUndefined();
+      const fresh = result.data.signOutOtherSessions.accessToken as string;
+
+      expect((await gql(ME, undefined, fresh)).data.me.id).toBe(user.id);
+      expect((await gql(ME, undefined, other)).data).toBeNull();
+      expect((await gql(ME, undefined, current)).data).toBeNull();
+      expect((await gql(OTHERS, { input: { currentPassword: password } })).data).toBeNull();
+    });
+
+    it('counts wrong passwords on the email form toward the sign-in limit', async () => {
+      const user = await createUser('email-throttle', ['EMPLOYEE', 'ADMIN']);
+      const token = await tokenFor(user.email);
+      const attempt = () =>
+        gql(EMAIL, { input: { newEmail: emailFor('email-throttle-new'), currentPassword: 'WrongPass123!' } }, token);
+
+      for (let i = 0; i < 5; i += 1) {
+        expect((await attempt()).errors?.[0].message).toBe('Current password is incorrect');
+      }
+      expect((await attempt()).errors?.[0].message).toMatch(/^Too many sign-in attempts/);
+      expect((await login(user.email)).errors?.[0].message).toMatch(/^Too many sign-in attempts/);
+    });
+
+    it('limits taken-email answers per account without blocking sign-in', async () => {
+      const user = await createUser('email-probe', ['EMPLOYEE', 'MANAGER']);
+      const taken = await createUser('email-probe-taken', ['EMPLOYEE']);
+      const token = await tokenFor(user.email);
+      const attempt = () => gql(EMAIL, { input: { newEmail: taken.email, currentPassword: password } }, token);
+
+      for (let i = 0; i < 5; i += 1) {
+        expect((await attempt()).errors?.[0].message).toBe(UNAVAILABLE);
+      }
+      expect((await attempt()).errors?.[0].message).toMatch(/^Too many emails tried that are already in use/);
+      expect((await login(user.email)).errors).toBeUndefined();
+    });
+
+    it('refuses a linked account another employee\'s work email', async () => {
+      await createEmployee('someone-else');
+      const user = await createUser('linked-probe', ['EMPLOYEE', 'MANAGER'], await createEmployee('linked-probe'));
+      const result = await gql(
+        EMAIL,
+        { input: { newEmail: emailFor('emp-someone-else'), currentPassword: password } },
+        await tokenFor(user.email),
+      );
+      expect(result.errors?.[0].message).toBe(UNAVAILABLE);
+    });
+
+    it('copies a name HR changes in People to the linked account', async () => {
+      const admin = await createUser('people-renamer', ['EMPLOYEE', 'ADMIN']);
+      const employeeId = await createEmployee('renamed-staff');
+      const staff = await createUser('renamed-staff-account', ['EMPLOYEE', 'MANAGER'], employeeId);
+
+      const updated = await gql(
+        `mutation($input: UpdateEmployeeInput!) { updateEmployee(input: $input) { id firstName } }`,
+        { input: { id: employeeId, firstName: 'Corrected' } },
+        await tokenFor(admin.email),
+      );
+      expect(updated.errors).toBeUndefined();
+
+      const me = await gql(`query { me { firstName fullName } }`, undefined, await tokenFor(staff.email));
+      expect(me.data.me).toEqual({ firstName: 'Corrected', fullName: 'Corrected Employee' });
+    });
+  });
+
   it('returns a readable validation message through GraphQL', async () => {
     const admin = await createUser('validator', ['EMPLOYEE', 'ADMIN']);
     const token = await tokenFor(admin.email);

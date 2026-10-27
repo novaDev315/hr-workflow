@@ -146,6 +146,40 @@ export class ChangePasswordInput {
 }
 
 @InputType()
+export class UpdateMyProfileInput {
+  @Field()
+  @IsString()
+  @MaxLength(60)
+  firstName: string;
+
+  @Field()
+  @IsString()
+  @MaxLength(60)
+  lastName: string;
+}
+
+@InputType()
+export class ChangeMyEmailInput {
+  @Field()
+  @IsEmail()
+  @MaxLength(254)
+  newEmail: string;
+
+  @Field()
+  @IsString()
+  @MaxLength(200)
+  currentPassword: string;
+}
+
+@InputType()
+export class SignOutOtherSessionsInput {
+  @Field()
+  @IsString()
+  @MaxLength(200)
+  currentPassword: string;
+}
+
+@InputType()
 export class BootstrapAdminInput {
   @Field()
   @IsEmail()

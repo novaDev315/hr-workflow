@@ -6,11 +6,14 @@ import {
   AccountProfileType,
   AccountSessionType,
   BootstrapAdminInput,
+  ChangeMyEmailInput,
   ChangePasswordInput,
   CreateEmployeeAccountInput,
   LoginInput,
   ProvisionStaffAccessInput,
   RevokeStaffAccessInput,
+  SignOutOtherSessionsInput,
+  UpdateMyProfileInput,
 } from './auth.types';
 import { AuthService } from './auth.service';
 import { Args } from '@nestjs/graphql';
@@ -79,6 +82,33 @@ export class AuthResolver {
     @Args('input') input: ChangePasswordInput,
   ) {
     return this.authService.changePassword(currentUser, input);
+  }
+
+  @UseGuards(GqlAuthGuard)
+  @Mutation(() => AccountProfileType, { name: 'updateMyProfile' })
+  async updateMyProfile(
+    @CurrentUser() currentUser: AuthenticatedUser,
+    @Args('input') input: UpdateMyProfileInput,
+  ) {
+    return this.authService.updateMyProfile(currentUser, input);
+  }
+
+  @UseGuards(GqlAuthGuard)
+  @Mutation(() => AccountSessionType, { name: 'changeMyEmail' })
+  async changeMyEmail(
+    @CurrentUser() currentUser: AuthenticatedUser,
+    @Args('input') input: ChangeMyEmailInput,
+  ) {
+    return this.authService.changeMyEmail(currentUser, input);
+  }
+
+  @UseGuards(GqlAuthGuard)
+  @Mutation(() => AccountSessionType, { name: 'signOutOtherSessions' })
+  async signOutOtherSessions(
+    @CurrentUser() currentUser: AuthenticatedUser,
+    @Args('input') input: SignOutOtherSessionsInput,
+  ) {
+    return this.authService.signOutOtherSessions(currentUser, input);
   }
 
   @UseGuards(GqlAuthGuard)

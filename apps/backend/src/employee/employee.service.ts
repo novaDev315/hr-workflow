@@ -347,6 +347,16 @@ export class EmployeeService {
             .set({ isActive: reactivating, updatedAt: sql`NOW()` })
             .where(eq(users.employeeId, input.id));
         }
+
+        // A linked account takes its name from the employee record.
+        const firstName = input.firstName?.trim() ?? existing.firstName;
+        const lastName = input.lastName?.trim() ?? existing.lastName;
+        if (firstName !== existing.firstName || lastName !== existing.lastName) {
+          await tx
+            .update(users)
+            .set({ firstName, lastName, updatedAt: sql`NOW()` })
+            .where(eq(users.employeeId, input.id));
+        }
       });
     } catch (error) {
       const violation = findUniqueViolation(error);
