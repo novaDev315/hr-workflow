@@ -6,6 +6,7 @@ import {
   Building2,
   Calendar,
   Clock3,
+  KeyRound,
   LayoutDashboard,
   LogOut,
   Menu,
@@ -21,6 +22,7 @@ import { Button } from "@/components/ui/button";
 import { Toaster } from "@/components/ui/toaster";
 import { clearAdminSession, useAdminSession } from "@/lib/auth-session";
 import { formatDay, formatStatus } from "@/lib/format";
+import { ChangePasswordSheet } from "./change-password-sheet";
 import {
   WorkspaceSwitcher,
   type WorkspaceNavigationItem,
@@ -101,6 +103,7 @@ export function DashboardLayout() {
   const navigate = useNavigate();
   const { account } = useAdminSession();
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
+  const [passwordOpen, setPasswordOpen] = useState(false);
 
   const currentPage =
     navigation.find((item) =>
@@ -207,6 +210,15 @@ export function DashboardLayout() {
                 </p>
               </div>
               <Button
+                aria-label="Change password"
+                onClick={() => setPasswordOpen(true)}
+                size="icon"
+                title="Change password"
+                variant="ghost"
+              >
+                <KeyRound className="h-4 w-4" />
+              </Button>
+              <Button
                 aria-label="Log out"
                 onClick={handleLogout}
                 size="icon"
@@ -257,6 +269,7 @@ export function DashboardLayout() {
           <Outlet />
         </main>
       </div>
+      <ChangePasswordSheet onOpenChange={setPasswordOpen} open={passwordOpen} />
       <Toaster />
     </div>
   );
