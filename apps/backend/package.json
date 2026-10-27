@@ -1,6 +1,7 @@
 {
   "name": "@hrflow/backend",
   "version": "1.0.0",
+  "license": "AGPL-3.0-or-later",
   "description": "HRFlow modular monolith backend",
   "packageManager": "bun@1.3.9",
   "main": "dist/src/main.js",

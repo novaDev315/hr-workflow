@@ -135,3 +135,11 @@ bun run --cwd apps/web-admin build
 bunx tsc --noEmit -p apps/mobile/tsconfig.json
 bun run test:backend
 ```
+
+## License
+
+Copyright (C) 2026 Mohamed (NovaDev).
+
+HR Workflow is free software under the GNU Affero General Public License v3.0 or later: see
+[LICENSE](LICENSE). If you run a modified version as a network service, you must offer its users the
+source of that version.
