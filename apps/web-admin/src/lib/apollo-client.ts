@@ -152,6 +152,8 @@ async function devFailoverGraphqlFetch(
 const authLink = setContext((_, { headers }) => {
   const token = typeof window === "undefined" ? null : readAuthToken();
   return {
+    // Remembered so the error link can tell a stale token from the current one.
+    authToken: token,
     headers: {
       ...headers,
       authorization: token ? `Bearer ${token}` : "",
@@ -159,9 +161,12 @@ const authLink = setContext((_, { headers }) => {
   };
 });
 
-const errorLink = onError(({ graphQLErrors, networkError }) => {
+const errorLink = onError(({ graphQLErrors, networkError, operation }) => {
+  const currentToken = typeof window === "undefined" ? null : readAuthToken();
+  // A request sent with an older token (before a password change or a new
+  // sign-in) must not end the session that replaced it.
   const hasAuthToken =
-    typeof window !== "undefined" && Boolean(readAuthToken());
+    Boolean(currentToken) && operation.getContext().authToken === currentToken;
   const graphQlAuthFailure = (graphQLErrors ?? []).some((error) => {
     const code = error.extensions?.code;
     return (
