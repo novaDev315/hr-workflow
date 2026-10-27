@@ -1,6 +1,6 @@
 import * as Dialog from '@radix-ui/react-dialog'
 import { X } from 'lucide-react'
-import type { ReactNode } from 'react'
+import { useRef, type ReactNode } from 'react'
 
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
@@ -26,11 +26,27 @@ export function SideSheet({
   children: ReactNode
   className?: string
 }) {
+  // Sheets open from state rather than a Radix trigger, so Radix has nothing
+  // to return focus to on close. Remember what had focus and go back to it.
+  const returnFocus = useRef<HTMLElement | null>(null)
+
   return (
     <Dialog.Root open={open} onOpenChange={onOpenChange}>
       <Dialog.Portal>
         <Dialog.Overlay className="fixed inset-0 z-50 bg-[rgba(39,30,20,0.38)] backdrop-blur-[2px]" />
         <Dialog.Content
+          onCloseAutoFocus={(event) => {
+            const target = returnFocus.current
+            returnFocus.current = null
+            if (target?.isConnected) {
+              event.preventDefault()
+              target.focus()
+            }
+          }}
+          onOpenAutoFocus={() => {
+            // Runs before focus moves into the sheet.
+            returnFocus.current = document.activeElement instanceof HTMLElement ? document.activeElement : null
+          }}
           className={cn(
             'fixed inset-y-0 right-0 z-50 flex w-full max-w-[560px] flex-col border-l border-border/80 bg-card text-card-foreground shadow-[-24px_0_80px_rgba(39,30,20,0.18)] outline-none sm:inset-y-2 sm:right-2 sm:rounded-[1.2rem] sm:border',
             className,
