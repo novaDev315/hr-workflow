@@ -37,7 +37,7 @@ project contract. `.nexos/env.yaml` declares the required keys; NexOS supplies
 the target values at runtime:
 
 ```bash
-nexos secrets exec --project /home/nova/projects/work/rakss --env test -- bun run test:backend
+nexos secrets exec --project /home/nova/projects/work/hr-workflow --env test -- bun run test:backend
 ```
 
 If a dedicated central database needs to be created or rotated, use the Homelab
@@ -84,8 +84,8 @@ JWT_SECRET=<32+ random characters>
 JWT_EXPIRY=3600s
 ALLOWED_ORIGINS=https://admin.your-company.internal   # required in production
 TRUST_PROXY=1
-RAKSS_ADMIN_EMAIL=<first admin email>        # optional first-admin seeding
-RAKSS_ADMIN_PASSWORD=<first admin password>  # optional first-admin seeding
+HR_WORKFLOW_ADMIN_EMAIL=<first admin email>        # optional first-admin seeding
+HR_WORKFLOW_ADMIN_PASSWORD=<first admin password>  # optional first-admin seeding
 BOOTSTRAP_ALLOWED=false                      # optional; first-run UI bootstrap in production, default off
 POLICY_STORAGE_DIR=/var/lib/hrflow/policies
 ```
@@ -117,7 +117,7 @@ docker compose -f docker-compose.dev.yml config
 
 ```bash
 git clone <your-repo-url>
-cd rakss
+cd hr-workflow
 bun install
 cp .env.example .env
 ```
@@ -148,8 +148,8 @@ Use either:
 For homelab-managed provisioning:
 
 ```bash
-homelab apps database create rakss --service backend --db-type postgres --mode central --env-file .env
-homelab apps database verify rakss --service backend
+homelab apps database create hr-workflow --service backend --db-type postgres --mode central --env-file .env
+homelab apps database verify hr-workflow --service backend
 ```
 
 ### 3. Migrate and Start the Backend
@@ -180,7 +180,7 @@ Serve `apps/web-admin/dist` behind your reverse proxy or static web server.
 
 ## Domain cutover
 
-The public hostnames are `admin.hrflow.lab.novadev.tech` and `api.hrflow.lab.novadev.tech` (`base_domain: hrflow` in `homelab.yaml`; the internal project id and database stay `rakss`). The hrflow DNS, route, and TLS certificate must exist in Homelab before deploying this config, because the web-admin nginx verifies the API certificate. The old `rakss` hostnames are retired separately.
+The public hostnames are `admin.hrflow.lab.novadev.tech` and `api.hrflow.lab.novadev.tech` (`base_domain: hrflow` in `homelab.yaml`; the project id is `hr-workflow` and the database `hr_workflow_backend_production`). The hrflow DNS, route, and TLS certificate must exist in Homelab before deploying this config, because the web-admin nginx verifies the API certificate. The old `hr-workflow` hostnames are retired separately.
 
 ## Health Checks
 
@@ -219,7 +219,7 @@ curl -sS -X POST https://api.hrflow.lab.novadev.tech/graphql \
   --data '{"query":"query { __typename }"}'
 ```
 
-Result (recorded on the previous `rakss` hostnames, before the domain cutover):
+Result (recorded on the earlier hostnames, before the domain cutover):
 
 - `https://admin.hrflow.lab.novadev.tech` returns HTTP `200`.
 - `https://admin.hrflow.lab.novadev.tech/health` returns HTTP `200`.
@@ -228,8 +228,8 @@ Result (recorded on the previous `rakss` hostnames, before the domain cutover):
 
 Homelab caveat:
 
-- `homelab --project-root /home/nova/projects/work/rakss --output json validate` passes global Homelab contract validation, with a warning that project config discovery for `homelab.yaml` is not yet enforced.
-- `homelab --project-root /home/nova/projects/work/rakss --output json apps database verify rakss --service backend` failed with `ssh failed: remote command`; do not treat database provisioning verification as complete until that exact command passes or the remote-side failure is explained.
+- `homelab --project-root /home/nova/projects/work/hr-workflow --output json validate` passes global Homelab contract validation, with a warning that project config discovery for `homelab.yaml` is not yet enforced.
+- `homelab --project-root /home/nova/projects/work/hr-workflow --output json apps database verify hr-workflow --service backend` failed with `ssh failed: remote command`; do not treat database provisioning verification as complete until that exact command passes or the remote-side failure is explained.
 
 ## Operations Hardening Status
 
@@ -250,7 +250,7 @@ Operator-required configuration:
 - Set a real `JWT_SECRET` (32+ random characters); compose has no default and refuses to start without it.
 - Set `ALLOWED_ORIGINS` to the deployed admin and mobile origins.
 - Set and back up `POLICY_STORAGE_DIR` with the database because policy rows reference stored files.
-- Run database migration verification before shipping through NexOS or Homelab so the target environment comes from `.nexos/env.yaml`: `nexos secrets exec --project /home/nova/projects/work/rakss --env production -- bun run --cwd apps/backend migrate:deploy` or the Homelab migration wrapper for the target deployment. This applies pending versioned migrations (baseline-adopting databases created by `push`) followed by seed verification.
+- Run database migration verification before shipping through NexOS or Homelab so the target environment comes from `.nexos/env.yaml`: `nexos secrets exec --project /home/nova/projects/work/hr-workflow --env production -- bun run --cwd apps/backend migrate:deploy` or the Homelab migration wrapper for the target deployment. This applies pending versioned migrations (baseline-adopting databases created by `push`) followed by seed verification.
 
 Not yet proven or not implemented in this repo:
 
@@ -287,7 +287,7 @@ Back up the database before any migration that alters or drops data.
 Back up PostgreSQL regularly using your platform standard or the homelab helper:
 
 ```bash
-homelab apps database backup rakss --service backend
+homelab apps database backup hr-workflow --service backend
 ```
 
 ### Policy File Storage
@@ -332,7 +332,7 @@ Check:
 - `DATABASE_URL`
 - host firewall rules
 - PostgreSQL listen address
-- `homelab apps database verify rakss --service backend` for central mode
+- `homelab apps database verify hr-workflow --service backend` for central mode
 
 ### Policy Files Do Not Open
 

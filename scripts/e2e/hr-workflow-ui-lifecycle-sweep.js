@@ -2,19 +2,19 @@
   function assertLocalTarget(label, value) {
     const { hostname } = new URL(value);
     const local = ['localhost', '127.0.0.1', '::1', '[::1]'].includes(hostname);
-    if (!local && process.env.RAKSS_E2E_ALLOW_REMOTE !== '1') {
+    if (!local && process.env.HR_WORKFLOW_E2E_ALLOW_REMOTE !== '1') {
       throw new Error(
         `Refusing to run the destructive UI lifecycle sweep against non-local ${label} ${value}. ` +
-          'It creates and deletes data. Use a local stack (default http://localhost:5173) or set RAKSS_E2E_ALLOW_REMOTE=1 to override.',
+          'It creates and deletes data. Use a local stack (default http://localhost:5173) or set HR_WORKFLOW_E2E_ALLOW_REMOTE=1 to override.',
       );
     }
   }
-  const adminEmail = process.env.RAKSS_ADMIN_EMAIL || 'admin@hrflow.lab.novadev.tech';
-  const baseUrl = process.env.RAKSS_ADMIN_URL || 'http://localhost:5173';
-  assertLocalTarget('RAKSS_ADMIN_URL', baseUrl);
+  const adminEmail = process.env.HR_WORKFLOW_ADMIN_EMAIL || 'admin@hrflow.lab.novadev.tech';
+  const baseUrl = process.env.HR_WORKFLOW_ADMIN_URL || 'http://localhost:5173';
+  assertLocalTarget('HR_WORKFLOW_ADMIN_URL', baseUrl);
   // The admin dev server proxies /graphql, so the API defaults to the same origin.
-  const apiUrl = process.env.RAKSS_API_URL || `${baseUrl}/graphql`;
-  assertLocalTarget('RAKSS_API_URL', apiUrl);
+  const apiUrl = process.env.HR_WORKFLOW_API_URL || `${baseUrl}/graphql`;
+  assertLocalTarget('HR_WORKFLOW_API_URL', apiUrl);
   const runId = new Date().toISOString().replace(/[-:.TZ]/g, '').slice(0, 14);
   const today = new Date().toISOString().slice(0, 10);
   const runMinuteIndex = Number(runId.slice(8, 10)) * 60 + Number(runId.slice(10, 12));
@@ -606,7 +606,7 @@
   await goto('/');
   await page.getByLabel('Open navigation').click();
   await page.getByRole('button', { name: 'Close navigation' }).last().waitFor();
-  await page.screenshot({ path: 'output/playwright/rakss-ui-lifecycle-mobile-nav.png', fullPage: true });
+  await page.screenshot({ path: 'output/playwright/hr-workflow-ui-lifecycle-mobile-nav.png', fullPage: true });
   check('mobile nav open state');
   await page.setViewportSize({ width: 1280, height: 900 });
 
@@ -636,7 +636,7 @@
   check('ui export reports pdf button');
 
   await page.setViewportSize({ width: 1280, height: 900 });
-  await page.screenshot({ path: 'output/playwright/rakss-ui-lifecycle-final.png', fullPage: true });
+  await page.screenshot({ path: 'output/playwright/hr-workflow-ui-lifecycle-final.png', fullPage: true });
 
   return proof;
 

@@ -1,10 +1,10 @@
-# Rakss Phased Refactor And Migration Plan
+# HR Workflow Phased Refactor And Migration Plan
 
 Status: repo-verified; Prisma path superseded by Drizzle
 Date: 2026-06-30
 Last updated: 2026-07-01
-Owner repo: `/home/nova/projects/work/rakss`
-Primary owner: Rakss product repository
+Owner repo: `/home/nova/projects/work/hr-workflow`
+Primary owner: HR Workflow product repository
 
 ## Summary
 
@@ -20,7 +20,7 @@ a clear blocker, or has a saved handoff.
 
 ## Goal
 
-Make the Rakss codebase easier to maintain and safer to extend without a big-bang
+Make the HR Workflow codebase easier to maintain and safer to extend without a big-bang
 rewrite. The migration should:
 
 - Remove unmounted demo code from the production app source tree.
@@ -160,37 +160,37 @@ user approval.
 
 ## Work Queue
 
-- RAKSS-P0: Rakss repo | Baseline and plan confirmation | risk=low |
+- HRW-P0: HR Workflow repo | Baseline and plan confirmation | risk=low |
   parallel=no | actions=inspect only | proof=git status and script map |
   stop=tree dirty or script mismatch
-- RAKSS-P1: Web-admin | Remove demo source | risk=low | parallel=no |
+- HRW-P1: Web-admin | Remove demo source | risk=low | parallel=no |
   actions=edit/test | proof=build:web-admin and lint |
   stop=proof fails
-- RAKSS-P2: Web-admin | shadcn foundation and form primitives | risk=medium |
+- HRW-P2: Web-admin | shadcn foundation and form primitives | risk=medium |
   parallel=no | actions=edit/test | proof=shadcn info when available, build,
   lint | stop=destructive overwrite needed
-- RAKSS-P3: Backend | Database ownership clarification | risk=medium |
+- HRW-P3: Backend | Database ownership clarification | risk=medium |
   parallel=no | actions=edit/test | proof=backend build and backend integration
   test | stop=runtime schema behavior changes unexpectedly
-- RAKSS-P4: Backend + web-admin | Server-returned capabilities | risk=medium |
+- HRW-P4: Backend + web-admin | Server-returned capabilities | risk=medium |
   parallel=no | actions=edit/test | proof=backend test, web build, web lint |
   stop=mobile auth contract impact appears
-- RAKSS-P5: Web-admin | Employees decomposition | risk=medium |
+- HRW-P5: Web-admin | Employees decomposition | risk=medium |
   parallel=no | actions=edit/test | proof=web build/lint and smoke |
   stop=behavior or UI regressions
-- RAKSS-P6: Web-admin | Attendance decomposition | risk=medium |
+- HRW-P6: Web-admin | Attendance decomposition | risk=medium |
   parallel=no | actions=edit/test | proof=web build/lint and smoke |
   stop=behavior or UI regressions
-- RAKSS-P7: Web-admin | Recruitment decomposition | risk=medium |
+- HRW-P7: Web-admin | Recruitment decomposition | risk=medium |
   parallel=no | actions=edit/test | proof=web build/lint and smoke |
   stop=behavior or UI regressions
-- RAKSS-P8: Backend | Fast unit test lane | risk=low |
+- HRW-P8: Backend | Fast unit test lane | risk=low |
   parallel=no | actions=edit/test | proof=fast unit command and existing
   integration command | stop=unit setup conflicts with integration setup
-- RAKSS-P9: Backend | Historical Prisma migration checkpoint | risk=high |
+- HRW-P9: Backend | Historical Prisma migration checkpoint | risk=high |
   parallel=no | actions=inspect/plan first | proof=schema diff and migration
   risk review | stop=needs explicit approval
-- RAKSS-P10: Backend | Superseded Prisma migration option | risk=high |
+- HRW-P10: Backend | Superseded Prisma migration option | risk=high |
   parallel=no | actions=edit/test only after approval | proof=module-by-module
   build/test/integration proof | stop=any service regression
 
@@ -212,8 +212,8 @@ Files to inspect:
 - `apps/backend/src/database/drizzle/schema.ts`
 - former `apps/backend/prisma/schema.prisma`
 - `docs/IMPLEMENTATION_STATUS.md`
-- `scripts/e2e/run-rakss-ui-lifecycle.mjs`
-- `scripts/e2e/rakss-ui-lifecycle-sweep.js`
+- `scripts/e2e/run-hr-workflow-ui-lifecycle.mjs`
+- `scripts/e2e/hr-workflow-ui-lifecycle-sweep.js`
 
 Commands:
 
@@ -252,7 +252,7 @@ Proof:
 ```bash
 bun run build:web-admin
 bun run --cwd apps/web-admin lint
-rg -n "src/demo|/demos|Rakss demo gallery|demoHref|DemoGallery|DemoWorkspace" apps docs scripts
+rg -n "src/demo|/demos|HR Workflow demo gallery|demoHref|DemoGallery|DemoWorkspace" apps docs scripts
 ```
 
 Stop gate:

@@ -6,7 +6,7 @@ This quick start follows the current Bun monolith implementation branch.
 
 ```bash
 git clone <your-repo-url>
-cd rakss
+cd hr-workflow
 bun install
 ```
 
@@ -16,13 +16,13 @@ bun install
 cp .env.example .env
 ```
 
-Set `JWT_SECRET` in `.env` (32+ random characters, e.g. `openssl rand -base64 48`); compose will not start without it. Optionally set `RAKSS_ADMIN_EMAIL` and `RAKSS_ADMIN_PASSWORD` to seed the first admin. The defaults are set up for local development with PostgreSQL on Docker and the backend on `http://localhost:4001/graphql`.
+Set `JWT_SECRET` in `.env` (32+ random characters, e.g. `openssl rand -base64 48`); compose will not start without it. Optionally set `HR_WORKFLOW_ADMIN_EMAIL` and `HR_WORKFLOW_ADMIN_PASSWORD` to seed the first admin. The defaults are set up for local development with PostgreSQL on Docker and the backend on `http://localhost:4001/graphql`.
 
 Optional isolated test runs should use the NexOS project contract instead of
 writing env-specific files into the repo:
 
 ```bash
-nexos secrets exec --project /home/nova/projects/work/rakss --env test -- bun run test:backend
+nexos secrets exec --project /home/nova/projects/work/hr-workflow --env test -- bun run test:backend
 ```
 
 ## 3. Start PostgreSQL

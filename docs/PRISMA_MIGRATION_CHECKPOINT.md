@@ -2,7 +2,7 @@
 
 Status: superseded by Drizzle runtime migration
 Date: 2026-07-01
-Owner repo: `/home/nova/projects/work/rakss`
+Owner repo: `/home/nova/projects/work/hr-workflow`
 
 ## Verdict
 

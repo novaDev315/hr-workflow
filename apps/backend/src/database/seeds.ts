@@ -93,7 +93,7 @@ export async function seedDatabase(database: AppDrizzleDatabase) {
 }
 
 /**
- * Creates the first ADMIN from RAKSS_ADMIN_EMAIL / RAKSS_ADMIN_PASSWORD when
+ * Creates the first ADMIN from HR_WORKFLOW_ADMIN_EMAIL / HR_WORKFLOW_ADMIN_PASSWORD when
  * the users table is empty. Serialized by an advisory lock, so concurrent
  * instances create exactly one account. Never touches an existing database.
  */
@@ -101,8 +101,8 @@ export async function seedEnvAdmin(
   database: AppDrizzleDatabase,
   env: Record<string, string | undefined> = process.env,
 ) {
-  const email = env.RAKSS_ADMIN_EMAIL?.trim().toLowerCase();
-  const password = env.RAKSS_ADMIN_PASSWORD;
+  const email = env.HR_WORKFLOW_ADMIN_EMAIL?.trim().toLowerCase();
+  const password = env.HR_WORKFLOW_ADMIN_PASSWORD;
 
   if (!email || !password) {
     return null;
@@ -110,7 +110,7 @@ export async function seedEnvAdmin(
 
   if (!email.includes('@') || password.length < 8) {
     console.warn(
-      'RAKSS_ADMIN_EMAIL/RAKSS_ADMIN_PASSWORD ignored: a valid email and a password of at least 8 characters are required.',
+      'HR_WORKFLOW_ADMIN_EMAIL/HR_WORKFLOW_ADMIN_PASSWORD ignored: a valid email and a password of at least 8 characters are required.',
     );
     return null;
   }
@@ -119,8 +119,8 @@ export async function seedEnvAdmin(
   const userId = await createFirstAdminAccount(database, {
     email,
     passwordHash,
-    firstName: env.RAKSS_ADMIN_FIRST_NAME?.trim() || 'System',
-    lastName: env.RAKSS_ADMIN_LAST_NAME?.trim() || 'Administrator',
+    firstName: env.HR_WORKFLOW_ADMIN_FIRST_NAME?.trim() || 'System',
+    lastName: env.HR_WORKFLOW_ADMIN_LAST_NAME?.trim() || 'Administrator',
   });
 
   if (userId) {

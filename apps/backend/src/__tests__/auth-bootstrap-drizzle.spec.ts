@@ -81,8 +81,8 @@ describe('First-admin bootstrap and env admin seeding', () => {
     setEnv({
       DATABASE_URL: url.toString(),
       JWT_SECRET: 'bootstrap-test-secret-0123456789abcdef-0123',
-      RAKSS_ADMIN_EMAIL: undefined,
-      RAKSS_ADMIN_PASSWORD: undefined,
+      HR_WORKFLOW_ADMIN_EMAIL: undefined,
+      HR_WORKFLOW_ADMIN_PASSWORD: undefined,
       BOOTSTRAP_ALLOWED: undefined,
       NODE_ENV: 'test',
     });
@@ -169,8 +169,8 @@ describe('First-admin bootstrap and env admin seeding', () => {
 
   it('seeds exactly one ADMIN from the environment, even when run concurrently', async () => {
     const env = {
-      RAKSS_ADMIN_EMAIL: ' Env.Admin@Example.test ',
-      RAKSS_ADMIN_PASSWORD: 'EnvAdminPass123!',
+      HR_WORKFLOW_ADMIN_EMAIL: ' Env.Admin@Example.test ',
+      HR_WORKFLOW_ADMIN_PASSWORD: 'EnvAdminPass123!',
     };
 
     await Promise.all([
@@ -181,7 +181,7 @@ describe('First-admin bootstrap and env admin seeding', () => {
 
     setEnv(env);
     await database.ensureSeedData();
-    setEnv({ RAKSS_ADMIN_EMAIL: undefined, RAKSS_ADMIN_PASSWORD: undefined });
+    setEnv({ HR_WORKFLOW_ADMIN_EMAIL: undefined, HR_WORKFLOW_ADMIN_PASSWORD: undefined });
 
     const { rows, total } = await accountSummary();
     expect(total).toBe(1);
@@ -195,13 +195,13 @@ describe('First-admin bootstrap and env admin seeding', () => {
   });
 
   it('does not seed from the environment when a user exists or the variables are incomplete', async () => {
-    await seedEnvAdmin(database.drizzle, { RAKSS_ADMIN_EMAIL: 'only@example.test' });
+    await seedEnvAdmin(database.drizzle, { HR_WORKFLOW_ADMIN_EMAIL: 'only@example.test' });
     expect((await accountSummary()).total).toBe(0);
 
     await auth.bootstrapAdmin(bootstrapInput);
     await seedEnvAdmin(database.drizzle, {
-      RAKSS_ADMIN_EMAIL: 'env.admin@example.test',
-      RAKSS_ADMIN_PASSWORD: 'EnvAdminPass123!',
+      HR_WORKFLOW_ADMIN_EMAIL: 'env.admin@example.test',
+      HR_WORKFLOW_ADMIN_PASSWORD: 'EnvAdminPass123!',
     });
     const { rows, total } = await accountSummary();
     expect(total).toBe(1);

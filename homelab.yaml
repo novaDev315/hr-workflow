@@ -3,7 +3,7 @@
 # Type: Monorepo (turborepo)
 
 schema_version: 2
-project: rakss
+project: hr-workflow
 version: v1.0
 type: monorepo
 # Default build settings (can be overridden per service)
@@ -14,7 +14,7 @@ deploy:
   target: web
   # v2 never infers the host; this is the shared web runtime (10.0.60.10).
   host: 10.0.60.10
-  # Public domain hrflow.*; internal project id and database stay 'rakss'.
+  # Public domain hrflow.*; the project id is hr-workflow.
   base_domain: hrflow
   port: 5173
   # Keep the v1 runtime: Traefik reaches the containers from another host, and
@@ -48,7 +48,7 @@ services:
       database:
         type: postgres
         provision: central
-        name: rakss_backend_production
+        name: hr_workflow_backend_production
     database:
       migration:
         command: bun run migrate:deploy

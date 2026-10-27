@@ -21,39 +21,39 @@ try {
 function assertLocalTarget(label, value) {
   const { hostname } = new URL(value);
   const local = ['localhost', '127.0.0.1', '::1', '[::1]'].includes(hostname);
-  if (!local && process.env.RAKSS_E2E_ALLOW_REMOTE !== '1') {
+  if (!local && process.env.HR_WORKFLOW_E2E_ALLOW_REMOTE !== '1') {
     throw new Error(
       `Refusing to run the destructive UI lifecycle sweep against non-local ${label} ${value}. ` +
-        'It creates and deletes data. Use a local stack (default http://localhost:5173) or set RAKSS_E2E_ALLOW_REMOTE=1 to override.',
+        'It creates and deletes data. Use a local stack (default http://localhost:5173) or set HR_WORKFLOW_E2E_ALLOW_REMOTE=1 to override.',
     );
   }
 }
 
-const adminEmail = process.env.RAKSS_ADMIN_EMAIL || 'admin@hrflow.lab.novadev.tech';
-const adminPassword = process.env.RAKSS_ADMIN_PASSWORD;
-const baseUrl = process.env.RAKSS_ADMIN_URL || 'http://localhost:5173';
-assertLocalTarget('RAKSS_ADMIN_URL', baseUrl);
+const adminEmail = process.env.HR_WORKFLOW_ADMIN_EMAIL || 'admin@hrflow.lab.novadev.tech';
+const adminPassword = process.env.HR_WORKFLOW_ADMIN_PASSWORD;
+const baseUrl = process.env.HR_WORKFLOW_ADMIN_URL || 'http://localhost:5173';
+assertLocalTarget('HR_WORKFLOW_ADMIN_URL', baseUrl);
 const executablePath = process.env.PLAYWRIGHT_MCP_EXECUTABLE_PATH || process.env.PLAYWRIGHT_CHROME;
 
 await mkdir('output/playwright', { recursive: true });
 
 if (!adminPassword) {
   await writeFile(
-    'output/playwright/rakss-ui-lifecycle-proof.json',
+    'output/playwright/hr-workflow-ui-lifecycle-proof.json',
     `${JSON.stringify({
       ok: false,
       blocked: true,
-      reason: 'RAKSS_ADMIN_PASSWORD is required',
+      reason: 'HR_WORKFLOW_ADMIN_PASSWORD is required',
       baseUrl,
       adminEmail,
       checkedAt: new Date().toISOString(),
     }, null, 2)}\n`,
   );
-  throw new Error('RAKSS_ADMIN_PASSWORD is required');
+  throw new Error('HR_WORKFLOW_ADMIN_PASSWORD is required');
 }
 
 const sweepSource = await readFile(
-  new URL('./rakss-ui-lifecycle-sweep.js', import.meta.url),
+  new URL('./hr-workflow-ui-lifecycle-sweep.js', import.meta.url),
   'utf8',
 );
 const sweep = eval(sweepSource);
@@ -75,13 +75,13 @@ try {
     proof = await sweep(page);
   } catch (error) {
     // Keep what the user would have seen at the failing step.
-    await page.screenshot({ path: 'output/playwright/rakss-ui-lifecycle-failure.png', fullPage: true }).catch(() => {});
+    await page.screenshot({ path: 'output/playwright/hr-workflow-ui-lifecycle-failure.png', fullPage: true }).catch(() => {});
     const alerts = await page.getByRole('alert').allInnerTexts().catch(() => []);
     if (alerts.length) console.error(`Visible alerts at failure: ${alerts.join(' | ')}`);
     throw error;
   }
   await writeFile(
-    'output/playwright/rakss-ui-lifecycle-proof.json',
+    'output/playwright/hr-workflow-ui-lifecycle-proof.json',
     `${JSON.stringify(proof, null, 2)}\n`,
   );
   console.log(JSON.stringify(proof, null, 2));

@@ -22,7 +22,7 @@ describe('Policy Drizzle migration', () => {
   let previousStorageDir: string | undefined;
 
   const suffix = `${Date.now()}${Math.floor(Math.random() * 1000)}`;
-  const storageDir = path.join('/tmp', `rakss-policy-drizzle-${suffix}`);
+  const storageDir = path.join('/tmp', `hr-workflow-policy-drizzle-${suffix}`);
   const adminUser: AuthenticatedUser = {
     userId: `policy-admin-${suffix}`,
     email: `policy.admin.${suffix}@example.test`,
@@ -156,7 +156,7 @@ describe('Policy file upload and serving', () => {
   let previousStorageDir: string | undefined;
 
   const suffix = `${Date.now()}${Math.floor(Math.random() * 1000)}`;
-  const storageDir = path.join('/tmp', `rakss-policy-files-${suffix}`);
+  const storageDir = path.join('/tmp', `hr-workflow-policy-files-${suffix}`);
   const adminUser: AuthenticatedUser = {
     userId: `policy-files-admin-${suffix}`,
     email: `policy.files.${suffix}@example.test`,

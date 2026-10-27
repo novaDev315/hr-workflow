@@ -54,7 +54,7 @@ export async function createFirstAdminAccount(
 ): Promise<string | null> {
   return database.transaction(async (tx) => {
     await tx.execute(
-      sql`SELECT pg_advisory_xact_lock(hashtext('rakss:first-admin-bootstrap'))`,
+      sql`SELECT pg_advisory_xact_lock(hashtext('hr-workflow:first-admin-bootstrap'))`,
     );
 
     const [countRow] = await tx.select({ count: count() }).from(users);

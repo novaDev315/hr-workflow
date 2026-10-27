@@ -796,7 +796,7 @@ The recommended implementation order is:
 
 This plan was written against:
 
-- repository: `rakss`
+- repository: `hr-workflow`
 - branch: `claude/implement-system-01HeGHJxwgz56FUxf6nAnzEr`
 - status: implementation branch with architecture drift and partial feature slices
 

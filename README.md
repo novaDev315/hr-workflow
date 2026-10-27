@@ -24,7 +24,7 @@ Legacy `services/*`, `apps/api-gateway`, and the root `web-admin/` directory hav
 
 ```bash
 git clone <your-repo-url>
-cd rakss
+cd hr-workflow
 
 bun install
 cp .env.example .env   # then set JWT_SECRET
@@ -81,7 +81,7 @@ The main backend settings are:
 - `ALLOWED_ORIGINS`
 - `VITE_GRAPHQL_ENDPOINT`
 - `EXPO_PUBLIC_GRAPHQL_ENDPOINT`
-- `RAKSS_ADMIN_EMAIL` / `RAKSS_ADMIN_PASSWORD` (first admin seeding), `BOOTSTRAP_ALLOWED`, `TRUST_PROXY`
+- `HR_WORKFLOW_ADMIN_EMAIL` / `HR_WORKFLOW_ADMIN_PASSWORD` (first admin seeding), `BOOTSTRAP_ALLOWED`, `TRUST_PROXY`
 
 `JWT_SECRET` must be set (32+ random characters) and `ALLOWED_ORIGINS` is required in production. The web-admin dev server proxies `/graphql` to `http://localhost:4001` (override with `VITE_DEV_API_PROXY`).
 
@@ -92,7 +92,7 @@ Homelab runtime and test secrets are resolved through the project contract in
 for deploys or shared test runs; use NexOS to render the target environment:
 
 ```bash
-nexos secrets exec --project /home/nova/projects/work/rakss --env test -- bun run test:backend
+nexos secrets exec --project /home/nova/projects/work/hr-workflow --env test -- bun run test:backend
 ```
 
 ## Database Migrations
