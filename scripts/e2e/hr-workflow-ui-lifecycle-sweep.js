@@ -638,6 +638,24 @@
   await page.setViewportSize({ width: 1280, height: 900 });
   await page.screenshot({ path: 'output/playwright/hr-workflow-ui-lifecycle-final.png', fullPage: true });
 
+  /* ---------- Account panel and sign-out (last: it ends the session) ---------- */
+
+  await page.getByRole('button', { name: /^Account:/ }).click();
+  await page.getByRole('menu').getByText(adminEmail).waitFor();
+  check('account panel opens from the sidebar');
+  await page.getByRole('menuitem', { name: 'Sign out' }).click();
+  await page.waitForURL(`${baseUrl}/login`);
+  // The cache reset used to cancel the sign-in page's first query, leaving
+  // "The sign-in service is not reachable." and a disabled Sign in button.
+  await page.waitForTimeout(1500);
+  if (await page.getByText('The sign-in service is not reachable.').count()) {
+    throw new Error('Sign-in page shows an error right after sign-out');
+  }
+  if (!(await page.getByRole('button', { name: 'Sign in' }).isEnabled())) {
+    throw new Error('Sign in button disabled right after sign-out');
+  }
+  check('sign out lands on a working sign-in page');
+
   return proof;
 
   // A Tuesday at least `offsetDays` ahead (plus `spanDays`), so leave always

@@ -5,9 +5,7 @@ import {
   Building2,
   Calendar,
   Clock3,
-  KeyRound,
   LayoutDashboard,
-  LogOut,
   Menu,
   Users,
   Wallet,
@@ -20,7 +18,8 @@ import { BrandMark } from "@/components/brand-mark";
 import { Button } from "@/components/ui/button";
 import { Toaster } from "@/components/ui/toaster";
 import { clearAdminSession, useAdminSession } from "@/lib/auth-session";
-import { formatDay, formatStatus } from "@/lib/format";
+import { formatDay } from "@/lib/format";
+import { AccountMenu } from "./account-menu";
 import { ChangePasswordSheet } from "./change-password-sheet";
 import {
   WorkspaceSwitcher,
@@ -130,15 +129,6 @@ export function DashboardLayout() {
     navigate("/login");
   };
 
-  const initials = account?.fullName
-    ? account.fullName
-        .split(" ")
-        .slice(0, 2)
-        .map((part) => part[0] ?? "")
-        .join("")
-        .toUpperCase()
-    : "RA";
-
   return (
     <div className="app-layout min-h-screen lg:grid lg:grid-cols-[252px_minmax(0,1fr)]">
       {mobileNavOpen ? (
@@ -194,36 +184,12 @@ export function DashboardLayout() {
 
         <div className="border-t border-border/70 p-3">
           {account ? (
-            <div className="flex items-center gap-3 rounded-xl px-2 py-2">
-              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-primary/12 text-xs font-bold text-primary">
-                {initials}
-              </div>
-              <div className="min-w-0 flex-1">
-                <p className="truncate text-sm font-semibold text-foreground">
-                  {account.fullName}
-                </p>
-                <p className="mt-0.5 truncate text-xs text-muted-foreground">
-                  {formatStatus(account.roles[0] ?? "ADMIN")}
-                </p>
-              </div>
-              <Button
-                aria-label="Change password"
-                onClick={() => setPasswordOpen(true)}
-                size="icon"
-                title="Change password"
-                variant="ghost"
-              >
-                <KeyRound className="h-4 w-4" />
-              </Button>
-              <Button
-                aria-label="Log out"
-                onClick={handleLogout}
-                size="icon"
-                variant="ghost"
-              >
-                <LogOut className="h-4 w-4" />
-              </Button>
-            </div>
+            <AccountMenu
+              account={account}
+              onChangePassword={() => setPasswordOpen(true)}
+              onSignOut={handleLogout}
+              variant="sidebar"
+            />
           ) : null}
         </div>
       </aside>
@@ -252,13 +218,12 @@ export function DashboardLayout() {
 
           <WorkspaceSwitcher items={navigation} />
           {account ? (
-            <div
-              aria-label={`Signed in as ${account.fullName}`}
-              className="hidden h-9 w-9 shrink-0 items-center justify-center rounded-full bg-primary text-xs font-bold text-primary-foreground sm:flex lg:hidden"
-              title={account.fullName}
-            >
-              {initials}
-            </div>
+            <AccountMenu
+              account={account}
+              onChangePassword={() => setPasswordOpen(true)}
+              onSignOut={handleLogout}
+              variant="avatar"
+            />
           ) : null}
         </header>
 
