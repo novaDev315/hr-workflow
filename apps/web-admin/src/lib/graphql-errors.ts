@@ -80,12 +80,25 @@ function readNetworkError(networkError: unknown): string | null {
   return NETWORK_MESSAGE
 }
 
+const CANCELLED_MESSAGE = 'The request was interrupted. Please try again.'
+
+// Apollo cancels queries in flight when its cache is cleared (sign-in and
+// sign-out). The cancellation is a ts-invariant error, wrapped as the network
+// error, and in production builds its message is only a go.apollo.dev link.
+export function isRequestCancelled(error: unknown): boolean {
+  if (!error || typeof error !== 'object') return false
+  const isInvariant = (value: unknown) =>
+    typeof value === 'object' && value !== null && (value as { name?: unknown }).name === 'Invariant Violation'
+  return isInvariant(error) || isInvariant((error as ApolloLikeError).networkError)
+}
+
 export function readableError(
   error: unknown,
   fallback = 'Something went wrong. Please try again.',
 ): string {
   if (!error) return fallback
   if (typeof error === 'string') return isNoise(error) ? fallback : error
+  if (isRequestCancelled(error)) return CANCELLED_MESSAGE
 
   const apolloError = error as ApolloLikeError
 

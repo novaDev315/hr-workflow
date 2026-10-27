@@ -1,4 +1,3 @@
-import { useApolloClient } from "@apollo/client";
 import {
   BarChart3,
   BookOpen,
@@ -98,7 +97,6 @@ const settingsNavigation: WorkspaceNavigationItem[] = [
 const navigation = [...primaryNavigation, ...settingsNavigation];
 
 export function DashboardLayout() {
-  const apolloClient = useApolloClient();
   const location = useLocation();
   const navigate = useNavigate();
   const { account } = useAdminSession();
@@ -128,8 +126,7 @@ export function DashboardLayout() {
   }, [mobileNavOpen]);
 
   const handleLogout = async () => {
-    clearAdminSession();
-    await apolloClient.clearStore();
+    await clearAdminSession();
     navigate("/login");
   };
 

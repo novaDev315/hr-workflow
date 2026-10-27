@@ -66,7 +66,7 @@ function App() {
 
   useEffect(() => {
     if (isAuthenticated && !hasAccess) {
-      clearAdminSession()
+      void clearAdminSession()
     }
   }, [hasAccess, isAuthenticated])
 

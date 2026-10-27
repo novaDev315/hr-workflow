@@ -186,7 +186,7 @@ const errorLink = onError(({ graphQLErrors, networkError, operation }) => {
   }
 
   // The server already rejected this token; just clear local state.
-  clearAdminSession({ serverLogout: false });
+  void clearAdminSession({ serverLogout: false });
 
   if (typeof window !== "undefined" && window.location.pathname !== "/login") {
     window.location.replace("/login");
@@ -235,5 +235,5 @@ registerSessionTeardown((token) => {
     }
   }
 
-  void apolloClient.clearStore().catch(() => undefined);
+  return apolloClient.clearStore().catch(() => undefined);
 });

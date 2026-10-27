@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { gql, useApolloClient, useMutation, useQuery } from "@apollo/client";
 import { Loader2 } from "lucide-react";
@@ -19,7 +19,7 @@ import {
   hasAdminPanelAccess,
   persistAdminSession,
 } from "@/lib/auth-session";
-import { readableError } from "@/lib/graphql-errors";
+import { isRequestCancelled, readableError } from "@/lib/graphql-errors";
 
 const AUTH_BOOTSTRAP_STATUS = gql`
   query AuthBootstrapStatus {
@@ -96,6 +96,18 @@ export function LoginPage() {
     : "Sign in with your administrator account to continue.";
   const canSubmit = !loading && !bootstrapStatusLoading && !bootstrapStatusError;
 
+  // A cache clear can cancel the status check as the page mounts. That is not
+  // an outage, so retry once quietly instead of showing an error.
+  const cancelledRetried = useRef(false);
+  useEffect(() => {
+    if (!isRequestCancelled(bootstrapStatusError) || cancelledRetried.current) return;
+    cancelledRetried.current = true;
+    void refetchBootstrapStatus().catch(() => undefined);
+  }, [bootstrapStatusError, refetchBootstrapStatus]);
+  const showBootstrapError =
+    Boolean(bootstrapStatusError) &&
+    !(isRequestCancelled(bootstrapStatusError) && !cancelledRetried.current);
+
   useEffect(() => {
     document.title = bootstrapRequired
       ? "Set up - HRFlow Pro"
@@ -139,14 +151,16 @@ export function LoginPage() {
       if (!bootstrapRequired && !hasAdminPanelAccess(payload.account)) {
         // Store briefly so clearAdminSession can revoke the new server session.
         persistAdminSession(payload);
-        clearAdminSession();
+        void clearAdminSession();
         throw new Error(
           "This account can use the mobile app. The admin workspace is for admins, HR admins, managers and supervisors.",
         );
       }
 
-      persistAdminSession(payload);
+      // Clear before storing the session: storing it mounts the dashboard,
+      // and a later clear would cancel the dashboard's first queries.
       await apolloClient.clearStore();
+      persistAdminSession(payload);
       navigate("/");
     } catch (submitError) {
       setError(readableError(submitError, "Sign-in failed. Please try again."));
@@ -195,7 +209,7 @@ export function LoginPage() {
           </CardHeader>
 
           <CardContent className="space-y-4 p-6 pt-0 sm:p-7 sm:pt-0">
-            {bootstrapStatusError ? (
+            {showBootstrapError ? (
               <Notice tone="warning">
                 <div>
                   <p className="font-semibold">The sign-in service is not reachable.</p>

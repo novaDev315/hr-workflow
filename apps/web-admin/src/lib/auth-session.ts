@@ -63,7 +63,7 @@ function storageRemove(key: string) {
 
 // Server/cache teardown registered by the Apollo client module. Kept as a
 // registration hook so this module does not import the client (no cycle).
-type SessionTeardown = (token: string | null, reason: 'logout' | 'expired') => void
+type SessionTeardown = (token: string | null, reason: 'logout' | 'expired') => Promise<unknown> | void
 let sessionTeardown: SessionTeardown | null = null
 
 export function registerSessionTeardown(teardown: SessionTeardown) {
@@ -127,13 +127,18 @@ function removeStoredSession() {
  * Ends the admin session: tells the server to revoke it (best effort, never
  * blocks), clears the Apollo cache, and removes the stored token/account.
  * Pass `{ serverLogout: false }` when the server already rejected the token.
+ *
+ * The change is announced only after the cache is cleared. Clearing cancels
+ * every query in flight, so announcing first would let the sign-in page mount
+ * and have its first query cancelled.
  */
-export function clearAdminSession(options: { serverLogout?: boolean } = {}) {
+export function clearAdminSession(options: { serverLogout?: boolean } = {}): Promise<void> {
   const token = readAuthToken()
   removeStoredSession()
 
+  let teardown: Promise<unknown> | void = undefined
   try {
-    sessionTeardown?.(
+    teardown = sessionTeardown?.(
       options.serverLogout === false ? null : token,
       options.serverLogout === false ? 'expired' : 'logout',
     )
@@ -141,7 +146,9 @@ export function clearAdminSession(options: { serverLogout?: boolean } = {}) {
     // teardown is best effort
   }
 
-  emitSessionChange()
+  return Promise.resolve(teardown)
+    .catch(() => undefined)
+    .then(emitSessionChange)
 }
 
 function subscribeToAdminSession(onStoreChange: () => void) {
