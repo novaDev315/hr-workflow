@@ -4,6 +4,18 @@ import {
   clearAdminSession,
   useAdminSession,
 } from './lib/auth-session'
+import {
+  AccountSettingsPage,
+  AttendancePage,
+  DashboardPage,
+  EmployeesPage,
+  LeavePage,
+  OrganisationPage,
+  PayrollPage,
+  PolicyDocumentsPage,
+  RecruitmentPage,
+  ReportsPage,
+} from './pages/lazy-pages'
 
 const LoginPage = lazy(() =>
   import('./pages/LoginPage').then((module) => ({ default: module.LoginPage }))
@@ -11,54 +23,6 @@ const LoginPage = lazy(() =>
 const DashboardLayout = lazy(() =>
   import('./components/layouts/DashboardLayout').then((module) => ({
     default: module.DashboardLayout,
-  }))
-)
-const DashboardPage = lazy(() =>
-  import('./pages/DashboardPage').then((module) => ({
-    default: module.DashboardPage,
-  }))
-)
-const EmployeesPage = lazy(() =>
-  import('./pages/EmployeesPage').then((module) => ({
-    default: module.EmployeesPage,
-  }))
-)
-const OrganisationPage = lazy(() =>
-  import('./pages/OrganisationPage').then((module) => ({
-    default: module.OrganisationPage,
-  }))
-)
-const AttendancePage = lazy(() =>
-  import('./pages/AttendancePage').then((module) => ({
-    default: module.AttendancePage,
-  }))
-)
-const LeavePage = lazy(() =>
-  import('./pages/LeavePage').then((module) => ({ default: module.LeavePage }))
-)
-const PayrollPage = lazy(() =>
-  import('./pages/PayrollPage').then((module) => ({
-    default: module.PayrollPage,
-  }))
-)
-const RecruitmentPage = lazy(() =>
-  import('./pages/RecruitmentPage').then((module) => ({
-    default: module.RecruitmentPage,
-  }))
-)
-const ReportsPage = lazy(() =>
-  import('./pages/ReportsPage').then((module) => ({
-    default: module.ReportsPage,
-  }))
-)
-const PolicyDocumentsPage = lazy(() =>
-  import('./pages/PolicyDocumentsPage').then((module) => ({
-    default: module.PolicyDocumentsPage,
-  }))
-)
-const AccountSettingsPage = lazy(() =>
-  import('./pages/AccountSettingsPage').then((module) => ({
-    default: module.AccountSettingsPage,
   }))
 )
 

@@ -12,7 +12,7 @@ import {
   Wallet,
   X,
 } from "lucide-react";
-import { useEffect, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
 import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 
 import { BrandMark } from "@/components/brand-mark";
@@ -20,6 +20,7 @@ import { Button } from "@/components/ui/button";
 import { Toaster } from "@/components/ui/toaster";
 import { clearAdminSession, useAdminSession } from "@/lib/auth-session";
 import { formatDay } from "@/lib/format";
+import { preloadAllPages, preloadPage } from "@/pages/lazy-pages";
 import { AccountMenu } from "./account-menu";
 import {
   WorkspaceSwitcher,
@@ -124,6 +125,8 @@ export function DashboardLayout() {
   useEffect(() => {
     setMobileNavOpen(false);
   }, [location.pathname]);
+
+  useEffect(() => preloadAllPages(), []);
 
   useEffect(() => {
     document.body.style.overflow = mobileNavOpen ? "hidden" : "";
@@ -236,10 +239,27 @@ export function DashboardLayout() {
         </header>
 
         <main className="mx-auto w-full max-w-[1320px] space-y-5 px-4 py-5 sm:px-6 sm:py-7 lg:px-8">
-          <Outlet />
+          {/* Only the page area waits for a page that is still downloading;
+              the sidebar and header stay on screen. */}
+          <Suspense fallback={<PageLoadingFallback />}>
+            <Outlet />
+          </Suspense>
         </main>
       </div>
       <Toaster />
+    </div>
+  );
+}
+
+function PageLoadingFallback() {
+  return (
+    <div aria-busy="true" aria-label="Loading page" className="space-y-5 motion-safe:animate-pulse" role="status">
+      <div className="space-y-2">
+        <div className="h-9 w-64 max-w-full rounded-lg bg-secondary" />
+        <div className="h-4 w-96 max-w-full rounded bg-secondary/70" />
+      </div>
+      <div className="h-40 rounded-2xl border border-border/60 bg-card/70" />
+      <div className="h-64 rounded-2xl border border-border/60 bg-card/70" />
     </div>
   );
 }
@@ -281,6 +301,8 @@ function NavItem({
   return (
     <NavLink
       end={item.href === "/"}
+      onFocus={() => preloadPage(item.href)}
+      onMouseEnter={() => preloadPage(item.href)}
       to={item.href}
       className={({ isActive }) =>
         [
