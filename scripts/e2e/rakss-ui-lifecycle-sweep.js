@@ -348,7 +348,8 @@
   check('ui approve leave');
 
   await page.getByRole('searchbox', { name: 'Search leave history' }).fill(employeeName);
-  await page.getByText('Showing 2 of').waitFor();
+  // "2 requests" when nothing else is on record (a fresh stack).
+  await page.getByText(/^(Showing 2 of|2 requests$)/).waitFor();
   check('ui search leave history');
 
   // Over-balance approval. Creating a request never exceeds the allowance, so
@@ -592,6 +593,23 @@
   if (!closedRequisitionBlockedApplication) throw new Error('Closed requisition allowed a new application');
   check('closed recruitment requisition blocks applications');
 
+  /* ---------- Phone layout (before clean-up: a fresh stack needs active org data) ---------- */
+
+  await page.setViewportSize({ width: 390, height: 844 });
+  await goto('/employees');
+  if (await page.getByRole('region', { name: 'People', exact: true }).count()) {
+    throw new Error('People table rendered on a phone; expected cards');
+  }
+  await page.getByRole('button', { name: 'Filters' }).click();
+  await page.locator('#people-department').waitFor({ state: 'visible' });
+  check('mobile people uses cards and collapsible filters');
+  await goto('/');
+  await page.getByLabel('Open navigation').click();
+  await page.getByRole('button', { name: 'Close navigation' }).last().waitFor();
+  await page.screenshot({ path: 'output/playwright/rakss-ui-lifecycle-mobile-nav.png', fullPage: true });
+  check('mobile nav open state');
+  await page.setViewportSize({ width: 1280, height: 900 });
+
   /* ---------- Clean-up through the UI ---------- */
 
   await goto('/employees');
@@ -617,21 +635,6 @@
   await page.getByRole('button', { name: 'Export PDF' }).waitFor({ state: 'visible' });
   check('ui export reports pdf button');
 
-  /* ---------- Phone layout ---------- */
-
-  await page.setViewportSize({ width: 390, height: 844 });
-  await goto('/employees');
-  if (await page.getByRole('region', { name: 'People', exact: true }).count()) {
-    throw new Error('People table rendered on a phone; expected cards');
-  }
-  await page.getByRole('button', { name: 'Filters' }).click();
-  await page.locator('#people-department').waitFor({ state: 'visible' });
-  check('mobile people uses cards and collapsible filters');
-  await goto('/');
-  await page.getByLabel('Open navigation').click();
-  await page.getByRole('button', { name: 'Close navigation' }).last().waitFor();
-  await page.screenshot({ path: 'output/playwright/rakss-ui-lifecycle-mobile-nav.png', fullPage: true });
-  check('mobile nav open state');
   await page.setViewportSize({ width: 1280, height: 900 });
   await page.screenshot({ path: 'output/playwright/rakss-ui-lifecycle-final.png', fullPage: true });
 
