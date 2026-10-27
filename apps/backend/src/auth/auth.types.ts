@@ -132,6 +132,20 @@ export class RevokeStaffAccessInput {
 }
 
 @InputType()
+export class ChangePasswordInput {
+  @Field()
+  @IsString()
+  @MaxLength(200)
+  currentPassword: string;
+
+  // bcrypt only uses the first 72 bytes.
+  @Field()
+  @MinLength(8)
+  @MaxLength(72)
+  newPassword: string;
+}
+
+@InputType()
 export class BootstrapAdminInput {
   @Field()
   @IsEmail()

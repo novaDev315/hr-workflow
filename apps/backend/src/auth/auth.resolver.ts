@@ -6,6 +6,7 @@ import {
   AccountProfileType,
   AccountSessionType,
   BootstrapAdminInput,
+  ChangePasswordInput,
   CreateEmployeeAccountInput,
   LoginInput,
   ProvisionStaffAccessInput,
@@ -69,6 +70,15 @@ export class AuthResolver {
     @Args('input') input: RevokeStaffAccessInput,
   ) {
     return this.authService.revokeStaffAccess(currentUser, input);
+  }
+
+  @UseGuards(GqlAuthGuard)
+  @Mutation(() => AccountSessionType, { name: 'changePassword' })
+  async changePassword(
+    @CurrentUser() currentUser: AuthenticatedUser,
+    @Args('input') input: ChangePasswordInput,
+  ) {
+    return this.authService.changePassword(currentUser, input);
   }
 
   @UseGuards(GqlAuthGuard)

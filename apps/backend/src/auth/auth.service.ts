@@ -20,6 +20,7 @@ import {
 import { AuthenticatedUser } from '../common/current-user.decorator';
 import {
   BootstrapAdminInput,
+  ChangePasswordInput,
   CreateEmployeeAccountInput,
   LoginInput,
   ProvisionStaffAccessInput,
@@ -168,6 +169,62 @@ export class AuthService {
     }
 
     return true;
+  }
+
+  /**
+   * Changes the signed-in user's own password. Wrong current passwords count
+   * toward the login limit for that email. Every older token is revoked and a
+   * fresh session is returned so the caller stays signed in.
+   */
+  async changePassword(currentUser: AuthenticatedUser, input: ChangePasswordInput) {
+    const user = await this.getUserWithRolesById(currentUser.userId);
+
+    if (!user || !user.isActive) {
+      throw new UnauthorizedException('Invalid or expired session');
+    }
+
+    const limiterEmail = user.email.trim().toLowerCase();
+    this.loginLimiter.assertAllowed(limiterEmail, null);
+
+    if (!(await bcrypt.compare(input.currentPassword, user.passwordHash))) {
+      this.loginLimiter.recordFailure(limiterEmail, null);
+      throw new BadRequestException('Current password is incorrect');
+    }
+
+    // bcrypt ignores everything after 72 bytes; MaxLength counts characters.
+    if (Buffer.byteLength(input.newPassword, 'utf8') > 72) {
+      throw new BadRequestException('newPassword: must be at most 72 bytes');
+    }
+
+    if (input.newPassword === input.currentPassword) {
+      throw new BadRequestException('Choose a new password that is different from the current one');
+    }
+
+    const passwordHash = await bcrypt.hash(input.newPassword, 10);
+    // Guard on the old hash and session version so a concurrent change,
+    // logout or revoke can't be silently overwritten.
+    const [updated] = await this.database.drizzle
+      .update(users)
+      .set({
+        passwordHash,
+        sessionVersion: sql`${users.sessionVersion} + 1`,
+        updatedAt: sql`NOW()`,
+      })
+      .where(
+        and(
+          eq(users.id, user.id),
+          eq(users.passwordHash, user.passwordHash),
+          eq(users.sessionVersion, user.sessionVersion),
+        ),
+      )
+      .returning({ sessionVersion: users.sessionVersion });
+
+    if (!updated) {
+      throw new ConflictException('Your account changed while saving. Sign in again and retry.');
+    }
+
+    this.loginLimiter.clearEmail(limiterEmail);
+    return this.buildAuthPayload({ ...user, passwordHash, sessionVersion: updated.sessionVersion });
   }
 
   async getCurrentUser(userId: string) {

@@ -423,6 +423,41 @@ describe('Auth session, role and login hardening', () => {
     expect(second.errors?.[0].extensions?.code).toBe('CONFLICT');
   });
 
+  it('changes the own password, revokes old tokens and keeps the caller signed in', async () => {
+    const CHANGE = `mutation($input: ChangePasswordInput!) { changePassword(input: $input) { accessToken account { id } } }`;
+    const user = await createUser('change-password', ['EMPLOYEE', 'HR_ADMIN']);
+    const oldToken = await tokenFor(user.email);
+    const otherToken = await tokenFor(user.email);
+
+    const wrong = await gql(CHANGE, { input: { currentPassword: 'WrongPass123!', newPassword: 'BrandNew123!' } }, oldToken);
+    expect(wrong.errors?.[0].message).toBe('Current password is incorrect');
+
+    const same = await gql(CHANGE, { input: { currentPassword: password, newPassword: password } }, oldToken);
+    expect(same.errors?.[0].message).toMatch(/different from the current one/);
+
+    const short = await gql(CHANGE, { input: { currentPassword: password, newPassword: 'short' } }, oldToken);
+    expect(short.errors?.[0].message).toMatch(/newPassword/);
+
+    // 40 accented characters pass MaxLength(72) but are 80 bytes; bcrypt would truncate.
+    const tooManyBytes = await gql(CHANGE, { input: { currentPassword: password, newPassword: 'é'.repeat(40) } }, oldToken);
+    expect(tooManyBytes.errors?.[0].message).toBe('newPassword: must be at most 72 bytes');
+
+    const anonymous = await gql(CHANGE,{ input: { currentPassword: password, newPassword: 'BrandNew123!' } });
+    expect(anonymous.data).toBeNull();
+
+    const changed = await gql(CHANGE, { input: { currentPassword: password, newPassword: 'BrandNew123!' } }, oldToken);
+    expect(changed.errors).toBeUndefined();
+    expect(changed.data.changePassword.account.id).toBe(user.id);
+    const newToken = changed.data.changePassword.accessToken as string;
+
+    expect((await gql(ME, undefined, newToken)).data.me.id).toBe(user.id);
+    expect((await gql(ME, undefined, oldToken)).data).toBeNull();
+    expect((await gql(ME, undefined, otherToken)).data).toBeNull();
+
+    expect((await login(user.email)).errors?.[0].message).toBe('Invalid credentials');
+    expect((await login(user.email, 'BrandNew123!')).errors).toBeUndefined();
+  });
+
   it('returns a readable validation message through GraphQL', async () => {
     const admin = await createUser('validator', ['EMPLOYEE', 'ADMIN']);
     const token = await tokenFor(admin.email);
