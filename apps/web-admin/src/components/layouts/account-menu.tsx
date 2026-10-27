@@ -1,6 +1,5 @@
 import * as DropdownMenu from '@radix-ui/react-dropdown-menu'
-import { ChevronsUpDown, KeyRound, LogOut, UserCog } from 'lucide-react'
-import { useRef } from 'react'
+import { ChevronsUpDown, LogOut, UserCog } from 'lucide-react'
 
 import type { StoredAdminAccount } from '@/lib/auth-session'
 import { formatStatus } from '@/lib/format'
@@ -21,26 +20,20 @@ function accountInitials(account: StoredAdminAccount) {
 const itemClass =
   'flex cursor-default select-none items-center gap-2.5 rounded-lg px-2.5 py-2 text-sm outline-none transition-colors data-[highlighted]:bg-secondary'
 
-// The signed-in account's panel: who you are, plus Account settings, Change
-// password and Sign out.
+// The signed-in account's panel: who you are, plus Account settings and Sign out.
 // `sidebar` is the full row in the sidebar footer; `avatar` is the compact
 // header button on tablet widths.
 export function AccountMenu({
   account,
   variant,
-  onChangePassword,
   onOpenSettings,
   onSignOut,
 }: {
   account: StoredAdminAccount
   variant: 'sidebar' | 'avatar'
-  onChangePassword: () => void
   onOpenSettings: () => void
   onSignOut: () => void
 }) {
-  // Opening the password sheet moves focus into it; don't pull focus back to
-  // the trigger when the menu closes.
-  const keepFocus = useRef(false)
   const initials = accountInitials(account)
   const roles = account.roles.length ? account.roles.map(formatStatus).join(', ') : formatStatus('ADMIN')
 
@@ -53,7 +46,7 @@ export function AccountMenu({
             className="flex w-full items-center gap-3 rounded-xl px-2 py-2 text-left transition-colors hover:bg-card/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring data-[state=open]:bg-card"
             type="button"
           >
-            <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-primary/12 text-xs font-bold text-primary">
+            <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-primary/10 text-xs font-bold text-primary">
               {initials}
             </span>
             <span className="min-w-0 flex-1">
@@ -81,10 +74,6 @@ export function AccountMenu({
             variant === 'sidebar' ? 'w-[var(--radix-dropdown-menu-trigger-width)] min-w-[220px]' : 'w-[260px]',
           )}
           collisionPadding={12}
-          onCloseAutoFocus={(event) => {
-            if (keepFocus.current) event.preventDefault()
-            keepFocus.current = false
-          }}
           side={variant === 'sidebar' ? 'top' : 'bottom'}
           sideOffset={6}
         >
@@ -97,16 +86,6 @@ export function AccountMenu({
           <DropdownMenu.Item className={cn(itemClass, 'text-foreground')} onSelect={onOpenSettings}>
             <UserCog className="h-4 w-4 shrink-0 opacity-70" />
             Account settings
-          </DropdownMenu.Item>
-          <DropdownMenu.Item
-            className={cn(itemClass, 'text-foreground')}
-            onSelect={() => {
-              keepFocus.current = true
-              onChangePassword()
-            }}
-          >
-            <KeyRound className="h-4 w-4 shrink-0 opacity-70" />
-            Change password
           </DropdownMenu.Item>
           <DropdownMenu.Item className={cn(itemClass, 'text-rose-800')} onSelect={onSignOut}>
             <LogOut className="h-4 w-4 shrink-0 opacity-70" />

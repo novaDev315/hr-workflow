@@ -21,7 +21,6 @@ import { Toaster } from "@/components/ui/toaster";
 import { clearAdminSession, useAdminSession } from "@/lib/auth-session";
 import { formatDay } from "@/lib/format";
 import { AccountMenu } from "./account-menu";
-import { ChangePasswordSheet } from "./change-password-sheet";
 import {
   WorkspaceSwitcher,
   type WorkspaceNavigationItem,
@@ -110,7 +109,6 @@ export function DashboardLayout() {
   const navigate = useNavigate();
   const { account } = useAdminSession();
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
-  const [passwordOpen, setPasswordOpen] = useState(false);
 
   const currentPage =
     navigation.find((item) =>
@@ -196,7 +194,6 @@ export function DashboardLayout() {
           {account ? (
             <AccountMenu
               account={account}
-              onChangePassword={() => setPasswordOpen(true)}
               onOpenSettings={() => navigate("/account")}
               onSignOut={handleLogout}
               variant="sidebar"
@@ -231,7 +228,6 @@ export function DashboardLayout() {
           {account ? (
             <AccountMenu
               account={account}
-              onChangePassword={() => setPasswordOpen(true)}
               onOpenSettings={() => navigate("/account")}
               onSignOut={handleLogout}
               variant="avatar"
@@ -243,7 +239,6 @@ export function DashboardLayout() {
           <Outlet />
         </main>
       </div>
-      <ChangePasswordSheet onOpenChange={setPasswordOpen} open={passwordOpen} />
       <Toaster />
     </div>
   );
