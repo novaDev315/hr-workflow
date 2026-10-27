@@ -12,7 +12,7 @@ import { DataTable, EmptyState, Td, Th, Tr } from '@/features/shared/data-table'
 import { readableError } from '@/lib/graphql-errors'
 import { OverflowMenu } from '@/features/shared/overflow-menu'
 import type { WorkSite } from '@/features/shared/reference-data'
-import { SideSheet } from '@/features/shared/side-sheet'
+import { FormDialog } from '@/features/shared/form-dialog'
 import { formatNumber, formatStatus, plural } from '@/lib/format'
 
 import {
@@ -253,7 +253,7 @@ export function SitesSection({
         </DataTable>
       )}
 
-      <SideSheet
+      <FormDialog
         description="People clock in and out when they are inside the radius around the centre point."
         footer={
           <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
@@ -322,7 +322,7 @@ export function SitesSection({
             {serverError ? <Notice tone="danger">{serverError}</Notice> : null}
           </form>
         ) : null}
-      </SideSheet>
+      </FormDialog>
       {confirmDialog}
     </div>
   )

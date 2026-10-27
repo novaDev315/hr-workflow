@@ -5,9 +5,10 @@ import { useRef, type ReactNode } from 'react'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 
-// Right-anchored drawer with a fixed header, scrolling body and a pinned
-// footer for the primary actions. Full width on phones.
-export function SideSheet({
+// Centered dialog with a fixed header, a scrolling body and a pinned footer
+// for the primary actions. It grows with its content and scrolls inside once
+// it reaches the screen height.
+export function FormDialog({
   open,
   onOpenChange,
   title,
@@ -26,7 +27,7 @@ export function SideSheet({
   children: ReactNode
   className?: string
 }) {
-  // Sheets open from state rather than a Radix trigger, so Radix has nothing
+  // Dialogs open from state rather than a Radix trigger, so Radix has nothing
   // to return focus to on close. Remember what had focus and go back to it.
   const returnFocus = useRef<HTMLElement | null>(null)
 
@@ -44,11 +45,11 @@ export function SideSheet({
             }
           }}
           onOpenAutoFocus={() => {
-            // Runs before focus moves into the sheet.
+            // Runs before focus moves into the dialog.
             returnFocus.current = document.activeElement instanceof HTMLElement ? document.activeElement : null
           }}
           className={cn(
-            'fixed inset-y-0 right-0 z-50 flex w-full max-w-[560px] flex-col border-l border-border/80 bg-card text-card-foreground shadow-[-24px_0_80px_rgba(39,30,20,0.18)] outline-none sm:inset-y-2 sm:right-2 sm:rounded-[1.2rem] sm:border',
+            'fixed left-1/2 top-1/2 z-50 flex max-h-[calc(100dvh-2rem)] w-[calc(100%-2rem)] max-w-[560px] -translate-x-1/2 -translate-y-1/2 flex-col rounded-[1.2rem] border border-border/80 bg-card text-card-foreground shadow-[0_24px_80px_rgba(39,30,20,0.22)] outline-none',
             className,
           )}
         >
@@ -74,9 +75,11 @@ export function SideSheet({
             </div>
             {header ? <div className="mt-4">{header}</div> : null}
           </div>
-          <div className="min-h-0 flex-1 overflow-y-auto px-4 py-5 sm:px-6">{children}</div>
+          <div className="min-h-0 overflow-y-auto px-4 py-5 sm:px-6">{children}</div>
           {footer ? (
-            <div className="shrink-0 border-t border-border/70 bg-[rgba(250,249,245,0.96)] px-4 py-3 sm:rounded-b-[1.2rem] sm:px-6">
+            <div
+              className="shrink-0 rounded-b-[1.2rem] border-t border-border/70 bg-[rgba(250,249,245,0.96)] px-4 py-3 sm:px-6"
+            >
               {footer}
             </div>
           ) : null}

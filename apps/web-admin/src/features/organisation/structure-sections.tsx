@@ -13,7 +13,7 @@ import { DataTable, EmptyState, Td, Th, Tr } from '@/features/shared/data-table'
 import { readableError } from '@/lib/graphql-errors'
 import { OverflowMenu } from '@/features/shared/overflow-menu'
 import type { Department, Designation } from '@/features/shared/reference-data'
-import { SideSheet } from '@/features/shared/side-sheet'
+import { FormDialog } from '@/features/shared/form-dialog'
 import { formatStatus, plural } from '@/lib/format'
 
 import {
@@ -204,7 +204,7 @@ export function DepartmentsSection({
         </DataTable>
       )}
 
-      <SideSheet
+      <FormDialog
         footer={
           <SheetFooter
             busy={createState.loading || updateState.loading}
@@ -249,7 +249,7 @@ export function DepartmentsSection({
             {error ? <Notice tone="danger">{error}</Notice> : null}
           </form>
         ) : null}
-      </SideSheet>
+      </FormDialog>
       {confirmDialog}
     </div>
   )
@@ -454,7 +454,7 @@ export function DesignationsSection({
         </DataTable>
       )}
 
-      <SideSheet
+      <FormDialog
         footer={
           <SheetFooter
             busy={createState.loading || updateState.loading}
@@ -520,7 +520,7 @@ export function DesignationsSection({
             {error ? <Notice tone="danger">{error}</Notice> : null}
           </form>
         ) : null}
-      </SideSheet>
+      </FormDialog>
       {confirmDialog}
     </div>
   )

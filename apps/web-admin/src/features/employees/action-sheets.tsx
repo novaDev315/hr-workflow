@@ -11,7 +11,7 @@ import {
   type Designation,
   type WorkSite,
 } from '@/features/shared/reference-data'
-import { SideSheet } from '@/features/shared/side-sheet'
+import { FormDialog } from '@/features/shared/form-dialog'
 import { formatStatus } from '@/lib/format'
 
 import { PayFields, ProfileFields, SignInFields, SiteFields } from './step-forms'
@@ -199,7 +199,7 @@ export function EmployeeActionSheet({
           : ''
 
   return (
-    <SideSheet
+    <FormDialog
       description={person ? `${person.fullName} · ${person.employeeNumber}` : undefined}
       footer={
         password ? (
@@ -287,6 +287,6 @@ export function EmployeeActionSheet({
         )
       ) : null}
       {confirmDialog}
-    </SideSheet>
+    </FormDialog>
   )
 }

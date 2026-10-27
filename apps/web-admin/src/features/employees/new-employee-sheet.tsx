@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button'
 import { Notice } from '@/components/ui/notice'
 import { readableError } from '@/lib/graphql-errors'
 import type { Department, Designation, WorkSite } from '@/features/shared/reference-data'
-import { SideSheet } from '@/features/shared/side-sheet'
+import { FormDialog } from '@/features/shared/form-dialog'
 import { StepIndicator, type StepState } from '@/features/shared/step-indicator'
 import { formatStatus } from '@/lib/format'
 
@@ -236,7 +236,7 @@ export function NewEmployeeSheet({
   )
 
   return (
-    <SideSheet
+    <FormDialog
       description={finished ? undefined : STEP_HELP[step]}
       footer={footer}
       header={<StepIndicator steps={stepStates} />}
@@ -310,7 +310,7 @@ export function NewEmployeeSheet({
           ) : null}
         </form>
       )}
-    </SideSheet>
+    </FormDialog>
   )
 }
 
