@@ -56,6 +56,11 @@ const PolicyDocumentsPage = lazy(() =>
     default: module.PolicyDocumentsPage,
   }))
 )
+const AccountSettingsPage = lazy(() =>
+  import('./pages/AccountSettingsPage').then((module) => ({
+    default: module.AccountSettingsPage,
+  }))
+)
 
 function AppLoadingFallback() {
   return <div className="min-h-screen bg-background text-foreground" />
@@ -104,6 +109,7 @@ function App() {
           <Route path="recruitment" element={<RecruitmentPage />} />
           <Route path="reports" element={<ReportsPage />} />
           <Route path="policies" element={<PolicyDocumentsPage />} />
+          <Route path="account" element={<AccountSettingsPage />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Route>
       </Routes>

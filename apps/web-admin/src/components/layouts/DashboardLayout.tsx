@@ -7,6 +7,7 @@ import {
   Clock3,
   LayoutDashboard,
   Menu,
+  UserCog,
   Users,
   Wallet,
   X,
@@ -93,7 +94,16 @@ const settingsNavigation: WorkspaceNavigationItem[] = [
   },
 ];
 
-const navigation = [...primaryNavigation, ...settingsNavigation];
+// Reached from the account panel; listed for the page title and "Go to a page".
+const accountNavigation: WorkspaceNavigationItem = {
+  name: "Account settings",
+  description: "Your profile, sign-in email, password and devices",
+  href: "/account",
+  icon: UserCog,
+  keywords: "profile my account email password sign out devices sessions",
+};
+
+const navigation = [...primaryNavigation, ...settingsNavigation, accountNavigation];
 
 export function DashboardLayout() {
   const location = useLocation();
@@ -187,6 +197,7 @@ export function DashboardLayout() {
             <AccountMenu
               account={account}
               onChangePassword={() => setPasswordOpen(true)}
+              onOpenSettings={() => navigate("/account")}
               onSignOut={handleLogout}
               variant="sidebar"
             />
@@ -221,6 +232,7 @@ export function DashboardLayout() {
             <AccountMenu
               account={account}
               onChangePassword={() => setPasswordOpen(true)}
+              onOpenSettings={() => navigate("/account")}
               onSignOut={handleLogout}
               variant="avatar"
             />

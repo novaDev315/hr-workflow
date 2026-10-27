@@ -1,5 +1,5 @@
 import * as DropdownMenu from '@radix-ui/react-dropdown-menu'
-import { ChevronsUpDown, KeyRound, LogOut } from 'lucide-react'
+import { ChevronsUpDown, KeyRound, LogOut, UserCog } from 'lucide-react'
 import { useRef } from 'react'
 
 import type { StoredAdminAccount } from '@/lib/auth-session'
@@ -21,18 +21,21 @@ function accountInitials(account: StoredAdminAccount) {
 const itemClass =
   'flex cursor-default select-none items-center gap-2.5 rounded-lg px-2.5 py-2 text-sm outline-none transition-colors data-[highlighted]:bg-secondary'
 
-// The signed-in account's panel: who you are, plus Change password and Sign out.
+// The signed-in account's panel: who you are, plus Account settings, Change
+// password and Sign out.
 // `sidebar` is the full row in the sidebar footer; `avatar` is the compact
 // header button on tablet widths.
 export function AccountMenu({
   account,
   variant,
   onChangePassword,
+  onOpenSettings,
   onSignOut,
 }: {
   account: StoredAdminAccount
   variant: 'sidebar' | 'avatar'
   onChangePassword: () => void
+  onOpenSettings: () => void
   onSignOut: () => void
 }) {
   // Opening the password sheet moves focus into it; don't pull focus back to
@@ -91,6 +94,10 @@ export function AccountMenu({
             <p className="mt-0.5 truncate text-xs text-muted-foreground">{roles}</p>
           </div>
           <DropdownMenu.Separator className="my-1 h-px bg-border/80" />
+          <DropdownMenu.Item className={cn(itemClass, 'text-foreground')} onSelect={onOpenSettings}>
+            <UserCog className="h-4 w-4 shrink-0 opacity-70" />
+            Account settings
+          </DropdownMenu.Item>
           <DropdownMenu.Item
             className={cn(itemClass, 'text-foreground')}
             onSelect={() => {
