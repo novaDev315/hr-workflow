@@ -53,6 +53,7 @@ describe('Mobile self-service flows', () => {
   let locationId = '';
   let employeeAccountId = '';
   let leaveRequestId = '';
+  let cancelledLeaveRequestId = '';
   let payrollPeriodId = '';
   let payrollMonth = '';
 
@@ -112,7 +113,10 @@ describe('Mobile self-service flows', () => {
       ids.adminAssignmentId,
       ...(employeeAccountId ? await getUserAssignmentIds(employeeAccountId) : []),
     ]);
-    await deleteByIds(leaveRequests, leaveRequestId ? [leaveRequestId] : []);
+    await deleteByIds(
+      leaveRequests,
+      [leaveRequestId, cancelledLeaveRequestId].filter(Boolean),
+    );
     await deleteByIds(attendanceRecordsTable, [
       ids.futureAttendanceId,
       ...(employeeId ? await getAttendanceRecordIds(employeeId) : []),
@@ -470,6 +474,44 @@ describe('Mobile self-service flows', () => {
     leaveRequestId = leaveRequest.requestLeave.id;
     expect(leaveRequest.requestLeave.status).toBe('PENDING');
     expect(leaveRequest.requestLeave.totalDays).toBe(2);
+
+    const nextMonday = new Date(firstMonday.getTime() + 7 * 24 * 60 * 60 * 1000)
+      .toISOString()
+      .slice(0, 10);
+    const toCancel = await graphqlRequest<{ requestLeave: { id: string } }>(
+      `
+        mutation RequestLeave($input: RequestLeaveInput!) {
+          requestLeave(input: $input) {
+            id
+          }
+        }
+      `,
+      {
+        input: {
+          employeeId,
+          leaveTypeId: selectedLeaveType.id,
+          startDate: nextMonday,
+          endDate: nextMonday,
+          reason: 'Integration leave request to cancel',
+        },
+      },
+      employeeToken,
+    );
+    cancelledLeaveRequestId = toCancel.requestLeave.id;
+
+    const cancelled = await graphqlRequest<{ cancelLeaveRequest: { id: string; status: string } }>(
+      `
+        mutation CancelLeave($input: CancelLeaveRequestInput!) {
+          cancelLeaveRequest(input: $input) {
+            id
+            status
+          }
+        }
+      `,
+      { input: { requestId: cancelledLeaveRequestId } },
+      employeeToken,
+    );
+    expect(cancelled.cancelLeaveRequest).toEqual({ id: cancelledLeaveRequestId, status: 'CANCELLED' });
 
     const leaveBalances = await graphqlRequest<{
       leaveBalances: Array<{

@@ -1,7 +1,10 @@
-import { useCallback, useMemo } from 'react'
+import { useCallback, useMemo, useRef } from 'react'
 import { StyleSheet, Text, View } from 'react-native'
+import { useMutation } from '@apollo/client'
 import { useFocusEffect, useRouter } from 'expo-router'
-import type { LeaveRequestRow } from '../../src/lib/queries'
+import { CANCEL_LEAVE_MUTATION, type LeaveRequestRow } from '../../src/lib/queries'
+import { friendlyErrorMessage } from '../../src/lib/errors'
+import { confirmAction } from '../../src/lib/session-actions'
 import { useEmployee } from '../../src/lib/use-employee'
 import { useLeaveData } from '../../src/lib/use-leave-data'
 import { useRefresh } from '../../src/lib/use-refresh'
@@ -33,6 +36,7 @@ export default function LeaveScreen() {
   )
 
   const flash = useFlash((state) => state.flash)
+  const showFlash = useFlash((state) => state.showFlash)
   const clearFlash = useFlash((state) => state.clearFlash)
   // The confirmation belongs to this visit: drop it when the employee moves on.
   useFocusEffect(useCallback(() => clearFlash, [clearFlash]))
@@ -47,6 +51,33 @@ export default function LeaveScreen() {
       ),
     [data],
   )
+
+  const [cancelLeave, { loading: cancelling }] = useMutation(CANCEL_LEAVE_MUTATION)
+  const cancellingRef = useRef(false)
+  const handleCancel = async (request: LeaveRequestRow) => {
+    if (cancellingRef.current) return
+    const confirmed = await confirmAction({
+      title: 'Cancel this request?',
+      message: `${request.leaveType.name}, ${formatDateRange(request.startDate, request.endDate)}. Your manager won't need to review it, and the days go back to your balance.`,
+      confirmLabel: 'Cancel request',
+      destructive: true,
+    })
+    if (!confirmed) return
+    cancellingRef.current = true
+    clearFlash()
+    try {
+      await cancelLeave({
+        variables: { input: { requestId: request.id } },
+        refetchQueries: ['MobileLeave', 'MobileLeavePending'],
+        awaitRefetchQueries: true,
+      })
+      showFlash(`Request cancelled: ${request.leaveType.name}, ${formatDateRange(request.startDate, request.endDate)}.`)
+    } catch (cancelError) {
+      showFlash(friendlyErrorMessage(cancelError, "We couldn't cancel this request. Please try again."), 'danger')
+    } finally {
+      cancellingRef.current = false
+    }
+  }
 
   const header = (
     <>
@@ -100,7 +131,14 @@ export default function LeaveScreen() {
               />
             </Card>
           ) : (
-            requests.map((request) => <RequestCard key={request.id} request={request} />)
+            requests.map((request) => (
+              <RequestCard
+                key={request.id}
+                request={request}
+                cancelling={cancelling}
+                onCancel={() => void handleCancel(request)}
+              />
+            ))
           )}
 
           <SectionTitle>Days left</SectionTitle>
@@ -150,7 +188,15 @@ function BalanceTile({ balance }: { balance: BalanceWithPending }) {
   )
 }
 
-function RequestCard({ request }: { request: LeaveRequestRow }) {
+function RequestCard({
+  request,
+  cancelling,
+  onCancel,
+}: {
+  request: LeaveRequestRow
+  cancelling: boolean
+  onCancel: () => void
+}) {
   const status = leaveStatus(request.status)
   const decided = request.status === 'APPROVED' || request.status === 'REJECTED'
   return (
@@ -176,6 +222,16 @@ function RequestCard({ request }: { request: LeaveRequestRow }) {
           ) : null}
           {request.decisionNotes ? <Text style={styles.decisionNote}>{request.decisionNotes}</Text> : null}
         </View>
+      ) : null}
+      {request.status === 'PENDING' ? (
+        <Button
+          label="Cancel request"
+          icon="close"
+          variant="secondary"
+          disabled={cancelling}
+          accessibilityHint="Withdraws this request before it is reviewed"
+          onPress={onCancel}
+        />
       ) : null}
     </Card>
   )

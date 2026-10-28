@@ -230,6 +230,13 @@ export class ReviewLeaveRequestInput {
 }
 
 @InputType()
+export class CancelLeaveRequestInput {
+  @Field()
+  @IsString()
+  requestId: string;
+}
+
+@InputType()
 export class LeaveRequestFilterInput {
   @Field({ nullable: true })
   @IsOptional()

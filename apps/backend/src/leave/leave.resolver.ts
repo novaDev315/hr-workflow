@@ -4,6 +4,7 @@ import { GqlAuthGuard } from '../auth/gql-auth.guard';
 import { CurrentUser, AuthenticatedUser } from '../common/current-user.decorator';
 import { LeaveService } from './leave.service';
 import {
+  CancelLeaveRequestInput,
   CreateLeaveTypeInput,
   DeactivateLeaveTypeInput,
   LeaveBalanceType,
@@ -79,5 +80,13 @@ export class LeaveResolver {
     @Args('input') input: ReviewLeaveRequestInput,
   ) {
     return this.leaveService.reviewLeaveRequest(currentUser, input);
+  }
+
+  @Mutation(() => LeaveRequestType, { name: 'cancelLeaveRequest' })
+  async cancelLeaveRequest(
+    @CurrentUser() currentUser: AuthenticatedUser,
+    @Args('input') input: CancelLeaveRequestInput,
+  ) {
+    return this.leaveService.cancelLeaveRequest(currentUser, input);
   }
 }

@@ -53,6 +53,7 @@ describe('Leave business rules', () => {
   const outsiderUserId = randomUUID();
   const limitedTypeId = randomUUID();
   const roomyTypeId = randomUUID();
+  const cancelTypeId = randomUUID();
 
   const asAdmin = (userId: string): AuthenticatedUser => ({
     userId,
@@ -120,6 +121,7 @@ describe('Leave business rules', () => {
     await database.drizzle.insert(leaveTypes).values([
       { id: limitedTypeId, code: `LIM_${suffix}`.slice(0, 20), name: `Limited ${suffix}`, defaultDays: 3 },
       { id: roomyTypeId, code: `ROOM_${suffix}`.slice(0, 20), name: `Roomy ${suffix}`, defaultDays: 200 },
+      { id: cancelTypeId, code: `CNL_${suffix}`.slice(0, 20), name: `Cancel ${suffix}`, defaultDays: 2 },
     ]);
   });
 
@@ -133,7 +135,7 @@ describe('Leave business rules', () => {
       await database.drizzle.delete(employees).where(inArray(employees.id, employeeIds));
       await database.drizzle
         .delete(leaveTypes)
-        .where(inArray(leaveTypes.id, [limitedTypeId, roomyTypeId]));
+        .where(inArray(leaveTypes.id, [limitedTypeId, roomyTypeId, cancelTypeId]));
       await database.drizzle.delete(designations).where(eq(designations.id, designationId));
       await database.drizzle.delete(departments).where(eq(departments.id, departmentId));
     }
@@ -387,5 +389,67 @@ describe('Leave business rules', () => {
       .from(leaveRequests)
       .where(eq(leaveRequests.employeeId, raceEmployeeId));
     expect(stored.filter((row) => row.id).length).toBeGreaterThanOrEqual(1);
+  });
+
+  it('lets an employee cancel their own pending request and frees its days', async () => {
+    const asEmployee: AuthenticatedUser = { ...selfReviewer, roles: ['EMPLOYEE'] };
+    const monday = marchMonday(15);
+    const request = {
+      employeeId: reviewerEmployeeId,
+      leaveTypeId: cancelTypeId,
+      startDate: iso(monday),
+      endDate: iso(monday + DAY),
+      reason: 'Plans changed',
+    };
+    const first = await leave.requestLeave(asEmployee, request);
+
+    const cancelled = await leave.cancelLeaveRequest(asEmployee, { requestId: first.id });
+    expect(cancelled.status).toBe('CANCELLED');
+    await expect(
+      leave.cancelLeaveRequest(asEmployee, { requestId: first.id }),
+    ).rejects.toThrow(ConflictException);
+
+    // The cancelled days no longer count toward the balance or the overlap check.
+    const balance = (await leave.leaveBalances(asEmployee, reviewerEmployeeId)).find(
+      (row) => row.leaveTypeId === cancelTypeId,
+    );
+    expect(balance?.pendingDays).toBe(0);
+    const again = await leave.requestLeave(asEmployee, request);
+    expect(again.status).toBe('PENDING');
+
+    const approved = await leave.reviewLeaveRequest(outsider, {
+      requestId: again.id,
+      status: 'APPROVED',
+    });
+    expect(approved.status).toBe('APPROVED');
+    await expect(
+      leave.cancelLeaveRequest(asEmployee, { requestId: again.id }),
+    ).rejects.toThrow('Only a pending leave request can be cancelled');
+  });
+
+  it("forbids cancelling another employee's leave request", async () => {
+    const asEmployee: AuthenticatedUser = { ...selfReviewer, roles: ['EMPLOYEE'] };
+    const monday = marchMonday(17);
+    const other = await leave.requestLeave(outsider, {
+      employeeId,
+      leaveTypeId: cancelTypeId,
+      startDate: iso(monday),
+      endDate: iso(monday),
+      reason: 'Not yours',
+    });
+
+    await expect(
+      leave.cancelLeaveRequest(asEmployee, { requestId: other.id }),
+    ).rejects.toThrow(ForbiddenException);
+    await expect(
+      leave.cancelLeaveRequest(asEmployee, { requestId: randomUUID() }),
+    ).rejects.toThrow('Leave request not found');
+
+    // An admin who manages the employee's leave can withdraw it for them.
+    const withdrawn = await leave.cancelLeaveRequest(outsider, { requestId: other.id });
+    expect(withdrawn.status).toBe('CANCELLED');
+    await expect(
+      leave.reviewLeaveRequest(outsider, { requestId: other.id, status: 'APPROVED' }),
+    ).rejects.toThrow('This request was cancelled');
   });
 });

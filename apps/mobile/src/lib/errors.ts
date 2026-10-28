@@ -50,6 +50,7 @@ const FRIENDLY_MESSAGES: Array<[RegExp, string | ((match: RegExpExecArray) => st
   [/contain no working days/i, 'These dates fall on a weekend. Choose dates with at least one working day.'],
   [/more than one year in the past/i, 'The first day can be at most one year ago.'],
   [/more than two years in the future/i, 'The last day can be at most two years from now.'],
+  [/only a pending leave request can be cancelled/i, 'This request was already reviewed, so it can no longer be cancelled. Pull down to refresh.'],
   [/^leave type not found or inactive$/i, 'This leave type is no longer offered. Choose another one.'],
 ]
 

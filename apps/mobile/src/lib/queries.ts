@@ -142,6 +142,15 @@ export const REQUEST_LEAVE_MUTATION = gql`
   }
 `
 
+export const CANCEL_LEAVE_MUTATION = gql`
+  mutation MobileCancelLeave($input: CancelLeaveRequestInput!) {
+    cancelLeaveRequest(input: $input) {
+      id
+      status
+    }
+  }
+`
+
 export const PAYSLIPS_QUERY = gql`
   query MobilePayslips($filter: PayslipFilterInput) {
     payslips(filter: $filter) {

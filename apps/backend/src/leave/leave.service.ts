@@ -39,6 +39,7 @@ import {
   resolveEmployeeVisibilityScope,
 } from '../common/access-control';
 import {
+  CancelLeaveRequestInput,
   CreateLeaveTypeInput,
   DeactivateLeaveTypeInput,
   LeaveRequestFilterInput,
@@ -359,6 +360,10 @@ export class LeaveService {
       throw new ForbiddenException('You cannot review your own leave request');
     }
 
+    if (existing.status === 'CANCELLED') {
+      throw new ConflictException('This request was cancelled');
+    }
+
     if (existing.status !== 'PENDING') {
       throw new ConflictException('This request was already reviewed');
     }
@@ -406,6 +411,49 @@ export class LeaveService {
         });
       }
     });
+
+    return this.findRequest(input.requestId);
+  }
+
+  /** Withdraws a pending request; the employee or anyone who manages their leave may do it. */
+  async cancelLeaveRequest(
+    currentUser: AuthenticatedUser,
+    input: CancelLeaveRequestInput,
+  ) {
+    const [existing] = await this.database.drizzle
+      .select({
+        id: leaveRequestsTable.id,
+        status: leaveRequestsTable.status,
+        employeeId: leaveRequestsTable.employeeId,
+      })
+      .from(leaveRequestsTable)
+      .where(eq(leaveRequestsTable.id, input.requestId))
+      .limit(1);
+
+    if (!existing) {
+      throw new NotFoundException('Leave request not found');
+    }
+
+    await this.resolveScopedEmployeeId(currentUser, existing.employeeId);
+
+    if (existing.status !== 'PENDING') {
+      throw new ConflictException('Only a pending leave request can be cancelled');
+    }
+
+    const updated = await this.database.drizzle
+      .update(leaveRequestsTable)
+      .set({ status: 'CANCELLED', updatedAt: sql`NOW()` })
+      .where(
+        and(
+          eq(leaveRequestsTable.id, input.requestId),
+          eq(leaveRequestsTable.status, 'PENDING'),
+        ),
+      )
+      .returning({ id: leaveRequestsTable.id });
+
+    if (updated.length === 0) {
+      throw new ConflictException('Only a pending leave request can be cancelled');
+    }
 
     return this.findRequest(input.requestId);
   }
