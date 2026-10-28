@@ -44,7 +44,13 @@ export function Toaster() {
           </ToastPrimitive.Root>
         )
       })}
-      <ToastPrimitive.Viewport className="pointer-events-none fixed inset-x-0 bottom-0 z-[60] m-0 flex list-none flex-col gap-2 p-4 outline-none sm:inset-x-auto sm:right-0 sm:w-[400px] sm:p-6" />
+      {/* A modal dialog hides everything outside itself from screen readers,
+          but the aria-hidden helper it uses always skips [aria-live] elements.
+          "off" keeps the toasts reachable while a dialog is open without a
+          second announcement: Radix already announces each toast itself. */}
+      <ToastPrimitive.Viewport
+        aria-live="off"
+        className="pointer-events-none fixed inset-x-0 bottom-0 z-[60] m-0 flex list-none flex-col gap-2 p-4 outline-none sm:inset-x-auto sm:right-0 sm:w-[400px] sm:p-6" />
     </ToastPrimitive.Provider>
   )
 }
