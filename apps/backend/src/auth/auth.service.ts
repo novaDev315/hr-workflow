@@ -90,6 +90,10 @@ function rethrowAccountConflict(error: unknown): never {
 const DUMMY_PASSWORD_HASH =
   '$2b$10$zds56RkHHnUzxVXNrm.ruOcKZErR2d.qTdjPR.mv0/ngtf9uaJlT2';
 
+// Longest email (RFC 5321) and a generous password cap for sign-in attempts.
+const MAX_LOGIN_EMAIL_LENGTH = 254;
+const MAX_LOGIN_PASSWORD_LENGTH = 1024;
+
 const HR_ADMIN_GRANTABLE_ROLES: AdminAccessRoleKey[] = ['MANAGER', 'SUPERVISOR'];
 
 // One answer for every taken email, so the form can't tell accounts from
@@ -151,6 +155,10 @@ export class AuthService {
 
   async login(input: LoginInput, clientIp: string | null = null) {
     const normalizedEmail = input.email.trim().toLowerCase();
+    // No account can match oversized input; refuse it before any lookup or hashing.
+    if (normalizedEmail.length > MAX_LOGIN_EMAIL_LENGTH || input.password.length > MAX_LOGIN_PASSWORD_LENGTH) {
+      throw new UnauthorizedException('Invalid credentials');
+    }
     this.loginLimiter.assertAllowed(normalizedEmail, clientIp);
 
     const user = await this.getUserWithRolesByEmail(normalizedEmail);

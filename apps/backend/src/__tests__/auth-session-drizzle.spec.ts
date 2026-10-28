@@ -200,6 +200,20 @@ describe('Auth session, role and login hardening', () => {
     expect(correct.errors?.[0].message).toBe('User account is inactive');
   });
 
+  it('answers malformed sign-in input like a wrong password', async () => {
+    for (const [email, pass] of [
+      ['not-an-email', password],
+      [emailFor('short-password'), 'short'],
+      ['', ''],
+      [`${'a'.repeat(300)}@example.test`, password],
+      [emailFor('huge-password'), 'x'.repeat(5000)],
+    ]) {
+      const result = await login(email, pass);
+      expect(result.data).toBeNull();
+      expect(result.errors?.[0].message).toBe('Invalid credentials');
+    }
+  });
+
   it('logout invalidates every outstanding token of the user', async () => {
     const user = await createUser('logout', ['EMPLOYEE']);
     const first = await tokenFor(user.email);

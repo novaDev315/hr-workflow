@@ -81,13 +81,15 @@ export class AuthBootstrapStatusType {
 }
 
 @InputType()
+// Only type checks here: a malformed email or short password gets the same
+// "Invalid credentials" answer as a wrong one (see AuthService.login).
 export class LoginInput {
   @Field()
-  @IsEmail()
+  @IsString()
   email: string;
 
   @Field()
-  @MinLength(8)
+  @IsString()
   password: string;
 }
 
