@@ -26,7 +26,13 @@ import {
   formatPeriodMonth,
   humanizeStatus,
 } from '../common/document-format';
-import { bidiIsolate, createSimplePdf, describeNameForPdf } from '../common/simple-pdf';
+import {
+  bidiIsolate,
+  createSimplePdf,
+  createSimplePdfDocuments,
+  describeNameForPdf,
+  SimplePdfDocument,
+} from '../common/simple-pdf';
 import {
   assertCompensationFitsMoneyLimit,
   calculatePayrollRun,
@@ -44,6 +50,29 @@ import {
   payslips as payslipsTable,
   users,
 } from '../database/drizzle/schema';
+
+interface PayslipExportRow {
+  periodMonth: string;
+  startDate: string;
+  endDate: string;
+  status: string;
+  expectedWorkdays: number;
+  attendedDays: number;
+  approvedLeaveDays: number;
+  paidDays: number;
+  unpaidDays: number;
+  baseSalary: number;
+  proratedBaseSalary: number;
+  allowanceAmount: number;
+  deductionAmount: number;
+  attendanceDeduction: number;
+  grossPay: number;
+  netPay: number;
+  currencyCode: string;
+  employeeNumber: string;
+  employeeName: string;
+  companyName: string | null;
+}
 
 interface EmployeeCompensationRow {
   id: string;
@@ -438,10 +467,62 @@ export class PayrollService {
       throw new NotFoundException('Payslip not found');
     }
 
+    const doc = this.buildPayslipDocument(row);
     const pdf = createSimplePdf(
-      `${bidiIsolate(row.companyName ?? 'HRFlow Pro')} Payslip`,
-      `${formatPeriodMonth(row.periodMonth)} payroll statement`,
-      [
+      doc.title,
+      doc.subtitle,
+      doc.sections,
+      { timeZone: row.companyTimeZone },
+    );
+
+    return {
+      fileName: `payslip-${row.employeeNumber}-${row.periodMonth}.pdf`,
+      mimeType: 'application/pdf',
+      contentBase64: pdf.toString('base64'),
+    };
+  }
+
+  async exportPayrollPeriodPayslipsPdf(
+    currentUser: AuthenticatedUser,
+    payrollPeriodId: string,
+  ) {
+    this.assertCanManagePayroll(currentUser.roles);
+
+    const period = await this.getRawPayrollPeriod(payrollPeriodId);
+    const rows = await this.database.drizzle
+      .select(this.payslipExportSelectFields())
+      .from(payslipsTable)
+      .innerJoin(
+        payrollPeriodsTable,
+        eq(payrollPeriodsTable.id, payslipsTable.payrollPeriodId),
+      )
+      .innerJoin(employeesTable, eq(employeesTable.id, payslipsTable.employeeId))
+      .where(eq(payslipsTable.payrollPeriodId, payrollPeriodId))
+      .orderBy(asc(employeesTable.employeeNumber), asc(employeesTable.lastName), asc(employeesTable.firstName));
+
+    if (rows.length === 0) {
+      throw new BadRequestException(
+        `There are no payslips for ${formatPeriodMonth(period.periodMonth)} yet. Process payroll first.`,
+      );
+    }
+
+    const pdf = createSimplePdfDocuments(
+      rows.map((row) => this.buildPayslipDocument(row)),
+      { timeZone: rows[0].companyTimeZone },
+    );
+
+    return {
+      fileName: `payslips-${period.periodMonth}.pdf`,
+      mimeType: 'application/pdf',
+      contentBase64: pdf.toString('base64'),
+    };
+  }
+
+  private buildPayslipDocument(row: PayslipExportRow): SimplePdfDocument {
+    return {
+      title: `${bidiIsolate(row.companyName ?? 'HRFlow Pro')} Payslip`,
+      subtitle: `${formatPeriodMonth(row.periodMonth)} payroll statement`,
+      sections: [
         {
           heading: 'Employee',
           lines: [
@@ -474,13 +555,6 @@ export class PayrollService {
           ],
         },
       ],
-      { timeZone: row.companyTimeZone },
-    );
-
-    return {
-      fileName: `payslip-${row.employeeNumber}-${row.periodMonth}.pdf`,
-      mimeType: 'application/pdf',
-      contentBase64: pdf.toString('base64'),
     };
   }
 

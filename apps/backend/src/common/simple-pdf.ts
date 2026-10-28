@@ -790,18 +790,38 @@ function renderPdfDocument(pageContents: string[], fonts: DocumentFonts) {
   return Buffer.concat(chunks);
 }
 
-export function createSimplePdf(
-  title: string,
-  subtitle: string | null,
-  sections: PdfSection[],
+export type SimplePdfDocument = {
+  title: string;
+  subtitle: string | null;
+  sections: PdfSection[];
+};
+
+/**
+ * Several documents in one PDF. Each document starts on a new page (its own
+ * title block and rule), and page numbers run across the whole file.
+ */
+export function createSimplePdfDocuments(
+  documents: SimplePdfDocument[],
   options: SimplePdfOptions = {},
 ) {
-  const lines = buildLineLayout(title, subtitle, sections, options);
-  const pages = paginateLines(lines);
+  const pages = documents.flatMap((document) =>
+    paginateLines(
+      buildLineLayout(document.title, document.subtitle, document.sections, options),
+    ),
+  );
   const fonts: DocumentFonts = {};
   const pageContents = pages.map((page, index) =>
     buildPageContent(page, index, pages.length, fonts),
   );
 
   return renderPdfDocument(pageContents, fonts);
+}
+
+export function createSimplePdf(
+  title: string,
+  subtitle: string | null,
+  sections: PdfSection[],
+  options: SimplePdfOptions = {},
+) {
+  return createSimplePdfDocuments([{ title, subtitle, sections }], options);
 }

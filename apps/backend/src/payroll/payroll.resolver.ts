@@ -56,6 +56,14 @@ export class PayrollResolver {
     return this.payrollService.exportPayslipPdf(currentUser, payslipId);
   }
 
+  @Query(() => DocumentExportType, { name: 'exportPayrollPeriodPayslipsPdf' })
+  async exportPayrollPeriodPayslipsPdf(
+    @CurrentUser() currentUser: AuthenticatedUser,
+    @Args('payrollPeriodId', { type: () => String }) payrollPeriodId: string,
+  ) {
+    return this.payrollService.exportPayrollPeriodPayslipsPdf(currentUser, payrollPeriodId);
+  }
+
   @Mutation(() => EmployeeCompensationType, { name: 'upsertEmployeeCompensation' })
   async upsertEmployeeCompensation(
     @CurrentUser() currentUser: AuthenticatedUser,

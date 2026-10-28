@@ -120,6 +120,8 @@ export function PayrollPeriodSummary({
   onProcess,
   onMarkPaid,
   onDelete,
+  onDownloadAll,
+  downloadingAll,
   busy,
 }: {
   period: PayrollPeriod
@@ -128,6 +130,8 @@ export function PayrollPeriodSummary({
   onProcess: () => void
   onMarkPaid: () => void
   onDelete: () => void
+  onDownloadAll: () => void
+  downloadingAll: boolean
   busy: boolean
 }) {
   const currency = payslips[0]?.currencyCode ?? 'AED'
@@ -192,6 +196,21 @@ export function PayrollPeriodSummary({
         {period.status === 'PROCESSED' ? (
           <Button type="button" onClick={onMarkPaid} disabled={busy}>
             Mark as paid
+          </Button>
+        ) : null}
+        {period.status !== 'OPEN' ? (
+          <Button
+            type="button"
+            variant="outline"
+            onClick={onDownloadAll}
+            disabled={busy || downloadingAll}
+          >
+            {downloadingAll ? (
+              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+            ) : (
+              <Download className="mr-2 h-4 w-4" />
+            )}
+            Download payslips
           </Button>
         ) : null}
         {period.status !== 'PAID' ? (

@@ -1,5 +1,5 @@
 import { ConfigModule } from '@nestjs/config';
-import { NotFoundException } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, NotFoundException } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import { randomUUID } from 'crypto';
 import { and, eq, inArray, sql } from 'drizzle-orm';
@@ -365,6 +365,50 @@ describe('Payroll pay basis, concurrency, visibility and attendance dates', () =
     );
     const adminPdf = await payroll.exportPayslipPdf(admin, adminView[0].id);
     expect(adminPdf.mimeType).toBe('application/pdf');
+  });
+
+  it('exports every payslip of a period as one PDF for payroll admins only', async () => {
+    const stored = await database.drizzle
+      .select({ employeeId: payslips.employeeId })
+      .from(payslips)
+      .where(eq(payslips.payrollPeriodId, marchId));
+
+    const exported = await payroll.exportPayrollPeriodPayslipsPdf(admin, marchId);
+    expect(exported.mimeType).toBe('application/pdf');
+    expect(exported.fileName).toBe(`payslips-${MARCH}.pdf`);
+
+    const pdf = Buffer.from(exported.contentBase64, 'base64');
+    expect(pdf.toString('latin1')).toContain(`/Count ${stored.length}`);
+    const lines = extractPdfTextLines(pdf);
+    const names = lines.filter((line) => line.startsWith('Name: '));
+    expect(names).toHaveLength(stored.length);
+    expect(names.filter((line) => line.includes('محمد') && line.includes(`Payroll${suffix}`))).toHaveLength(1);
+    expect(names.join(' ')).not.toContain('NoComp');
+    expect(lines.filter((line) => line.startsWith('Payroll Period: March 2031'))).toHaveLength(
+      stored.length,
+    );
+    // Stable order: employee numbers ascend.
+    const numbers = lines
+      .filter((line) => line.startsWith('Employee Number: '))
+      .map((line) => line.slice('Employee Number: '.length));
+    expect(numbers).toEqual([...numbers].sort());
+
+    await expect(payroll.exportPayrollPeriodPayslipsPdf(employeeUser, marchId)).rejects.toBeInstanceOf(
+      ForbiddenException,
+    );
+    await expect(payroll.exportPayrollPeriodPayslipsPdf(supervisorUser, marchId)).rejects.toBeInstanceOf(
+      ForbiddenException,
+    );
+  });
+
+  it('refuses to export a period that has no payslips', async () => {
+    const openId = await createPeriod('2031-09');
+    await expect(payroll.exportPayrollPeriodPayslipsPdf(admin, openId)).rejects.toBeInstanceOf(
+      BadRequestException,
+    );
+    await expect(
+      payroll.exportPayrollPeriodPayslipsPdf(admin, randomUUID()),
+    ).rejects.toBeInstanceOf(NotFoundException);
   });
 
   it('keeps department payroll cost scoped to the selected month and hides it from supervisors', async () => {

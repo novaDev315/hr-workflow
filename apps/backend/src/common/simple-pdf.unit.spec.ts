@@ -1,4 +1,4 @@
-import { bidiIsolate, createSimplePdf, personLabelForPdf } from './simple-pdf';
+import { bidiIsolate, createSimplePdf, createSimplePdfDocuments, personLabelForPdf } from './simple-pdf';
 import { extractPdfTextLines } from '../__tests__/helpers/pdf-text';
 
 const now = new Date('2031-03-01T10:00:00Z');
@@ -142,5 +142,38 @@ describe('createSimplePdf', () => {
     )![1];
     expect(name('محمد')).toBe(name('محمد'));
     expect(name('محمد')).not.toBe(name('علي'));
+  });
+});
+
+describe('createSimplePdfDocuments', () => {
+  const doc = (name: string) => ({
+    title: 'Payslip',
+    subtitle: null,
+    sections: [{ heading: 'Employee', lines: [`Name: ${name}`] }],
+  });
+
+  it('starts every document on its own page and numbers pages across the file', () => {
+    const pdf = createSimplePdfDocuments([doc('Ann'), doc('Bob'), doc('Cy')], { now });
+    const source = pdf.toString('latin1');
+    expect(source).toContain('/Count 3');
+    const pages = source.split('/Type /Page /Parent').length - 1;
+    expect(pages).toBe(3);
+    const lines = extractPdfTextLines(pdf);
+    expect(lines).toEqual(
+      expect.arrayContaining(['Name: Ann', 'Name: Bob', 'Name: Cy', 'HRFlow Pro | Page 3 of 3']),
+    );
+    // Each name sits on a different page: one page footer follows each.
+    const footers = lines.filter((line) => line.startsWith('HRFlow Pro | Page'));
+    expect(footers).toHaveLength(3);
+    expect(lines.indexOf('Name: Ann')).toBeLessThan(lines.indexOf(footers[0]));
+    expect(lines.indexOf('Name: Bob')).toBeGreaterThan(lines.indexOf(footers[0]));
+    expect(lines.indexOf('Name: Bob')).toBeLessThan(lines.indexOf(footers[1]));
+  });
+
+  it('produces the same bytes as createSimplePdf for a single document', () => {
+    const one = doc('Ann');
+    expect(createSimplePdfDocuments([one], { now }).equals(
+      createSimplePdf(one.title, one.subtitle, one.sections, { now }),
+    )).toBe(true);
   });
 });

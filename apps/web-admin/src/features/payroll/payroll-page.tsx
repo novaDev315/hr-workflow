@@ -34,6 +34,7 @@ import {
   CREATE_PAYROLL_PERIOD_MUTATION,
   DELETE_PAYROLL_PERIOD_MUTATION,
   EXPORT_PAYSLIP_PDF_QUERY,
+  EXPORT_PAYROLL_PERIOD_PAYSLIPS_PDF_QUERY,
   MARK_PAYROLL_PERIOD_PAID_MUTATION,
   PAYROLL_PAGE_QUERY,
   PAYSLIPS_QUERY,
@@ -76,6 +77,7 @@ export function PayrollPage() {
   const [showSetup, setShowSetup] = useState(false)
   const [dialog, setDialog] = useState<'process' | 'paid' | 'delete' | null>(null)
   const [downloadingId, setDownloadingId] = useState<string | null>(null)
+  const [downloadingAll, setDownloadingAll] = useState(false)
 
   const { data, loading, error, refetch } = useQuery<PayrollPageData>(PAYROLL_PAGE_QUERY, {
     skip: !canManagePayroll,
@@ -268,6 +270,26 @@ export function PayrollPage() {
     }
   }
 
+  const handleDownloadAllPayslips = async () => {
+    if (!selectedPeriod) return
+    setDownloadingAll(true)
+    try {
+      const { data: exportData } = await apolloClient.query({
+        query: EXPORT_PAYROLL_PERIOD_PAYSLIPS_PDF_QUERY,
+        variables: { payrollPeriodId: selectedPeriod.id },
+        fetchPolicy: 'no-cache',
+      })
+      const payload = exportData?.exportPayrollPeriodPayslipsPdf
+      if (!payload) throw new Error('These payslips could not be exported.')
+      downloadBase64File(payload.fileName, payload.mimeType, payload.contentBase64)
+      toast.success(`Downloaded ${payload.fileName}.`)
+    } catch (queryError) {
+      toast.error(readableError(queryError, 'Could not download the payslips.'))
+    } finally {
+      setDownloadingAll(false)
+    }
+  }
+
   if (!canManagePayroll) {
     return (
       <div className="space-y-4">
@@ -371,6 +393,8 @@ export function PayrollPage() {
                 onProcess={() => setDialog('process')}
                 onMarkPaid={() => setDialog('paid')}
                 onDelete={() => setDialog('delete')}
+                onDownloadAll={handleDownloadAllPayslips}
+                downloadingAll={downloadingAll}
               />
             ) : (
               <p className="text-sm text-muted-foreground">

@@ -189,3 +189,13 @@ export type PayrollPreview = {
   currencyCode: string
   warnings: string[]
 }
+
+export const EXPORT_PAYROLL_PERIOD_PAYSLIPS_PDF_QUERY = gql`
+  query ExportPayrollPeriodPayslipsPdf($payrollPeriodId: String!) {
+    exportPayrollPeriodPayslipsPdf(payrollPeriodId: $payrollPeriodId) {
+      fileName
+      mimeType
+      contentBase64
+    }
+  }
+`
