@@ -52,6 +52,19 @@ export const ATTENDANCE_QUERY = gql`
   }
 `
 
+// Judged by the company's time zone, not the phone's clock.
+export const ATTENDANCE_STATUS_QUERY = gql`
+  query MobileAttendanceStatus($employeeId: ID!) {
+    attendanceStatus(employeeId: $employeeId) {
+      employeeId
+      companyDate
+      canClockIn
+      canClockOut
+      openRecordId
+    }
+  }
+`
+
 export const CLOCK_IN_MUTATION = gql`
   mutation MobileClockIn($input: ClockInInput!) {
     clockIn(input: $input) {
@@ -237,6 +250,14 @@ export interface LeaveBalance {
   availableDays: number
   pendingDays?: number | null
   leaveType: { id: string; code: string; name: string }
+}
+
+export interface AttendanceStatus {
+  employeeId: string
+  companyDate: string
+  canClockIn: boolean
+  canClockOut: boolean
+  openRecordId?: string | null
 }
 
 export interface LeaveRequestRow {

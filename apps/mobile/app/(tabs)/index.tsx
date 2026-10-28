@@ -6,6 +6,7 @@ import * as Location from 'expo-location'
 import { useRouter } from 'expo-router'
 import {
   ATTENDANCE_QUERY,
+  ATTENDANCE_STATUS_QUERY,
   CLOCK_IN_MUTATION,
   CLOCK_OUT_MUTATION,
   EMPLOYEE_LOCATIONS_QUERY,
@@ -13,6 +14,7 @@ import {
   LEAVE_QUERY,
   PAYSLIPS_QUERY,
   type AttendanceRecord,
+  type AttendanceStatus,
   type LeaveBalance,
   type LeaveRequestRow,
   type LocationAssignment,
@@ -84,6 +86,14 @@ export default function TodayScreen() {
     variables: { filter: { employeeId } },
     skip: !employeeId,
   })
+  // Errors ignored: an older backend without `attendanceStatus` falls back to the phone's date.
+  // Polling catches the company day rolling over while the screen stays open.
+  const statusQuery = useQuery<{ attendanceStatus: AttendanceStatus }>(ATTENDANCE_STATUS_QUERY, {
+    variables: { employeeId },
+    skip: !employeeId,
+    errorPolicy: 'ignore',
+    pollInterval: 5 * 60 * 1000,
+  })
   const leaveQuery = useQuery<{ leaveBalances: LeaveBalance[]; leaveRequests: LeaveRequestRow[] }>(LEAVE_QUERY, {
     variables: { employeeId, requestFilter: { employeeId } },
     skip: !employeeId,
@@ -105,6 +115,7 @@ export default function TodayScreen() {
     refetchMe,
     employeeId ? locationsQuery.refetch : undefined,
     employeeId ? attendanceQuery.refetch : undefined,
+    employeeId ? statusQuery.refetch : undefined,
     employeeId ? leaveQuery.refetch : undefined,
     employeeId ? paidQuery.refetch : undefined,
     employeeId ? payslipsQuery.refetch : undefined,
@@ -116,15 +127,22 @@ export default function TodayScreen() {
     assignments.find((assignment) => assignment.location.id === selectedLocationId) ?? primary
 
   const records = attendanceQuery.data?.attendanceRecords ?? []
+  const clockStatus =
+    statusQuery.data?.attendanceStatus?.employeeId === employeeId ? statusQuery.data.attendanceStatus : null
   const { openRecord, todayRecord } = useMemo(() => {
-    const today = todayKey()
-    const open = records.find((record) => record.clockInAt && !record.clockOutAt) ?? null
+    const today = clockStatus?.companyDate ?? todayKey()
+    // The server ignores a shift left open for over 24 hours; so does the status.
+    const open = clockStatus
+      ? records.find((record) => record.id === clockStatus.openRecordId) ?? null
+      : records.find((record) => record.clockInAt && !record.clockOutAt) ?? null
     const latestToday = records.find((record) => record.attendanceDate?.slice(0, 10) === today) ?? null
     return { openRecord: open, todayRecord: open ?? latestToday }
-  }, [records])
+  }, [records, clockStatus])
   const isClockedIn = Boolean(openRecord)
   // The backend allows one shift per day: once today's shift is closed, there is nothing to tap.
-  const doneForToday = !isClockedIn && Boolean(todayRecord?.clockInAt)
+  const doneForToday = clockStatus
+    ? !clockStatus.canClockIn && !clockStatus.canClockOut
+    : !isClockedIn && Boolean(todayRecord?.clockInAt)
 
   const stats = useMemo(() => {
     const balances = leaveQuery.data?.leaveBalances ?? []
@@ -219,7 +237,7 @@ export default function TodayScreen() {
       } else {
         await clockIn({ variables: { input: { employeeId, locationId: selected!.location.id, ...coords } } })
       }
-      await attendanceQuery.refetch()
+      await Promise.all([attendanceQuery.refetch(), statusQuery.refetch()])
       setNotice(
         isClockedIn
           ? { tone: 'success', message: "You're clocked out. See you next time." }

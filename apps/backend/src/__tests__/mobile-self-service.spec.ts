@@ -336,6 +336,43 @@ describe('Mobile self-service flows', () => {
     expect(employeeSession.login.account.employeeId).toBe(employeeId);
     expect(employeeSession.login.account.roles).toEqual(['EMPLOYEE']);
 
+    const attendanceStatus = () =>
+      graphqlRequest<{
+        attendanceStatus: {
+          companyDate: string;
+          timeZone: string;
+          canClockIn: boolean;
+          canClockOut: boolean;
+          openRecordId: string | null;
+          clockInBlockedReason: string | null;
+        };
+      }>(
+        `
+          query AttendanceStatus($employeeId: ID!) {
+            attendanceStatus(employeeId: $employeeId) {
+              companyDate
+              timeZone
+              canClockIn
+              canClockOut
+              openRecordId
+              clockInBlockedReason
+            }
+          }
+        `,
+        { employeeId },
+        employeeToken,
+      ).then((result) => result.attendanceStatus);
+
+    const beforeShift = await attendanceStatus();
+    expect(beforeShift).toMatchObject({
+      canClockIn: true,
+      canClockOut: false,
+      openRecordId: null,
+      clockInBlockedReason: null,
+    });
+    expect(beforeShift.companyDate).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+    expect(beforeShift.timeZone).toBeTruthy();
+
     const clockIn = await graphqlRequest<{
       clockIn: {
         id: string;
@@ -369,6 +406,13 @@ describe('Mobile self-service flows', () => {
     expect(clockIn.clockIn.status).toBe('CLOCKED_IN');
     expect(clockIn.clockIn.location.id).toBe(locationId);
 
+    expect(await attendanceStatus()).toMatchObject({
+      canClockIn: false,
+      canClockOut: true,
+      openRecordId: clockIn.clockIn.id,
+      clockInBlockedReason: 'Employee has already clocked in today',
+    });
+
     const clockOut = await graphqlRequest<{
       clockOut: {
         status: string;
@@ -395,6 +439,12 @@ describe('Mobile self-service flows', () => {
     );
 
     expect(clockOut.clockOut.status).toBe('COMPLETED');
+
+    expect(await attendanceStatus()).toMatchObject({
+      canClockIn: false,
+      canClockOut: false,
+      openRecordId: null,
+    });
 
     const attendanceRecords = await graphqlRequest<{
       attendanceRecords: Array<{ employeeId: string; status: string }>;

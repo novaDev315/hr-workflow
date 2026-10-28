@@ -6,6 +6,7 @@ import { AttendanceService } from './attendance.service';
 import {
   AttendanceFilterInput,
   AttendanceRecordType,
+  AttendanceStatusType,
   ClockInInput,
   ClockOutInput,
 } from './attendance.types';
@@ -29,6 +30,14 @@ export class AttendanceResolver {
     @Args('id', { type: () => ID }) id: string,
   ) {
     return this.attendanceService.findOne(currentUser, id);
+  }
+
+  @Query(() => AttendanceStatusType, { name: 'attendanceStatus' })
+  async attendanceStatus(
+    @CurrentUser() currentUser: AuthenticatedUser,
+    @Args('employeeId', { type: () => ID }) employeeId: string,
+  ) {
+    return this.attendanceService.attendanceStatus(currentUser, employeeId);
   }
 
   @Mutation(() => AttendanceRecordType, { name: 'clockIn' })

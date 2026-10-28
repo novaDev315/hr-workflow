@@ -61,47 +61,31 @@ export class AttendanceService {
     private readonly locationService: LocationService,
   ) {}
 
+  async attendanceStatus(currentUser: AuthenticatedUser, employeeId: string) {
+    const scopedEmployeeId = await this.resolveScopedEmployeeId(currentUser, employeeId);
+    const state = await this.clockState(scopedEmployeeId, new Date());
+
+    return {
+      employeeId: scopedEmployeeId,
+      companyDate: state.today,
+      timeZone: state.timeZone,
+      canClockIn: !state.clockInBlockedReason,
+      canClockOut: state.activeOpenShiftId !== null,
+      openRecordId: state.activeOpenShiftId,
+      clockInBlockedReason: state.clockInBlockedReason,
+    };
+  }
+
   async clockIn(currentUser: AuthenticatedUser, input: ClockInInput) {
     const employeeId = await this.resolveScopedEmployeeId(
       currentUser,
       input.employeeId,
     );
     const now = new Date();
-    const today = attendanceDateInTimeZone(now, await this.companyTimeZone());
+    const { today, existing, clockInBlockedReason } = await this.clockState(employeeId, now);
 
-    const [existing] = await this.database.drizzle
-      .select({
-        id: attendanceRecords.id,
-        clockInAt: attendanceRecords.clockInAt,
-      })
-      .from(attendanceRecords)
-      .where(
-        and(
-          eq(attendanceRecords.employeeId, employeeId),
-          eq(attendanceRecords.attendanceDate, today),
-        ),
-      )
-      .limit(1);
-
-    if (existing?.clockInAt) {
-      throw new BadRequestException('Employee has already clocked in today');
-    }
-
-    // A shift that started before the company-day boundary is still open.
-    const [openShift] = await this.database.drizzle
-      .select({ id: attendanceRecords.id, clockInAt: attendanceRecords.clockInAt })
-      .from(attendanceRecords)
-      .where(this.openRecordCondition(employeeId))
-      .orderBy(desc(attendanceRecords.clockInAt))
-      .limit(1);
-
-    if (
-      openShift?.clockInAt &&
-      now.getTime() - openShift.clockInAt.getTime() <= MAX_OPEN_SHIFT_MS
-    ) {
-      throw new BadRequestException(
-        'Employee is still clocked in from an earlier shift. Clock out first.',
-      );
+    if (clockInBlockedReason) {
+      throw new BadRequestException(clockInBlockedReason);
     }
 
     const { location, geofence } = await this.locationService.validateAttendanceContext(
@@ -320,6 +304,51 @@ export class AttendanceService {
     }
 
     return this.mapAttendance(row);
+  }
+
+  /**
+   * The company-day view shared by clockIn and attendanceStatus: today's record,
+   * the shift still open within 24 hours, and why a new clock-in would be refused.
+   */
+  private async clockState(employeeId: string, now: Date) {
+    const timeZone = await this.companyTimeZone();
+    const today = attendanceDateInTimeZone(now, timeZone);
+
+    const [existing] = await this.database.drizzle
+      .select({
+        id: attendanceRecords.id,
+        clockInAt: attendanceRecords.clockInAt,
+      })
+      .from(attendanceRecords)
+      .where(
+        and(
+          eq(attendanceRecords.employeeId, employeeId),
+          eq(attendanceRecords.attendanceDate, today),
+        ),
+      )
+      .limit(1);
+
+    // A shift that started before the company-day boundary is still open.
+    const [openShift] = await this.database.drizzle
+      .select({ id: attendanceRecords.id, clockInAt: attendanceRecords.clockInAt })
+      .from(attendanceRecords)
+      .where(this.openRecordCondition(employeeId))
+      .orderBy(desc(attendanceRecords.clockInAt))
+      .limit(1);
+
+    const activeOpenShiftId =
+      openShift?.clockInAt && now.getTime() - openShift.clockInAt.getTime() <= MAX_OPEN_SHIFT_MS
+        ? openShift.id
+        : null;
+
+    let clockInBlockedReason: string | null = null;
+    if (existing?.clockInAt) {
+      clockInBlockedReason = 'Employee has already clocked in today';
+    } else if (activeOpenShiftId) {
+      clockInBlockedReason = 'Employee is still clocked in from an earlier shift. Clock out first.';
+    }
+
+    return { timeZone, today, existing, activeOpenShiftId, clockInBlockedReason };
   }
 
   private openRecordCondition(employeeId: string) {

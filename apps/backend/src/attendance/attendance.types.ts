@@ -81,6 +81,31 @@ export class AttendanceRecordType {
   location: AttendanceLocationType;
 }
 
+/** What the employee can do right now, judged by the company's calendar day. */
+@ObjectType()
+export class AttendanceStatusType {
+  @Field()
+  employeeId: string;
+
+  @Field({ description: 'Today in the company time zone (YYYY-MM-DD)' })
+  companyDate: string;
+
+  @Field()
+  timeZone: string;
+
+  @Field()
+  canClockIn: boolean;
+
+  @Field()
+  canClockOut: boolean;
+
+  @Field(() => ID, { nullable: true })
+  openRecordId?: string | null;
+
+  @Field({ nullable: true, description: 'Why clocking in is not possible, worded like the clockIn error' })
+  clockInBlockedReason?: string | null;
+}
+
 @InputType()
 export class ClockInInput {
   @Field()
